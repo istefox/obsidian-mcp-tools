@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-13 (sessione notte — pubblicazione community).** Documento di passaggio di consegne
+> **Aggiornato 2026-04-21 (sessione serale — chiusura #59 + smoke test harness).** Documento di passaggio di consegne
 > tra macchine. Self-contained: dal clone iniziale al primo prompt
 > da mandare a Claude Code sul nuovo Mac, qui c'è tutto.
 >
@@ -36,13 +36,16 @@
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git` (push allowed, dove ship le release)
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, per fetch + cherry-pick)
   - `main` tracks `origin/main`
-- **Ultimo commit (al momento di scrittura):** **`2f99390`** (`0.3.1` version bump tag). Working tree clean.
+- **Ultimo commit (al momento di scrittura):** **`18dc5ff`** (`chore(scripts): add smoke test harness for binary get_vault_file`). Working tree clean. Branch allineato con `origin/main`.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
 | Versione | Data | Note |
 |---|---|---|
-| **`0.3.1`** | 2026-04-13 notte | LATEST — manifest description corretta per community-store rules (drop "Obsidian", drop maintainer-attribution suffix). Rebuild after store reviewer-bot feedback. |
+| **`0.3.4`** | 2026-04-21 sera | LATEST — native MCP image/audio content blocks in `get_vault_file` (issue #59 full implementation via PR #2). Smoke test harness aggiunto (`scripts/smoke-test-binary.sh` + `scripts/smoke-verify-binary.py`), 5/5 cases PASS. |
+| `0.3.3` | 2026-04-21 pomeriggio | Fix upstream #66 (`OBSIDIAN_API_URL` ignorato), #63 (`additionalProperties: {}` rompe Letta), #37 (trailing slash → 500). |
+| `0.3.2` | 2026-04-17 | Refactor interni: `McpServer` high-level API migration, extract `applySimpleSearchLimit`/`buildPatchHeaders`/`normalizeAppendBody`, regression pin per #62/#68/#41/#39. |
+| `0.3.1` | 2026-04-13 notte | Manifest description corretta per community-store rules (drop "Obsidian", drop maintainer-attribution suffix). Rebuild dopo feedback reviewer-bot. |
 | `0.3.0` | 2026-04-13 notte | First public release. Brand "MCP Connector". Tag eliminato e re-emesso dopo un mishap del version script che aveva prodotto 0.2.28. |
 
 URL release: https://github.com/istefox/obsidian-mcp-connector/releases
@@ -52,7 +55,8 @@ URL release: https://github.com/istefox/obsidian-mcp-connector/releases
 |---|---|
 | `bun run check` (4 package) | ✅ passa |
 | Test obsidian-plugin | ✅ **179 pass / 0 fail / 12 file** |
-| Test mcp-server | ✅ **94 pass / 0 fail / 8 file** (+1 regression #77 stasera) |
+| Test mcp-server | ✅ **152 pass / 0 fail** (include 14 test nuovi per binary path in 0.3.4) |
+| Smoke test integration (server ↔ Local REST API ↔ Obsidian) | ✅ **5/5 cases PASS** via `scripts/smoke-verify-binary.py` |
 | Plugin prod build | ✅ |
 | Server cross-compile (4 target: mac-arm64, mac-x64, linux, windows) | ✅ |
 | GitHub Actions release.yml | ✅ esercitata (run 0.3.0 + 0.3.1 entrambe verdi) |
@@ -66,9 +70,14 @@ Il fork ha tutto Cluster A-F chiuso e Cluster G praticamente chiuso:
 - **#28** (install outside vault): completo
 - **#26** (platform override per WSL): completo
 - **#77** (no-arg inputSchema, openai-codex compat): coperto (regression test stasera, fix latente in `normalizeInputSchema`)
-- **#62, #61, #60, #59, #35**: tutti completi
+- **#62, #61, #60, #35**: tutti completi
+- **#59 (binary content types)**: **completato in 0.3.4** (2026-04-21) — commit `6110b89`, merge `d037ed9`. Smoke test harness committato in `18dc5ff`.
 - **Roadmap originale**: 11/12 chiusi
-- **Coverage issue upstream aperte**: 21 di 24 risolte direttamente, +1 partial (#59), +2 probabilmente coperte da #28 (#27, #38). Solo 0 issue non risolte.
+- **Coverage issue upstream aperte** (26 totali, snapshot 2026-04-21):
+  - **23 risolte direttamente** (pinned nel CHANGELOG): #26, #28, #29, #30, #31, #33, #35, #36, **#37**, #39, #40, #41, **#59**, #60, #61, #62, **#63**, **#66**, #67, #68, #71, #77, #78
+  - **2 coperte indirettamente** da #28: #27, #38 (install-path fix risolve la radice dei due bug report)
+  - **1 meta** aperta da te stesso il 2026-04-21: #79 ("Heads-up: maintenance status and a friendly community fork")
+  - **0 non risolte.**
 
 ### Distribuzione community
 - **PR community store aperta:** https://github.com/obsidianmd/obsidian-releases/pull/11919
@@ -279,12 +288,16 @@ esplicitamente:)
 
 ---
 
-## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-12)
+## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-21)
 
-In ordine cronologico inverso, con commit SHA su `myfork/main`:
+In ordine cronologico inverso, con commit SHA su `origin/main`:
 
 | Date approx | Lavoro | Commit/merge |
 |---|---|---|
+| 2026-04-21 sera | **Smoke test harness per il binary path**: `scripts/smoke-test-binary.sh` (fixture generator + vault uploader via Local REST API) + `scripts/smoke-verify-binary.py` (client MCP automatico che spawna `bun src/index.ts`, fa handshake JSON-RPC via stdio, asserta la struttura per 5 casi: PNG/M4A inline, MP4/PDF unsupported_type, oversize PNG too_large). Auto-discovery della API key dal data.json del vault su macOS. **5/5 cases PASS**. | `18dc5ff` |
+| 2026-04-21 pomeriggio | **#59 completato + release 0.3.4**: PR #2 `feat/issue-59-native-binary-content` — native MCP image/audio content blocks in `get_vault_file` (SDK 1.29.0). Sostituisce lo short-circuit testuale di 0.3.0 con response inline per PNG/JPEG/GIF/WebP/SVG/BMP/MP3/WAV/OGG/M4A/FLAC/AAC/WebM audio (cap 10 MiB). Fallback text-metadata per video/PDF/Office/archivi + oversize. Include `makeBinaryRequest` in `shared/makeRequest.ts`, widening dello schema `ToolRegistry` per audio, 14 nuovi unit test. | `6110b89`, merge `d037ed9`, tag `0.3.4` (`287e0fe`) |
+| 2026-04-21 pomeriggio | **0.3.3**: fix upstream #66 (`OBSIDIAN_API_URL` ignored), #63 (`additionalProperties: {}` rompe Letta), #37 (trailing slash → 500). | `75fe2a3`, merge `1f3fd48`, tag `0.3.3` |
+| 2026-04-17 | **0.3.2**: migrate `Server` → `McpServer` SDK 1.29.0 high-level API; extract `applySimpleSearchLimit`/`buildPatchHeaders`/`normalizeAppendBody` con regression test; pin #62/#68/#41/#39. | `7ba158f`, `939f167`, `046268b`, `95f4247`, tag `02dd2a4` |
 | 2026-04-13 notte | **Pubblicazione community completa**: rebrand MCP Connector (id `mcp-tools-istefox`), repo rinominato `obsidian-mcp-connector`, README user-facing, migration guide, fix release pipeline (zip vuoto + version script argv bug + styles.css inesistente), release `0.3.0` + `0.3.1`, PR a `obsidianmd/obsidian-releases#11919` (validation passed). | merges `0028fd9`, `afc1a3c`, `b6d6f54`, `78e0854`, `8ce52aa`; tag `0.3.0` + `0.3.1` |
 | 2026-04-13 notte | Setup vault Lab con MCP Connector end-to-end (Local REST API, install server, Claude Desktop config con OBSIDIAN_API_KEY di Lab). Smoke test: Claude Desktop legge il vault Lab via MCP. | (config esterna, no commit) |
 | 2026-04-13 sera/notte | Regression test mirato per upstream issue #77 (`normalizeInputSchema` integrated path) | merge `c7c93be` |
@@ -325,13 +338,16 @@ In ordine di priorità potenziale per le prossime sessioni:
 
 ### B — Fase 4 outreach — annuncia il fork sulle issue upstream risolte
 - **Effort**: ~30 min totale (commento standard ripetuto)
-- **Scope**: commentare sulle 21 issue upstream risolte (#26, #28, #30, #31, #33, #35, #36, #37, #39, #40, #41, #59, #60, #61, #62, #63, #66, #67, #68, #71, #77) per dire "this is fixed in the community fork at istefox/obsidian-mcp-connector". Ogni autore originale riceve notifica → outreach efficace.
-- **Pattern del commento** (template salvato in memoria di sessione di stasera):
+- **Scope aggiornato al 2026-04-21**: commentare sulle **23 issue upstream risolte direttamente** (#26, #28, #29, #30, #31, #33, #35, #36, #37, #39, #40, #41, #59, #60, #61, #62, #63, #66, #67, #68, #71, #77, #78) per dire "this is fixed in the community fork at `istefox/obsidian-mcp-connector`". Ogni autore originale riceve notifica → outreach efficace.
+- **Opzionali**: #27 e #38 (coperti indirettamente da #28) — commentare solo dopo aver verificato il caso specifico.
+- **Escludere**: #79 (la tua meta-issue di annuncio).
+- **Tooling**: `scripts/fork-outreach-comment.sh` automatizza il comment batch in modalità dry-run + `--execute`. Vedi sezione 7.
+- **Pattern del commento** (template salvato in memoria di sessione):
   ```
   For users still waiting on this — fixed in the community fork
   at github.com/istefox/obsidian-mcp-connector
-  ([commit X], release vY.Z). Install via BRAT or wait for the
-  pending community-store entry (PR #11919).
+  ([commit X], release vY.Z). Install via BRAT or via the
+  community store (PR #11919 merged on 2026-XX-XX).
   ```
 - **Quando farlo**: meglio dopo che PR community store è merged (così l'utente può cliccare-e-installare direttamente nello store), MA va bene anche subito con BRAT come fallback.
 
@@ -344,9 +360,8 @@ In ordine di priorità potenziale per le prossime sessioni:
 - ✅ `docs/features/prompt-requirements.md` rimosso
 - Rimasto opzionale: cancellare i 2 file `.bun-build` fisici (~118 MB), si rigenerano al prossimo build
 
-### E — Issue #59 full implementation (binary content types)
-- **Effort**: ~2 h
-- **Scope**: SDK MCP 1.29.0 supporta nativamente audio/image responses; `f6d004a` lasciò un text short-circuit. Sostituire con response native di tipo image/audio per `get_vault_file`. Beneficiari: utenti che vogliono che l'agente legga PDF, immagini, audio dal vault.
+### E — ~~Issue #59 full implementation (binary content types)~~ ✅ COMPLETATO 2026-04-21
+- Rilasciato in **0.3.4**. Commit `6110b89`, merge `d037ed9`. Supporto nativo MCP image/audio content blocks, fallback text-metadata per tipi non supportati o oversize (10 MiB cap). 14 nuovi unit test + 5/5 smoke test PASS via `scripts/smoke-verify-binary.py`.
 
 ### F — Roadmap dopo il merge community store
 - Una volta che la PR `obsidianmd/obsidian-releases#11919` è merged:
@@ -373,6 +388,9 @@ In ordine di priorità potenziale per le prossime sessioni:
 | `packages/mcp-server/src/index.ts` | Entry point del server MCP standalone |
 | `packages/shared/src/types/plugin-local-rest-api.ts` | Schemi ArkType per le route HTTP del plugin |
 | `packages/obsidian-plugin/src/features/command-permissions/` | Tutta Fase 1 + 2 di #29 |
+| `scripts/smoke-test-binary.sh` | Smoke test fixture generator + vault uploader per il binary path di `get_vault_file` (macOS) |
+| `scripts/smoke-verify-binary.py` | MCP client automatico che verifica i 5 casi del binary path — auto-discovery `OBSIDIAN_API_KEY` |
+| `scripts/fork-outreach-comment.py` | Batch-commenta issue upstream risolte con pointer al fork. Default dry-run, `--execute` per inviare. Log idempotente in `scripts/.outreach-log.jsonl` |
 
 ---
 
