@@ -3,7 +3,7 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.4] — 2026-04-21
 
 ### Added
 - `get_vault_file` now returns native MCP `image` and `audio` content
