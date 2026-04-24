@@ -16,10 +16,21 @@ export const ApiError = type({
  * JSON representation of a note including parsed tag and frontmatter data as well as filesystem metadata
  * Content-Type: application/vnd.olrapi.note+json
  * GET /vault/{filename} or GET /active/ with Accept: application/vnd.olrapi.note+json
+ *
+ * NOTE on `frontmatter`: values are declared as `unknown` because YAML
+ * frontmatter (and Obsidian Flavored Markdown in particular) allows
+ * arbitrary scalar and list shapes — `aliases`, `tags`, `up`, `down`,
+ * `next`, `previous`, `cssclasses` are routinely arrays; other keys
+ * may be numbers, booleans, null, or nested objects. A narrower
+ * `Record<string, string>` shape rejected every note with a list-valued
+ * key at the validation boundary, making `format: "json"` unusable on
+ * any realistic vault. Downstream consumers (LLM clients especially)
+ * handle dynamic frontmatter shapes natively; strict wrapper-side
+ * typing here costs more than it buys. Fixes upstream issue #81.
  */
 export const ApiNoteJson = type({
   content: "string",
-  frontmatter: "Record<string, string>",
+  frontmatter: "Record<string, unknown>",
   path: "string",
   stat: {
     ctime: "number",
