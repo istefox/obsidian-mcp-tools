@@ -52,3 +52,85 @@ describe("checkMethodAndPath", () => {
     expect(checkMethodAndPath("POST", undefined)).toEqual({ ok: false, status: 404 });
   });
 });
+
+import { runMiddleware } from "./middleware";
+
+describe("runMiddleware", () => {
+  const token = "test-token-12345678901234567890abcd";
+
+  test("allows POST /mcp with correct Authorization and no Origin", () => {
+    const result = runMiddleware({
+      method: "POST",
+      url: "/mcp",
+      headers: { authorization: `Bearer ${token}` },
+    }, token);
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("allows POST /mcp with localhost Origin", () => {
+    const result = runMiddleware({
+      method: "POST",
+      url: "/mcp",
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: "http://localhost:3000",
+      },
+    }, token);
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("rejects missing Authorization with 401", () => {
+    const result = runMiddleware(
+      { method: "POST", url: "/mcp", headers: {} },
+      token,
+    );
+    expect(result).toEqual({ ok: false, status: 401 });
+  });
+
+  test("rejects wrong bearer with 401", () => {
+    const result = runMiddleware(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: { authorization: "Bearer wrong-token-xxxxxxxxxxxxxxxxxxxxxxx" },
+      },
+      token,
+    );
+    expect(result).toEqual({ ok: false, status: 401 });
+  });
+
+  test("rejects malformed Authorization header with 401", () => {
+    const result = runMiddleware(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: { authorization: token },
+      },
+      token,
+    );
+    expect(result).toEqual({ ok: false, status: 401 });
+  });
+
+  test("rejects disallowed Origin with 403", () => {
+    const result = runMiddleware(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: "http://evil.example.com",
+        },
+      },
+      token,
+    );
+    expect(result).toEqual({ ok: false, status: 403 });
+  });
+
+  test("rejects bad method with 405 before auth check", () => {
+    const result = runMiddleware(
+      { method: "DELETE", url: "/mcp", headers: {} },
+      token,
+    );
+    expect(result).toEqual({ ok: false, status: 405 });
+  });
+});
