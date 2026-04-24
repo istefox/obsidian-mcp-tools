@@ -1,6 +1,15 @@
 import type { ToolRegistry } from "$/features/mcp-transport/services/toolRegistry";
+import { getServerInfoHandler, getServerInfoSchema } from "./tools/getServerInfo";
 
-export async function registerTools(_registry: ToolRegistry): Promise<void> {
-  // Registration wired in Task 9 (smoke tool).
-  // Phase 2 ports the remaining 20 tools here.
+export type RegisterToolsContext = {
+  pluginVersion: string;
+};
+
+export async function registerTools(
+  registry: ToolRegistry,
+  ctx: RegisterToolsContext,
+): Promise<void> {
+  registry.register(getServerInfoSchema, async ({ arguments: args }) =>
+    getServerInfoHandler({ arguments: args, pluginVersion: ctx.pluginVersion }),
+  );
 }
