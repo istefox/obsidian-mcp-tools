@@ -6,7 +6,9 @@ export const getServerInfoSchema = type({
 }).describe("Returns health status and version of the MCP Connector server.");
 
 export type GetServerInfoContext = {
-  arguments: Record<string, never>;
+  // `object` (not `Record<string, never>`) to match the ToolRegistry
+  // constraint which uses `object` for no-arg tools (see toolRegistry.ts).
+  arguments: object;
   pluginVersion: string;
 };
 

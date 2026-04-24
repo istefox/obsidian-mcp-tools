@@ -13,6 +13,11 @@ import {
 } from "shared";
 import { handleCommandPermissionRequest } from "./features/command-permissions";
 import { setup as setupCore } from "./features/core";
+import {
+  setup as mcpTransportSetup,
+  teardown as mcpTransportTeardown,
+  type McpTransportState,
+} from "./features/mcp-transport";
 import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
 import {
   loadLocalRestAPI,
@@ -30,6 +35,8 @@ export default class McpToolsPlugin extends Plugin {
     installed: false,
   };
 
+  mcpTransportState?: McpTransportState;
+
   getLocalRestApiKey(): string | undefined {
     return this.localRestApi.plugin?.settings?.apiKey;
   }
@@ -37,6 +44,16 @@ export default class McpToolsPlugin extends Plugin {
   async onload() {
     // Initialize features in order
     await setupCore(this);
+
+    // 0.4.0 HTTP transport — in-process MCP server.
+    const mcpResult = await mcpTransportSetup(this);
+    if (mcpResult.success) {
+      this.mcpTransportState = mcpResult.state;
+    } else {
+      new Notice(`MCP Connector: ${mcpResult.error}`);
+      logger.error("MCP transport setup failed", { error: mcpResult.error });
+    }
+
     await setupMcpServerInstall(this);
 
     // Check for required dependencies
@@ -242,7 +259,12 @@ export default class McpToolsPlugin extends Plugin {
     }
   }
 
-  onunload() {
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+  async onunload() {
+    if (this.mcpTransportState) {
+      await mcpTransportTeardown(this.mcpTransportState);
+      this.mcpTransportState = undefined;
+    }
     this.localRestApi.api?.unregister();
   }
 }

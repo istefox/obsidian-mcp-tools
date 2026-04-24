@@ -3,7 +3,7 @@ import { type } from "arktype";
 export const BearerToken = type("string>=32");
 export type BearerToken = typeof BearerToken.infer;
 
-export const PortNumber = type("number.integer>=1024<=65535");
+export const PortNumber = type("1024<=number.integer<=65535");
 export type PortNumber = typeof PortNumber.infer;
 
 export type ServerState =
