@@ -1,6 +1,18 @@
 import type { Server } from "node:http";
 import { BIND_HOST } from "../constants";
 
+/**
+ * Bind an HTTP server to the first available port in the given range.
+ *
+ * Iterates `ports` in order. On EADDRINUSE, tries the next port.
+ * Any other error (e.g., EACCES, EADDRNOTAVAIL) is rethrown immediately.
+ *
+ * Precondition: `server` must be a freshly created, not-yet-listening
+ * http.Server. Calling listen() on a server in 'closing' or 'listening'
+ * state would throw ERR_SERVER_NOT_RUNNING / ERR_SERVER_ALREADY_LISTEN.
+ *
+ * @throws {Error} when all ports in the range are taken.
+ */
 export async function bindWithFallback(
   server: Server,
   ports: readonly number[],
