@@ -35,4 +35,20 @@ describe("checkMethodAndPath", () => {
   test("rejects POST / with 404", () => {
     expect(checkMethodAndPath("POST", "/")).toEqual({ ok: false, status: 404 });
   });
+
+  test("strips query string before path check", () => {
+    expect(checkMethodAndPath("POST", "/mcp?foo=bar")).toEqual({ ok: true });
+  });
+
+  test("strips query string on a rejected path too", () => {
+    expect(checkMethodAndPath("POST", "/other?foo=bar")).toEqual({ ok: false, status: 404 });
+  });
+
+  test("treats undefined method as disallowed (405) on valid path", () => {
+    expect(checkMethodAndPath(undefined, "/mcp")).toEqual({ ok: false, status: 405 });
+  });
+
+  test("treats undefined url as 404", () => {
+    expect(checkMethodAndPath("POST", undefined)).toEqual({ ok: false, status: 404 });
+  });
 });
