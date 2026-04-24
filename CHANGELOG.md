@@ -3,6 +3,27 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.6] — 2026-04-24
+
+### Fixed
+- `get_vault_file(format: "json")` failed ArkType validation on any
+  note whose frontmatter contained a list-valued key — `aliases`,
+  `tags`, `up`, `down`, `next`, `previous`, `cssclasses`, etc. are
+  routinely arrays in Obsidian Flavored Markdown. The `ApiNoteJson`
+  schema declared `frontmatter: Record<string, string>`, so Local
+  REST API's correct array payload was rejected at the wrapper
+  boundary with `frontmatter.aliases must be a string (was an
+  object)`, making the `json` format effectively unusable on
+  realistic vaults. Widened the shape to `Record<string, unknown>`
+  to match YAML/OFM semantics. Added 7 regression tests in
+  `plugin-local-rest-api.test.ts` covering the canonical aliases
+  repro, the full OFM convention set (aliases + tags + up + down +
+  next + previous + cssclasses), mixed scalar+array frontmatter,
+  non-string scalars (number, boolean, null), nested mapping
+  values, empty frontmatter, and a sanity check that the top-level
+  schema was not incidentally widened. Fixes upstream issue #81,
+  diagnosed by @folotp.
+
 ## [0.3.5] — 2026-04-23
 
 ### Fixed
