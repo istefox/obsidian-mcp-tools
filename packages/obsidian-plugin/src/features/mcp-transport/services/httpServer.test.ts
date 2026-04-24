@@ -88,6 +88,31 @@ describe("startHttpServer", () => {
     expect(res.status).toBe(200);
     expect(handlerCalled).toBe(true);
   });
+
+  test("returns 500 when the request handler throws", async () => {
+    const token = "t".repeat(32);
+    const server = await startHttpServer({
+      bearerToken: token,
+      requestHandler: async () => {
+        throw new Error("synthetic handler failure");
+      },
+    });
+    running.push(server);
+
+    // Silence the expected console.error from the handler-error path.
+    // Without this the test output becomes noisy.
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(500);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
 });
 
 describe("stopHttpServer", () => {

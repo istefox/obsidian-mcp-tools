@@ -57,16 +57,31 @@ export async function startHttpServer(
     }
 
     // void prefix: fire-and-forget is intentional. Errors are caught
-    // and rethrown inside .catch so they surface to the Node process
-    // uncaughtException handler (Task 12 wires the logger there).
+    // below and logged without rethrowing.
     void config.requestHandler(req, res).catch((err) => {
       if (!res.headersSent) res.writeHead(500);
       res.end();
-      throw err;
+      // TODO(Task 12): replace with logger.error("handler failed", { err })
+      // Intentionally NOT rethrowing: inside a .catch() of a void-prefixed
+      // promise, throwing creates an unhandled rejection which crashes the
+      // Electron renderer under default Node settings.
+      // eslint-disable-next-line no-console
+      console.error("[mcp-transport] request handler failed:", err);
     });
   });
 
-  const port = await bindWithFallback(server, [...PORT_RANGE]);
+  let port: number;
+  try {
+    port = await bindWithFallback(server, [...PORT_RANGE]);
+  } catch (err) {
+    // Best-effort cleanup; no-op if server never listened.
+    try {
+      server.close();
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
   return { server, port };
 }
 
