@@ -31,6 +31,7 @@
     "packages/obsidian-plugin": {
       "name": "@obsidian-mcp-tools/obsidian-plugin",
       "dependencies": {
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@types/fs-extra": "^11.0.4",
         "arktype": "^2.0.0-rc.30",
         "express": "^4.21.2",

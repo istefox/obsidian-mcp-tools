@@ -1,4 +1,3 @@
-// @ts-expect-error - Task 8 will create ToolRegistry at this path
 import type { ToolRegistry } from "$/features/mcp-transport/services/toolRegistry";
 
 export async function registerTools(_registry: ToolRegistry): Promise<void> {
