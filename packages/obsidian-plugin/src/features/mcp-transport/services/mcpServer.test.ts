@@ -49,4 +49,44 @@ describe("end-to-end: HTTP → McpServer", () => {
       await new Promise<void>((r) => server.server.close(() => r()));
     }
   });
+
+  test("tools/call get_server_info returns health payload", async () => {
+    const { startHttpServer } = await import("./httpServer");
+    const svc = await createMcpService({ pluginVersion: "0.4.0-alpha.1" });
+    active.push(svc);
+
+    const server = await startHttpServer({
+      bearerToken: "t".repeat(32),
+      requestHandler: svc.handleRequest,
+    });
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${"t".repeat(32)}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 42,
+          method: "tools/call",
+          params: {
+            name: "get_server_info",
+            arguments: {},
+          },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const text = body?.result?.content?.[0]?.text as string;
+      const parsed = JSON.parse(text);
+      expect(parsed.status).toBe("ok");
+      expect(parsed.version).toBe("0.4.0-alpha.1");
+      expect(parsed.transport).toBe("streamable-http");
+    } finally {
+      await new Promise<void>((r) => server.server.close(() => r()));
+    }
+  });
 });
