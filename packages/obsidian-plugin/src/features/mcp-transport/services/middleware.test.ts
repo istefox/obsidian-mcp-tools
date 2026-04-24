@@ -133,4 +133,34 @@ describe("runMiddleware", () => {
     );
     expect(result).toEqual({ ok: false, status: 405 });
   });
+
+  test("rejects unknown path with 404 before origin/auth checks", () => {
+    // Unauthorized request with disallowed origin on wrong path: still 404.
+    // Proves path check short-circuits before origin (403) and auth (401).
+    const result = runMiddleware(
+      {
+        method: "POST",
+        url: "/other",
+        headers: { origin: "http://evil.example.com" },
+      },
+      "t".repeat(32),
+    );
+    expect(result).toEqual({ ok: false, status: 404 });
+  });
+
+  test("uses first occurrence when Authorization header is multi-valued", () => {
+    // HTTP forbids duplicate Authorization per RFC 7230 §3.2.2 (singleton
+    // field), but if a pathological client sends two, we accept the first
+    // and reject the second silently. A valid first + invalid second → ok.
+    const token = "t".repeat(32);
+    const result = runMiddleware(
+      {
+        method: "POST",
+        url: "/mcp",
+        headers: { authorization: [`Bearer ${token}`, "Bearer invalid"] },
+      },
+      token,
+    );
+    expect(result).toEqual({ ok: true });
+  });
 });

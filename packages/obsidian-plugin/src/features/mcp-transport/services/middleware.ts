@@ -8,13 +8,29 @@ export type MethodPathResult =
 
 const ALLOWED_METHODS = new Set(["GET", "POST"]);
 
+/**
+ * Validate HTTP method and request path.
+ *
+ * Path check (404) precedes method check (405) so that "/other"
+ * returns 404 regardless of method — matches the principle that
+ * an unknown path is more informative than a method restriction
+ * on a path the server doesn't recognize at all.
+ *
+ * Query strings are stripped before comparison.
+ *
+ * @param method - HTTP method from req.method (may be undefined)
+ * @param url - Request URL from req.url (may be undefined)
+ * @returns Result ok=true when path matches /mcp or /mcp/* AND method is GET or POST
+ */
 export function checkMethodAndPath(
   method: string | undefined,
   url: string | undefined,
 ): MethodPathResult {
   const path = (url ?? "").split("?")[0];
 
-  // Check path first: 404 takes precedence over 405
+  // Path check runs before method check: 404 on unknown path is more
+  // informative than 405 on a path we don't serve at all. Deliberate
+  // inversion of the design doc's listed order.
   if (path !== MCP_PATH_PREFIX && !path.startsWith(`${MCP_PATH_PREFIX}/`)) {
     return { ok: false, status: ERROR_CODES.NOT_FOUND };
   }
@@ -66,6 +82,22 @@ function checkOrigin(headers: RequestHeaders): MiddlewareResult {
     : { ok: false, status: ERROR_CODES.ORIGIN_FORBIDDEN };
 }
 
+/**
+ * Run the full validation chain on an incoming HTTP request.
+ *
+ * Check order — load-bearing for security and observability:
+ *   1. Method/path (404 path unknown → 405 method not allowed)
+ *   2. Origin (403) — anti-DNS-rebinding, independent of auth
+ *   3. Bearer token (401) — constant-time compare via compareTokens
+ *
+ * Returning 405 before 401 intentionally tells unauthenticated
+ * callers which methods the server speaks. This is acceptable for
+ * a loopback-only server where no network attacker model applies.
+ *
+ * @param req - Incoming request (method, url, headers)
+ * @param bearerToken - The server's expected Bearer token (from data.json)
+ * @returns Result ok=true when all three checks pass
+ */
 export function runMiddleware(
   req: MiddlewareRequest,
   bearerToken: string,
