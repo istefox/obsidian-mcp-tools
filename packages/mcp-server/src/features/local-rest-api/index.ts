@@ -26,11 +26,27 @@ export function buildPatchHeaders(
   args: PatchHeadersInput,
   resolvedTarget: string,
 ): Record<string, string> {
+  // Default behavior of Create-Target-If-Missing per target type:
+  //   heading     → true  (upstream 0.2.x compatibility; most callers expect
+  //                        a missing heading to be silently appended at EOF)
+  //   frontmatter → true  (same upstream default; frontmatter keys rarely
+  //                        produce silent-corruption footguns)
+  //   block       → false (safer: when a block `^id` cannot be located —
+  //                        especially when the id lives inside a markdown
+  //                        table cell, where markdown-patch's block indexer
+  //                        does not search — permissive silent EOF append
+  //                        corrupts callers expecting atomic patch-or-fail.
+  //                        Callers can explicitly opt back in with
+  //                        createTargetIfMissing: true. Fixes upstream
+  //                        issue #71's block-in-table gap.)
+  const defaultCreateTargetIfMissing = args.targetType !== "block";
   const headers: Record<string, string> = {
     Operation: args.operation,
     "Target-Type": args.targetType,
     Target: encodeURIComponent(resolvedTarget),
-    "Create-Target-If-Missing": String(args.createTargetIfMissing ?? true),
+    "Create-Target-If-Missing": String(
+      args.createTargetIfMissing ?? defaultCreateTargetIfMissing,
+    ),
   };
 
   if (args.targetDelimiter) {

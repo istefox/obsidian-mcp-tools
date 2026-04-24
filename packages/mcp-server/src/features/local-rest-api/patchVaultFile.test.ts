@@ -220,6 +220,90 @@ describe("buildPatchHeaders — issue #78 (non-ASCII) + wiring", () => {
   });
 });
 
+describe("buildPatchHeaders — issue #71 (block-in-table gap, per-target-type default)", () => {
+  test("block target defaults Create-Target-If-Missing to 'false' (safer)", () => {
+    // Rationale: a block `^id` that cannot be located — especially one
+    // inside a markdown table cell, which markdown-patch's block indexer
+    // does not search — must fail loud instead of silently appending the
+    // caller's content at EOF. Silent EOF append on a missing block is
+    // data corruption: the caller gets HTTP 200 but the vault is now in
+    // an unexpected shape, with the "patch" accumulated at file end rather
+    // than in place.
+    const headers = buildPatchHeaders(
+      { operation: "replace", targetType: "block" },
+      "block-id-42",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("false");
+  });
+
+  test("heading target default remains 'true' (no regression)", () => {
+    // Pins the backwards-compatible default for heading targets, which is
+    // the load-bearing shape for upstream 0.2.x parity. If this flips, any
+    // caller relying on "create heading if missing" behavior breaks.
+    const headers = buildPatchHeaders(
+      { operation: "append", targetType: "heading" },
+      "Section A",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("true");
+  });
+
+  test("frontmatter target default remains 'true' (no regression)", () => {
+    // Frontmatter keys rarely produce silent-corruption footguns: missing
+    // keys can be legitimately created (that's the point for a lot of
+    // Templater-backed flows), and the shape of a frontmatter value is
+    // well-defined. Keep permissive default.
+    const headers = buildPatchHeaders(
+      { operation: "replace", targetType: "frontmatter" },
+      "aliases",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("true");
+  });
+
+  test("block target with createTargetIfMissing: true explicitly overrides the safe default", () => {
+    // Opt-in for callers who genuinely want the permissive behavior on
+    // blocks (e.g. a migration script that appends a marker block if it
+    // doesn't exist yet). Explicit is better than implicit.
+    const headers = buildPatchHeaders(
+      {
+        operation: "append",
+        targetType: "block",
+        createTargetIfMissing: true,
+      },
+      "marker-block",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("true");
+  });
+
+  test("block target with createTargetIfMissing: false explicitly is still 'false'", () => {
+    // Idempotence: explicit `false` on a block target is the same as the
+    // new default. No surprise.
+    const headers = buildPatchHeaders(
+      {
+        operation: "replace",
+        targetType: "block",
+        createTargetIfMissing: false,
+      },
+      "block-id",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("false");
+  });
+
+  test("heading target with createTargetIfMissing: false explicitly is 'false'", () => {
+    // Strict-mode opt-in still works on heading targets — this is the
+    // existing safety hatch for callers that want patch-or-fail
+    // semantics across all target types.
+    const headers = buildPatchHeaders(
+      {
+        operation: "replace",
+        targetType: "heading",
+        createTargetIfMissing: false,
+      },
+      "Section A",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("false");
+  });
+});
+
 describe("normalizeAppendBody — trailing newline safeguard", () => {
   test("appends two newlines to an append-body without a trailing newline", () => {
     // Without this, markdown like `**done**` appended under a heading
