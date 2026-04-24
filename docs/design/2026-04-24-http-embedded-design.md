@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft — awaiting maintainer review |
+| **Status** | Approved — ready for implementation planning |
 | **Date** | 2026-04-24 |
 | **Author** | Stefano Ferri (@istefox) |
 | **Audience** | Project maintainers, future contributors |
@@ -54,11 +54,11 @@ The following decisions were made during brainstorming and are recorded here wit
 
 **Rationale:** Anthropic maintains `mcp-remote` on npm as the official stdio-to-HTTP bridge. It runs via `npx` (no permanent install), requires only Node.js on the user's machine (acceptable for the MCP+Obsidian target audience, which is developer-leaning), and keeps this project free of supply-chain responsibility for a compiled binary. Alternative approaches (shipping our own compiled shim, shell scripts with `curl`, bundling Node) all reintroduce the exact concern @jacksteamdev raised.
 
-### D3. Port binding: configurable default `127.0.0.1:27125` with fallback
+### D3. Port binding: configurable default `127.0.0.1:27200` with fallback
 
-**Decision:** Default port `27125` (one above Local REST API's `27124`, to avoid transient collision during migration). On `EADDRINUSE`, try `27126…27130`. Override configurable in settings. Bind to loopback only; spec-mandated Origin validation blocks DNS-rebinding vectors.
+**Decision:** Default port `27200`. On `EADDRINUSE`, try `27201…27205`. Override configurable in settings. Bind to loopback only; spec-mandated Origin validation blocks DNS-rebinding vectors.
 
-**Rationale:** Deterministic defaults + graceful fallback + explicit escape hatch.
+**Rationale:** `27200` stays inside the "Obsidian range" (27xxx) without colliding with any known Obsidian ecosystem port: `27124` (Local REST API, also used by `dsebastien/obsidian-cli-rest`), `27125` (`rygwdn/obsidian-mcp-plugin`), `3001` (`aaronsb/obsidian-mcp-plugin`). An initial choice of `27125` was rejected after discovering the rygwdn collision during competitive research — users installing both plugins, or migrating from rygwdn, would face EADDRINUSE on the default. `27200` is first-hit-safe across the landscape as of 2026-04.
 
 ### D4. Migration: opt-in modal with config rewrite + binary cleanup
 
@@ -72,6 +72,30 @@ The following decisions were made during brainstorming and are recorded here wit
 
 **Rationale:** The existing mock has proven sufficient for integration tests (see `status.integration.test.ts`, command-permissions 35-way regression). Incremental extension preserves continuity. ArkType schemas on all tool I/O catch drift between mock and real API.
 
+### D6. Bearer token UI: hybrid — password-style field plus per-client copy-config
+
+**Decision:** Settings UI exposes a single password-style field for the bearer token with Show/Hide toggle, Copy button, and Regenerate button. Alongside, three per-client "Copy config" shortcuts (Claude Desktop, Claude Code, Cursor/Cline/Continue) produce a fully-formed entry ready to paste.
+
+**Rationale:** The MCP+Obsidian audience is developer-leaning and benefits from direct access to the token (curl testing, MCP Inspector, custom clients). A password-style default + explicit Show toggle mirrors modern API-key UIs (OpenAI, Anthropic) and avoids accidental disclosure in screenshots. The per-client buttons cover the happy path without hiding the token from users who want to see it.
+
+### D7. Claude Desktop setup UX: active Node.js detection plus opt-in `mcp-remote` pre-warm
+
+**Decision:** At first setup (and on a "Verify again" action), the plugin runs `node --version` silently and shows the detection outcome in the "Claude Desktop integration" section of settings. A separate opt-in button labelled "Pre-warm mcp-remote (~30s, downloads ~5MB)" triggers `npx -y mcp-remote@latest --help` to populate the npm cache. When Node is missing, the section shows an actionable message linking to `nodejs.org` plus a "Verify again" button.
+
+**Rationale:** Detection is pure added value — catches roughly 90% of user-side friction at setup time without any network side effect and without reaching beyond a harmless read of the environment. The pre-warm, by contrast, does have a real footprint (network + npm cache + time), so it is kept explicit and opt-in. This splits the passive/active trade-off cleanly.
+
+### D8. Embedding model surface: single model at 0.4.0, second model in 0.5.0
+
+**Decision:** 0.4.0 ships with `Xenova/all-MiniLM-L6-v2` as the only supported embedding model. No model selector in the UI at this release. 0.5.0 adds `Xenova/bge-small-en-v1.5` as an opt-in alternative behind an advanced setting, with a one-time re-index flow prompted via modal ("Upgrade to higher-quality embeddings? Requires re-index — about 15 min for a 5k-note vault.").
+
+**Rationale:** bge-small-en-v1.5 offers a 3-5% MTEB uplift over MiniLM — measurable on benchmarks, imperceptible on typical Obsidian queries. Adding a model selector at 0.4.0 inflates the test matrix, adds UI choice surface, and expands an already-heavy release scope (20-tool port + HTTP + semantic + migration + client config + store submission). The 0.5.0 upgrade flow is a clean incremental story; one-time re-indexing for a quality upgrade is an established pattern in similar tools.
+
+### D9. Semantic indexing cadence: per-change debounced default, opt-in low-power mode
+
+**Decision:** The default indexing mode is event-driven: the vault watcher listens for `modify`/`create`/`delete`, enqueues the affected file, and processes it after 2 seconds of inactivity for that file. Re-embedding is chunk-delta-only (unchanged chunks of a modified note are not re-embedded; chunk identity is a content hash). A setting **Low-power indexing mode** (off by default) switches to a 5-minute polling loop that batches all files with `mtime > lastIndexTime`.
+
+**Rationale:** The target audience's principal use pattern is iterative writing followed by immediate MCP query ("Claude, elaborate on what I just wrote"). Low edit-to-query latency matters more than power consumption for this workload. The debounce already filters the "save every few seconds while editing" burst into a single embedding job per file. The low-power mode is a minority-case override for users on battery or who prefer predictable, bursty CPU activity.
+
 ## Architecture
 
 ### Deployment topology
@@ -82,9 +106,9 @@ BEFORE (0.3.x)
     Claude Code     →  [stdio]  →  mcp-server binary  →  [HTTPS 27124]  →  Local REST API  →  Obsidian
 
 AFTER (0.4.0)
-    Claude Desktop  →  [stdio]  →  npx mcp-remote  →  [HTTP 27125/mcp]  ┐
-    Claude Code     →  [HTTP 27125/mcp]  ───────────────────────────────┤→  MCP Connector plugin  →  Obsidian
-    Cursor/Cline    →  [HTTP 27125/mcp]  ───────────────────────────────┘    (in-process)
+    Claude Desktop  →  [stdio]  →  npx mcp-remote  →  [HTTP 27200/mcp]  ┐
+    Claude Code     →  [HTTP 27200/mcp]  ───────────────────────────────┤→  MCP Connector plugin  →  Obsidian
+    Cursor/Cline    →  [HTTP 27200/mcp]  ───────────────────────────────┘    (in-process)
     Continue/others
 ```
 
@@ -135,7 +159,7 @@ Node `http` built-in (no Express, no new framework dependency). Instantiated in 
 ```
 plugin.onload()
   ├─ generate bearer token if absent → data.json
-  ├─ bind 127.0.0.1:27125 (fallback 27126-27130 on EADDRINUSE)
+  ├─ bind 127.0.0.1:27200 (fallback 27201-27205 on EADDRINUSE)
   ├─ http.createServer((req, res) => middleware(req, res))
   ├─ new McpServer(...) + StreamableHTTPServerTransport
   └─ register tools via ToolRegistry
@@ -157,20 +181,59 @@ Single function, roughly 30 LOC. Order:
 ### Port fallback
 
 ```
-const PORT_RANGE = [27125, 27126, 27127, 27128, 27129, 27130];
+const PORT_RANGE = [27200, 27201, 27202, 27203, 27204, 27205];
 ```
 
 If all taken, show an actionable Notice and expose a manual port field in settings.
 
-### Client config generation
+### Settings UI: access control and client config
 
-Three UI sections, each with a "Copy config" button:
+The Access Control section surfaces the bearer token directly (D6) alongside three per-client shortcut buttons:
 
-- **Claude Desktop** — `{ "command": "npx", "args": ["-y", "mcp-remote", "http://127.0.0.1:27125/mcp", "--header", "Authorization: Bearer …"] }`. UI note: "Requires Node.js. Check with `node --version`."
-- **Claude Code CLI** — `{ "type": "http", "url": "http://127.0.0.1:27125/mcp", "headers": { "Authorization": "Bearer …" } }`.
-- **Other clients (Cursor, Cline, Continue, Windsurf, VS Code)** — `{ "type": "streamable-http", "url": …, "headers": … }`. Per-client notes cover naming variants (`streamableHttp` vs `streamable-http`).
+```
+Access Control
+  API key: [••••••••••••••••••] [👁 Show]  [📋 Copy]  [🔄 Regenerate]
+
+  Quick setup for clients:
+    [📋 Copy Claude Desktop config]
+    [📋 Copy Claude Code config]
+    [📋 Copy Cursor / Cline / Continue config]
+```
+
+The API key field is password-style by default. "Show" toggles to plaintext. "Regenerate" opens a confirm modal ("This invalidates the current token — all MCP clients need updated config").
+
+Config shapes produced by each button:
+
+- **Claude Desktop** — `{ "command": "npx", "args": ["-y", "mcp-remote", "http://127.0.0.1:27200/mcp", "--header", "Authorization: Bearer …"] }`.
+- **Claude Code CLI** — `{ "type": "http", "url": "http://127.0.0.1:27200/mcp", "headers": { "Authorization": "Bearer …" } }`.
+- **Other clients (Cursor, Cline, Continue, Windsurf, VS Code)** — `{ "type": "streamable-http", "url": …, "headers": … }`. Per-client inline notes cover naming variants (`streamableHttp` vs `streamable-http`).
 
 **Auto-write Claude Desktop config** — opt-in toggle, default OFF. When ON, port changes or token rotations automatically rewrite the entry in `claude_desktop_config.json`. Default OFF avoids surprising changes to user-managed files.
+
+### Claude Desktop integration setup
+
+A dedicated "Claude Desktop integration" section in settings handles the Node.js prerequisite (D7):
+
+```
+Claude Desktop integration
+  ✓ Node.js v22.3.0 detected                 [Verify again]
+  ☐ mcp-remote not cached — [Pre-warm now] (optional, ~30s, ~5MB download)
+```
+
+If Node is missing:
+
+```
+Claude Desktop integration
+  ✗ Node.js not found. Required for Claude Desktop bridge.
+    → Install from nodejs.org                 [Verify again]
+```
+
+Behavior:
+
+- **Detection** runs automatically on plugin load and on "Verify again". Implementation: spawn `node --version` via `child_process.exec` (Obsidian plugins have Node integration); cache result for the session. Read-only, no network.
+- **Pre-warm** is user-initiated. Runs `npx -y mcp-remote@latest --help` and shows progress. On success, flips the checkbox to "✓ mcp-remote cached (version …)". On failure, shows an actionable error (network issue, permissions). Running the same command again is idempotent.
+
+The pre-warm is purely a UX smoothing step for Claude Desktop's first invocation of the bridge — `mcp-remote` is installed via `npx` at runtime regardless, but pre-warming avoids the 20-60s first-run delay the user would otherwise see when launching Claude Desktop for the first time after setup.
 
 ### Token rotation UX
 
@@ -236,9 +299,8 @@ The competitive differentiator. Only in-process plugin with native semantic sear
 ### Stack
 
 - **`@xenova/transformers`** (Transformers.js) — ONNX runtime in JS/WASM. Battle-tested, runs in Node/Electron.
-- **Default model:** `Xenova/all-MiniLM-L6-v2` — 384-dim, ~25MB quantized. Universal baseline.
-- **Alternative model** (settings, advanced): `Xenova/bge-small-en-v1.5` — 384-dim, ~35MB, better MTEB scores.
-- **Storage:** binary flat file `{vault}/.obsidian/plugins/mcp-tools-istefox/embeddings.bin` (sequential Float32) + separate index JSON `embeddings.index.json` for `{chunkId → {filePath, offset, heading}}`. No SQLite.
+- **Model at 0.4.0 (single):** `Xenova/all-MiniLM-L6-v2` — 384-dim, ~25MB quantized. Universal baseline. No model selector in 0.4.0 (D8). `Xenova/bge-small-en-v1.5` is deferred to 0.5.0 behind an advanced setting with a one-time re-index flow.
+- **Storage:** binary flat file `{vault}/.obsidian/plugins/mcp-tools-istefox/embeddings.bin` (sequential Float32) + separate index JSON `embeddings.index.json` for `{chunkId → {filePath, offset, heading, contentHash}}`. No SQLite. The `contentHash` supports chunk-delta re-embedding under live mode (D9).
 
 ### Model distribution
 
@@ -250,20 +312,48 @@ Heading-section chunks (H1/H2), with a 512-token / 64-overlap sliding window fal
 
 ### Indexing pipeline
 
+Two modes, selected in settings (D9). Default is **Live**.
+
+**Live mode (default)** — event-driven, per-change debounced:
+
 ```
-SemanticIndexer
+SemanticIndexer (live)
   ├─ on plugin enable with native search ON:
   │    schedule full index build (debounced, idle-triggered)
   ├─ on vault file change (app.vault.on "modify"/"create"/"delete"):
-  │    enqueue affected file for re-chunk + re-embed
-  │    process queue with 2s debounce + rate limit
+  │    enqueue affected file for re-chunk
+  │    process queue after 2s inactivity for that file
+  ├─ on re-chunk:
+  │    compute contentHash per chunk; re-embed only chunks whose
+  │    hash changed (chunk-delta). Untouched chunks keep existing
+  │    embeddings.
   ├─ on embedding done:
-  │    append to embeddings.bin, update index JSON
+  │    append/update embeddings.bin, update index JSON
   └─ on plugin disable:
        flush queue, close files
 ```
 
-Estimate for a 5000-note vault: ~10-15 min background on modern CPU. Incremental updates < 500ms per file.
+**Low-power mode (opt-in)** — interval polling:
+
+```
+SemanticIndexer (low-power)
+  ├─ every 5 minutes: scan app.vault for files with mtime > lastIndexTime
+  ├─ batch re-chunk + re-embed affected files (chunk-delta as above)
+  └─ single write back to embeddings.bin + index JSON per batch
+```
+
+Settings snippet:
+
+```
+Semantic search
+  Indexing mode:
+    (•) Live (responsive, recommended)
+    ( ) Low-power (re-index every 5 min, saves battery)
+
+  ☑ Unload model when idle (60s)   ← independent, additional power saver
+```
+
+Estimate for a 5000-note vault, first-time full index: ~10-15 min background on modern CPU (mode-independent). Incremental updates in live mode: < 500ms per file due to chunk-delta. Low-power batches are bursty but coalesce consecutive edits.
 
 ### Query pipeline
 
@@ -490,14 +580,6 @@ Prudent estimate. Compressible to 6-7 weeks with focused execution; 10 weeks inc
 6. `0.4.0` accepted in the official community plugin store.
 7. Link in the `jacksteamdev/obsidian-mcp-tools` README obtained (jacksteamdev's stated condition).
 8. At least five pieces of community feedback within two weeks post-release (adoption proxy).
-
-## Open questions for review
-
-1. Should the bearer token be surfaced as a single value in the UI, or presented only through per-client "Copy config" buttons? Latter reduces accidental disclosure; former matches user mental model of "API key" better.
-2. Default port `27125` vs something more disambiguating (e.g., `8484`). `27125` is adjacent to Local REST API's `27124`, pro: mnemonic grouping; con: more likely to collide if user migrates rapidly.
-3. Should we bundle `mcp-remote` installation detection and offer to run `npx -y mcp-remote@latest --help` once at setup to pre-warm the npm cache and confirm Node.js is present? Tradeoff: nicer UX vs. plugin reaching into user environment.
-4. Local embeddings model selection: expose both MiniLM-L6-v2 and bge-small-en-v1.5 from day 1, or ship only MiniLM and add bge later? The latter reduces the "too many settings" surface for 0.4.0.
-5. Semantic re-index on every file change vs. on an interval? Per-change is more responsive; interval is kinder on battery. A debounce covers most cases — is that enough?
 
 ## References
 
