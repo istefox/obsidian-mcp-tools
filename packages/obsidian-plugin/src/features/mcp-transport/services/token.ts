@@ -7,9 +7,6 @@ import { TOKEN_BYTE_LENGTH } from "../constants";
  * Converts 32 bytes of random data to base64url encoding for use in HTTP
  * Authorization headers.
  *
- * Args:
- *   None
- *
  * Returns:
  *   A base64url-encoded string of at least 32 characters.
  */
@@ -20,9 +17,10 @@ export function generateToken(): string {
 /**
  * Compare two bearer tokens using constant-time comparison.
  *
- * Uses crypto.timingSafeEqual to prevent timing attacks. Length check
- * is performed first to avoid calling timingSafeEqual with mismatched
- * lengths (which would throw).
+ * Uses crypto.timingSafeEqual to prevent timing attacks. Both inputs are
+ * converted to UTF-8 buffers first; their byte lengths are compared before
+ * the constant-time check, because String.prototype.length counts UTF-16
+ * code units and diverges from Buffer byteLength for multi-byte characters.
  *
  * Args:
  *   a: First token string to compare.
@@ -32,11 +30,11 @@ export function generateToken(): string {
  *   true if both tokens are identical, false otherwise.
  *
  * Raises:
- *   None (safe to call with arbitrary length mismatches).
+ *   None (safe to call with arbitrary inputs, including multi-byte strings).
  */
 export function compareTokens(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
   const aBuf = Buffer.from(a);
   const bBuf = Buffer.from(b);
+  if (aBuf.byteLength !== bBuf.byteLength) return false;
   return timingSafeEqual(aBuf, bBuf);
 }

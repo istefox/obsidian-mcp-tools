@@ -32,4 +32,15 @@ describe("compareTokens", () => {
   test("returns false for empty vs nonempty", () => {
     expect(compareTokens("", generateToken())).toBe(false);
   });
+
+  test("returns false for inputs with different byte lengths but equal String.length (UTF-8 regression)", () => {
+    // 'é' is 2 bytes in UTF-8 but 1 char in JS String.length.
+    // Both inputs have String.length === 4, but byte lengths 5 and 4.
+    // Regression: earlier implementation compared String.length, which let
+    // this case through the guard and crashed in timingSafeEqual.
+    const a = "é" + "a".repeat(3); // 4 chars, 5 bytes
+    const b = "a".repeat(4);       // 4 chars, 4 bytes
+    expect(a.length).toBe(b.length);
+    expect(compareTokens(a, b)).toBe(false);
+  });
 });
