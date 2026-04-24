@@ -3,6 +3,64 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0-alpha.1] — 2026-04-24
+
+### Added — Phase 1 infrastructure foundation (HTTP-embedded pivot)
+
+First alpha of the 0.4.0 architecture: the plugin now hosts an
+in-process HTTP MCP server. No external binary. Not yet a drop-in
+replacement for 0.3.x — only one tool (`get_server_info`) is
+registered. Tool migration lands in 0.4.0-alpha.2 (Phase 2).
+
+- **Streamable HTTP transport** (MCP spec 2025-06-18) on
+  `127.0.0.1:27200` (fallback 27201-27205). Bind is loopback only.
+- **Middleware chain**: method/path allow-list (POST/GET on `/mcp`
+  and `/mcp/*`), Origin validation against loopback regex
+  (anti-DNS-rebinding per spec), Bearer token auth with
+  `crypto.timingSafeEqual` (UTF-8 byte-length safe).
+- **Bearer token** generated at first load, persisted in
+  `data.json` at `mcpTransport.bearerToken`. Rotatable from
+  Settings → MCP Connector → Access Control.
+- **`ToolRegistry` ported** from `packages/mcp-server` to
+  `packages/obsidian-plugin/src/features/mcp-transport/services/`.
+  Same ArkType-based registration, same error formatting. 17
+  existing tests migrated 1:1.
+- **Smoke tool `get_server_info`** returns plugin version +
+  transport identifier. Useful to verify the chain end-to-end with
+  `bun run inspector` or `curl`.
+- **Plugin lifecycle integration**: `onload` starts the HTTP
+  server and MCP service; `onunload` tears down cleanly. Start
+  failure surfaces as an Obsidian Notice and logs via the shared
+  logger; the rest of the plugin loads anyway.
+- **Settings UI — Access Control section**: password-style token
+  field with Show/Hide/Copy/Regenerate. Regenerate prompts for
+  confirm, rotates the token, restarts the transport.
+
+### Known limitations
+
+- Only `get_server_info` is reachable via MCP. The 19 vault tools
+  land in 0.4.0-alpha.2.
+- No per-client "Copy config" helpers yet (Phase 4).
+- No semantic search yet (Phase 3).
+- Migration modal for 0.3.x users lands in Phase 4.
+- No automated UI tests; the settings component is smoke-tested
+  manually via `bun run link` into a test vault.
+
+### Testing summary
+
+244 unit + integration tests pass across the plugin. Middleware
+chain, auth primitives, origin validation, port fallback, HTTP
+server lifecycle, and MCP tool registration all covered. Manual
+end-to-end with MCP Inspector / Claude Code pending as the first
+community smoke test on this alpha.
+
+### References
+
+- Design: `docs/design/2026-04-24-http-embedded-design.md`
+- Phase 1 plan: `docs/plans/0.4.0-phase-1-infrastructure.md`
+- Upstream context: jacksteamdev/obsidian-mcp-tools#79
+- Installer regression fixed in the same cycle: #3
+
 ## [0.3.5] — 2026-04-23
 
 ### Fixed
