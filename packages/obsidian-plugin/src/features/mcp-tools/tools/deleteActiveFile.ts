@@ -7,7 +7,9 @@ export const deleteActiveFileSchema = type({
 }).describe("Deletes the currently active note from the vault.");
 
 export type DeleteActiveFileContext = {
-  arguments: Record<string, never>;
+  // `object` (not `Record<string, never>`) to match the ToolRegistry
+  // constraint which uses `object` for no-arg tools (see toolRegistry.ts).
+  arguments: object;
   app: App;
 };
 

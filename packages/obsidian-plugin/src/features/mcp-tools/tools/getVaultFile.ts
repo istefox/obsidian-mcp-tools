@@ -119,14 +119,7 @@ export async function getVaultFileHandler(ctx: GetVaultFileContext): Promise<{
   }
 
   const file = abstract as TFile;
-  // Use the TFile extension property when available; fall back to extracting
-  // from the path string so the function works with both real TFile objects
-  // and the mock implementation used in tests.
-  const ext =
-    ("extension" in file
-      ? (file.extension as string)
-      : file.path.split(".").pop() ?? ""
-    ).toLowerCase();
+  const ext = file.extension.toLowerCase();
 
   const mimeEntry = MIME_BY_EXT.get(ext);
 
