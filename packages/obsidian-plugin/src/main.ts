@@ -30,6 +30,11 @@ import {
 } from "./features/mcp-transport";
 import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
 import {
+  setup as semanticSearchSetup,
+  teardown as semanticSearchTeardown,
+  type SemanticSearchState,
+} from "./features/semantic-search";
+import {
   loadLocalRestAPI,
   loadSmartSearchAPI,
   loadTemplaterAPI,
@@ -55,6 +60,8 @@ export default class McpToolsPlugin extends Plugin {
   };
 
   mcpTransportState?: McpTransportState;
+
+  semanticSearchState?: SemanticSearchState;
 
   getLocalRestApiKey(): string | undefined {
     return this.localRestApi.plugin?.settings?.apiKey;
@@ -249,6 +256,17 @@ export default class McpToolsPlugin extends Plugin {
     } else {
       new Notice(`MCP Connector: ${mcpResult.error}`);
       logger.error("MCP transport setup failed", { error: mcpResult.error });
+    }
+
+    // 0.4.0 semantic search — Phase 3 scaffolding (no-op provider).
+    // Full pipeline lands in T2-T15 of the Phase 3 plan.
+    const semanticResult = await semanticSearchSetup(this);
+    if (semanticResult.success) {
+      this.semanticSearchState = semanticResult.state;
+    } else {
+      logger.error("Semantic search setup failed", {
+        error: semanticResult.error,
+      });
     }
 
     await setupMcpServerInstall(this);
@@ -461,6 +479,10 @@ export default class McpToolsPlugin extends Plugin {
     if (this.mcpTransportState) {
       await mcpTransportTeardown(this.mcpTransportState);
       this.mcpTransportState = undefined;
+    }
+    if (this.semanticSearchState) {
+      await semanticSearchTeardown(this.semanticSearchState);
+      this.semanticSearchState = undefined;
     }
     this.localRestApi.api?.unregister();
   }
