@@ -1,0 +1,94 @@
+import { describe, expect, test, beforeEach } from "bun:test";
+import { getVaultFileHandler, getVaultFileSchema } from "./getVaultFile";
+import {
+  mockApp,
+  resetMockVault,
+  setMockFile,
+  setMockMetadata,
+} from "$/test-setup";
+
+beforeEach(() => resetMockVault());
+
+describe("get_vault_file tool", () => {
+  test("schema declares the tool name", () => {
+    expect(getVaultFileSchema.get("name")?.toString()).toContain(
+      "get_vault_file",
+    );
+  });
+
+  test("returns markdown content as text by default", async () => {
+    setMockFile("Notes/a.md", "# Hello");
+    const result = await getVaultFileHandler({
+      arguments: { path: "Notes/a.md" },
+      app: mockApp(),
+    });
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+    expect(result.content[0].text).toBe("# Hello");
+  });
+
+  test("returns JSON shape when format=json with frontmatter+tags", async () => {
+    setMockFile("a.md", "---\ntags: [foo]\n---\n# Body");
+    setMockMetadata("a.md", {
+      frontmatter: { tags: ["foo"] },
+      headings: [{ heading: "Body", level: 1, line: 3 }],
+    });
+    const result = await getVaultFileHandler({
+      arguments: { path: "a.md", format: "json" },
+      app: mockApp(),
+    });
+    const parsed = JSON.parse(result.content[0].text as string);
+    expect(parsed.path).toBe("a.md");
+    expect(parsed.frontmatter).toEqual({ tags: ["foo"] });
+    expect(parsed.tags).toEqual(["foo"]);
+  });
+
+  test("returns image content block for .png file", async () => {
+    setMockFile("img/pic.png", "fake-png-bytes");
+    const result = await getVaultFileHandler({
+      arguments: { path: "img/pic.png" },
+      app: mockApp(),
+    });
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("image");
+    // base64 of "fake-png-bytes"
+    expect((result.content[0] as { data: string }).data).toBeDefined();
+    expect((result.content[0] as { mimeType: string }).mimeType).toBe(
+      "image/png",
+    );
+  });
+
+  test("returns audio content block for .mp3 file", async () => {
+    setMockFile("audio/song.mp3", "fake-mp3-bytes");
+    const result = await getVaultFileHandler({
+      arguments: { path: "audio/song.mp3" },
+      app: mockApp(),
+    });
+    expect(result.content[0].type).toBe("audio");
+    expect((result.content[0] as { mimeType: string }).mimeType).toBe(
+      "audio/mpeg",
+    );
+  });
+
+  test("returns JSON metadata when binary type unsupported (e.g. .pdf)", async () => {
+    setMockFile("doc/file.pdf", "fake-pdf-bytes");
+    const result = await getVaultFileHandler({
+      arguments: { path: "doc/file.pdf" },
+      app: mockApp(),
+    });
+    // Unsupported binary returns text content describing the file
+    expect(result.content[0].type).toBe("text");
+    const parsed = JSON.parse(result.content[0].text as string);
+    expect(parsed.path ?? parsed.filename).toBe("doc/file.pdf");
+    expect(parsed.hint).toBeDefined();
+  });
+
+  test("returns error when path not found", async () => {
+    const result = await getVaultFileHandler({
+      arguments: { path: "missing.md" },
+      app: mockApp(),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/not found/i);
+  });
+});
