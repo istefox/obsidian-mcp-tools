@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-25 (handoff pre-switch terminale: kitty → Warp).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-04-25 pomeriggio (sessione T23+T24+CI Node 24 bump).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
 
@@ -8,19 +8,23 @@
 
 ## 🚦 Quick Start — apertura sessione (Warp o qualsiasi terminale)
 
-**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-alpha.1**. Ultimo commit pushato: `28c95d2`.
+**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-alpha.2** (rilasciata 2026-04-25 pomeriggio). Ultimo commit pushato: `eba555c`.
 
 **Stato dei due track:**
 - `main` = **0.3.7** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md).
-- `feat/http-embedded` = **0.4.0-alpha.1**, infrastruttura HTTP completa + 19/19 tool portati nei file, **registrazione finale e release alpha.2 da fare**.
+- `feat/http-embedded` = **0.4.0-alpha.2**, **Phase 1 + Phase 2 entrambe complete** — infrastruttura HTTP + tutti e 20 i tool registrati e funzionanti via `tools/list`+`tools/call` end-to-end. CI Actions tutte su Node 24 (validate con tag throwaway 2026-04-25).
 
 **Prossimi passi concreti (in ordine):**
 
-1. **T23 — registrare i 20 tool in `packages/obsidian-plugin/src/features/mcp-tools/index.ts`** (T19 ne ha già registrato uno; gli altri 19 hanno solo `export const fooSchema` + `fooHandler`). Il piano di riferimento è `docs/plans/0.4.0-phase-2-tool-migration.md`, task T23. Approccio: una singola Edit al `registerTools()`, importazioni esplicite, registrazione `tools.register(schema, handler)` per ognuno.
-2. **T24 — release `0.4.0-alpha.2`**: bump `bun run version prerelease` (o manuale su `package.json` + `manifest.json` + `versions.json`), prepend CHANGELOG entry con la lista dei tool ora esposti, commit + tag + push, verifica CI verde.
-3. **Smoke test manuale 0.4.0-alpha.2 in vault TEST** — vedi § "Test 0.4.0-alpha in Obsidian" in basso.
+1. **Smoke test manuale 0.4.0-alpha.2 in vault TEST** — vedi § "Test 0.4.0-alpha in Obsidian" in basso. Validare end-to-end con `bun run inspector` o con Claude Desktop+`mcp-remote` che i 20 tool risp ondono dal vault reale, non solo nel mock di test.
+2. **Phase 3 — semantic search nativo** (Transformers.js + MiniLM-L6-v2). Plan da scrivere in `docs/plans/0.4.0-phase-3-semantic-search.md`. Riferimento: § Semantic search del design `docs/design/2026-04-24-http-embedded-design.md`. Effetto: `search_vault_smart` smette di dipendere da Smart Connections plugin e diventa autosufficiente; SC rimane come fallback opzionale.
+3. **Phase 4 — migration UX + community store update**: migration modal per utenti 0.3.x, Node.js detection + `mcp-remote` pre-warm, "Copy config" generators, cut **0.4.0 stabile** quando smoke test + Phase 3 verificati.
 
-**Cosa NON è ancora stato fatto:** Phase 3 (semantic search nativo con Transformers.js + MiniLM), Phase 4 (migration UX, Node.js detection, copy-config UI, store submission update, cut 0.4.0 stabile).
+**Cosa è stato chiuso nella sessione 2026-04-25 pomeriggio (4 commit):**
+- `4cfda35` fix(mcp-tools): `string.url` → `string` in `tools/fetch.ts` — bug silente: `ArkType string.url` usa un predicato non convertibile in JSON Schema, `registry.list()` crashava, SDK MCP rispondeva `tools: []`. Trovato con un probe schema-by-schema.
+- `2712367` feat(mcp-tools): T23 registrazione di tutti e 20 i tool in `mcp-tools/index.ts` + 2 type tweak (`deleteActiveFile.ts` `Record<string,never>` → `object`, `getVaultFile.ts` semplificazione `extension`).
+- `27311e5` 0.4.0-alpha.2 (version bump 3 file + CHANGELOG entry, CI release.yml verde in 44s).
+- `eba555c` chore(ci): bump GitHub Actions a Node 24 — `actions/checkout@v6`, `softprops/action-gh-release@v3`, `actions/attest-build-provenance@v4`, `actions/github-script@v9`. Validato con tag throwaway `ci-validate-2026-04-25` (CI verde in 46s, tag/release cancellati).
 
 **Routine remote attive (cloud Anthropic, indipendenti dal terminale):**
 - `trig_015yL8D3VNao7nhRKjBu95ZK` — Lun 07:00 UTC, monitor PR store #11919
@@ -29,7 +33,7 @@
 Tre routine duplicate disabilitate il 2026-04-25 (vedi `https://claude.ai/code/routines`).
 
 **Primo prompt suggerito alla nuova sessione:**
-> "Leggi `handoff.md` e `CLAUDE.md` in repo root, poi apri `docs/plans/0.4.0-phase-2-tool-migration.md` alla task T23. Stiamo proseguendo Phase 2 della migrazione HTTP-embedded: serve registrare i 20 tool nel `mcp-tools/index.ts` e poi rilasciare 0.4.0-alpha.2. Conferma di aver capito lo stato e procedi con T23."
+> "Leggi `handoff.md` e `CLAUDE.md` in repo root. Stiamo entrando in Phase 3 della migrazione HTTP-embedded: semantic search nativo con Transformers.js + MiniLM. Apri `docs/design/2026-04-24-http-embedded-design.md` § Semantic search e `docs/plans/0.4.0-phase-3-semantic-search.md` (se esiste). Prima però conferma se lo smoke test 0.4.0-alpha.2 in vault TEST è stato eseguito — se no, propone di farlo prima."
 
 ---
 
@@ -55,17 +59,18 @@ Tre routine duplicate disabilitate il 2026-04-25 (vedi `https://claude.ai/code/r
 - **Display name:** "MCP Connector".
 - **Branch attivi (vedi § Branch protection in CLAUDE.md):**
   - `main` = **0.3.7** stabile (PROTETTO, intoccabile)
-  - `feat/http-embedded` = **0.4.0-alpha.1** dev (Phase 1 done, Phase 2 22/24 done)
+  - `feat/http-embedded` = **0.4.0-alpha.2** dev (Phase 1 + Phase 2 done — 20 tool registrati e funzionanti, CI su Node 24)
 - **Remote setup canonico:**
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git`
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, dichiarato unmaintained 2026-04-24)
-- **Ultimo commit pushato su `feat/http-embedded` (2026-04-25):** **`28c95d2`** (`feat(mcp-tools): port execute_obsidian_command with permission + rate limit`).
+- **Ultimo commit pushato su `feat/http-embedded` (2026-04-25 pomeriggio):** **`eba555c`** (`chore(ci): bump GitHub Actions to Node.js 24 runtime versions`). Tag `0.4.0-alpha.2` su `27311e5`.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
 | Versione | Data | Note |
 |---|---|---|
-| **`0.4.0-alpha.1`** | 2026-04-25 mattina | Pre-release sul branch `feat/http-embedded`. Phase 1 completa: HTTP server in-process, Bearer auth, Origin validation, ToolRegistry, smoke tool `get_server_info`, settings UI. Solo `get_server_info` esposto: 19 tool reali pronti nei file ma non ancora registrati (T23 pending). NON sostituisce 0.3.7 in produzione. |
+| **`0.4.0-alpha.2`** | 2026-04-25 pomeriggio | Pre-release sul branch `feat/http-embedded`. Phase 2 completa: tutti e 20 i tool registrati e funzionanti via Streamable HTTP transport (no binario, no Local REST API per il core path; `search_vault` degrada gracefully a Local REST API, `search_vault_smart` ancora dipende da Smart Connections finché Phase 3 non chiude). Include fix `string.url` → `string` in `tools/fetch.ts` (bug silente che azzerava `tools/list`). 351 test verdi. CI release.yml verde in 44s + tutte le GitHub Actions bumpate a Node 24 e validate (run separata 46s). |
+| **`0.4.0-alpha.1`** | 2026-04-25 mattina | Pre-release sul branch `feat/http-embedded`. Phase 1 completa: HTTP server in-process, Bearer auth, Origin validation, ToolRegistry, smoke tool `get_server_info`, settings UI. Solo `get_server_info` esposto: 19 tool reali pronti nei file ma non ancora registrati (T23 pending all'epoca). NON sostituisce 0.3.7 in produzione. |
 | **`0.3.7`** | 2026-04-24 | LATEST stable su `main`. Patch fix #71/#81 (block gap fix). Tag `0.3.7`, BRAT users sono qui. |
 | `0.3.6` | 2026-04-24 | Patch fix #71 (block reference patch gap). |
 | `0.3.5` | 2026-04-24 | Fix installer 404 (#3, @Metal0gic). Storia di rilascio "burn": lockfile drift causò release vuota, eliminata + tag re-emesso. |
@@ -77,7 +82,7 @@ Tre routine duplicate disabilitate il 2026-04-25 (vedi `https://claude.ai/code/r
 
 URL release: https://github.com/istefox/obsidian-mcp-connector/releases
 
-### Health (snapshot 2026-04-25, branch `feat/http-embedded`)
+### Health (snapshot 2026-04-25 pomeriggio, branch `feat/http-embedded`)
 | | |
 |---|---|
 | `bun run check` (4 package) | ✅ passa |
@@ -85,7 +90,8 @@ URL release: https://github.com/istefox/obsidian-mcp-connector/releases
 | Test mcp-server | ✅ legacy, ~152 pass — il package non viene shippato in 0.4.0 ma è vivo per `main` |
 | Plugin prod build | ✅ |
 | Server cross-compile | ⚠️ irrilevante per 0.4.0 (architettura HTTP-embedded elimina il binary) |
-| GitHub Actions release.yml | ✅ esercitata su 0.3.x; nuovo flusso 0.4.0 da validare al primo tag stabile |
+| GitHub Actions release.yml | ✅ esercitata su `0.4.0-alpha.2` (44s) + validazione separata Node 24 (46s, tag throwaway) |
+| GitHub Actions Node 24 bump | ✅ done — `checkout@v6`, `gh-release@v3`, `attest-build-provenance@v4`, `github-script@v9` (commit `eba555c`) |
 
 ### Funzionalità complete
 
@@ -320,7 +326,8 @@ In ordine cronologico inverso, con commit SHA. Il prefisso branch è esplicito q
 
 | Date approx | Lavoro | Commit/merge |
 |---|---|---|
-| 2026-04-25 mattina/pomeriggio | **Phase 2 batches B3+B4 (`feat/http-embedded`)** — port di 8 tool a colpi di subagent paralleli: `list_obsidian_commands` (`25e10c4`), `get_vault_file` con binary blocks nativi (`41cee32`), `patch_active_file` (`1afe78d`), `search_vault_simple` (`8723483`), `fetch` con `requestUrl`+Turndown (`ec22778`), `patch_vault_file` (`adc4ea4`), `search_vault` con fallback Local REST API (`de87b3b`), `search_vault_smart` via Smart Connections API (`bfcf246`), `execute_template` via Templater API (`12bf469`), `execute_obsidian_command` con permission + rate limit (`28c95d2`). 351 test totali verdi. **T23 + T24 ancora pending** (registrazione + release alpha.2). | branch `feat/http-embedded` — vedi `git log feat/http-embedded ^main --oneline` |
+| 2026-04-25 pomeriggio | **Phase 2 finalizzazione + 0.4.0-alpha.2 + CI Node 24 bump (`feat/http-embedded`)** — sessione di chiusura Phase 2: (1) trovato bug silente in `tools/fetch.ts` con un probe schema-by-schema — `type("string.url")` di ArkType usa `predicate: isParsableUrl`, non convertibile in JSON Schema → `registry.list()` crashava, SDK MCP rispondeva `tools: []` (commit `4cfda35`); (2) **T23** registrazione di tutti e 20 i tool in `mcp-tools/index.ts` + 2 type tweak collaterali (`deleteActiveFile.ts` `Record<string,never>` → `object` per matchare il vincolo `ToolRegistry`, `getVaultFile.ts` semplificazione `extension`) (commit `2712367`); (3) **T24** release `0.4.0-alpha.2` — bump 3 file versione + CHANGELOG entry, commit + tag + push, CI release.yml verde in 44s (commit `27311e5`); (4) **CI Actions bump a Node 24**: `actions/checkout@v4 → @v6`, `softprops/action-gh-release@v1 → @v3`, `actions/attest-build-provenance@v2 → @v4`, `actions/github-script@v7 → @v9` per chiudere il deprecation warning Node 20; validato con tag throwaway `ci-validate-2026-04-25` (CI verde 46s, tag/release cancellati a fine validazione) (commit `eba555c`). 351 test verdi end-to-end. | branch `feat/http-embedded` — `4cfda35`, `2712367`, `27311e5`, `eba555c` |
+| 2026-04-25 mattina/pomeriggio | **Phase 2 batches B3+B4 (`feat/http-embedded`)** — port di 8 tool a colpi di subagent paralleli: `list_obsidian_commands` (`25e10c4`), `get_vault_file` con binary blocks nativi (`41cee32`), `patch_active_file` (`1afe78d`), `search_vault_simple` (`8723483`), `fetch` con `requestUrl`+Turndown (`ec22778`), `patch_vault_file` (`adc4ea4`), `search_vault` con fallback Local REST API (`de87b3b`), `search_vault_smart` via Smart Connections API (`bfcf246`), `execute_template` via Templater API (`12bf469`), `execute_obsidian_command` con permission + rate limit (`28c95d2`). 351 test totali verdi. **T23 + T24 chiusi nella sessione successiva** (vedi riga sopra). | branch `feat/http-embedded` — vedi `git log feat/http-embedded ^main --oneline` |
 | 2026-04-25 mattina | **Branch protection policy** scritta in `CLAUDE.md` § "Branch protection policy" + memory `feedback_main_branch_protection.md`. Hard rule: `main` resta su 0.3.7 finché Stefano non autorizza esplicitamente il bump a 0.4.0. | (parte della sessione `feat/http-embedded` notte) |
 | 2026-04-25 mattina | **Phase 2 batches B1+B2 (`feat/http-embedded`)** — port di 9 tool: `T3` (get_active_file exemplar), `T4` (update_active_file), `T5` (append_to_active_file), `T6` (patch_active_file helpers extraction), `T7` (delete_active_file), `T8` (show_file_in_obsidian), `T9` (list_vault_files), `T10`/`T11`/`T12`/`T13`/`T14`/`T15`. Helpers in `tools/services/patchHelpers.ts`. | branch `feat/http-embedded` |
 | 2026-04-24 → 2026-04-25 | **Phase 1 completa (`feat/http-embedded`, 0.4.0-alpha.1)** — infrastruttura HTTP-embedded end-to-end: Bearer token (UTF-8 safe `compareTokens`), Origin validation anti-DNS-rebinding, port binding 27200-27205 con EADDRINUSE fallback, middleware chain method+path allow-list, McpServer + StreamableHTTPServerTransport, ToolRegistry portato dal package server, smoke tool `get_server_info`, settings UI con AccessControlSection, plugin lifecycle setup/teardown, mock runtime esteso (`mockApp`, `setMockFile`, `setMockMetadata`, `setMockCommands`, `setMockRequestUrl`). Decisioni architetturali in `docs/design/2026-04-24-http-embedded-design.md`. Plan operativo in `docs/plans/0.4.0-phase-1-infrastructure.md`. | branch `feat/http-embedded` |
@@ -358,27 +365,24 @@ git log --oneline                       # tutti i commit
 
 ## 6. Cosa resta aperto
 
-In ordine di priorità per le prossime sessioni (focus assoluto: chiudere Phase 2 e shippare 0.4.0-alpha.2):
+In ordine di priorità per le prossime sessioni (focus: smoke test alpha.2 → Phase 3 semantic search):
 
-### A — 🔴 Phase 2 finalizzazione (blocking per ogni altra cosa)
+### A — 🔴 Smoke test 0.4.0-alpha.2 in vault TEST/Lab (blocking per pianificare Phase 3)
 
-- **T23: registrazione tool in `mcp-tools/index.ts`** — i 19 tool portati nel batch hanno solo `export const fooSchema` + `fooHandler`, non sono ancora connessi al `tools.register()`. Eccezione: `T19 execute_obsidian_command` ha già aggiunto la propria registrazione (vedi `28c95d2`). Approccio:
-  1. Importare i 19 schema/handler restanti in `packages/obsidian-plugin/src/features/mcp-tools/index.ts`.
-  2. Per ognuno: `tools.register(fooSchema, async (ctx) => fooHandler({ ...ctx, app: context.app, plugin: context.plugin }))`.
-  3. Type-check (`bun run check`) e test (`cd packages/obsidian-plugin && bun test`).
-  4. Commit conventional: `feat(mcp-tools): register all 20 tools in plugin transport`.
-- **T24: release `0.4.0-alpha.2`** — bump version + tag + push. Procedura:
-  1. CHANGELOG entry: lista dei 20 tool ora esposti via HTTP + nota che è ancora alpha (manca smoke test in vault reale, manca semantic embedding nativo).
-  2. `bun run version prerelease` (oppure manuale: aggiornare `package.json`, `manifest.json`, `versions.json`).
-  3. `git tag 0.4.0-alpha.2 && git push origin feat/http-embedded --tags`.
-  4. CI ribuilda; verificare run verde.
-- **Smoke test 0.4.0-alpha.2 in vault TEST** — vedi § "Test 0.4.0-alpha in Obsidian" in fondo a questo file.
+Phase 1+2 sono code-complete e CI-verified, ma manca la validazione end-to-end in un vault Obsidian reale con un client MCP esterno (Claude Desktop / `bun run inspector` / `mcp-remote`). Procedura: § F in basso. Cosa verificare:
+1. `tools/list` ritorna i 20 tool (non `[]` — il fix `string.url` previene quel caso, ma serve conferma runtime).
+2. Bearer auth + Origin validation funzionano con i client reali (Claude Desktop tramite `npx mcp-remote`).
+3. I tool che usano API plugin (`execute_template` → Templater, `search_vault_smart` → Smart Connections) caricano correttamente le dipendenze reattive in un vault con quei plugin installati.
+4. `execute_obsidian_command` rispetta il gate `command-permissions` con il modal vero (non mock).
 
-### B — Phase 3: semantic search nativo
+Eventuali bug trovati → 0.4.0-alpha.3 prima di entrare in Phase 3.
 
-- **Plan**: da scrivere dopo che T23+T24 chiudono. Riferimento: § "Semantic search" del design `docs/design/2026-04-24-http-embedded-design.md`.
-- **Stack**: Transformers.js + MiniLM-L6-v2 (embedding model 22 MB), indexer con due modalità (live: re-embedding al `vault.modify`, low-power: opt-in batched).
-- **Effetto utente**: `search_vault_smart` smette di dipendere da Smart Connections plugin e diventa autosufficiente. Smart Connections rimane come opzione per chi lo usa già.
+### B — Phase 3: semantic search nativo (priorità top dopo lo smoke test)
+
+- **Plan da scrivere** in `docs/plans/0.4.0-phase-3-semantic-search.md`. Riferimento: § Semantic search del design `docs/design/2026-04-24-http-embedded-design.md` (decisioni D7-D9 sulla scelta di Transformers.js, MiniLM-L6-v2 single-model in 0.4.0, tri-state setting native/Smart Connections/auto, indexer live + low-power opt-in).
+- **Stack**: `@xenova/transformers` (Transformers.js, ONNX runtime WASM) + `Xenova/all-MiniLM-L6-v2` (384-dim, ~25MB quantized). Bundle plugin +~200KB per il runtime; il modello si scarica al primo uso e si persiste nella cartella plugin.
+- **Architettura**: `SemanticSearchProvider { search(query, opts) }` interfaccia con due implementazioni — `NativeProvider` (Transformers.js + indexer locale) e `SmartConnectionsProvider` (wrapper esistente). `search_vault_smart` dispatcha via la setting tri-state. Indexer in `features/semantic-search/`: due modalità (live: re-embedding su `vault.modify`/`vault.create`/`vault.delete`; low-power: opt-in batched in idle hook).
+- **Effetto utente**: `search_vault_smart` autosufficiente — Smart Connections diventa fallback opzionale, non dipendenza.
 
 ### C — Phase 4: migration UX + community store update
 
