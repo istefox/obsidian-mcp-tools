@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import {
+  ApiNoteJson,
   ApiStatusResponse,
   ApiVaultFileResponse,
 } from "./plugin-local-rest-api";
@@ -150,6 +151,129 @@ describe("ApiVaultFileResponse — issue #41 (frontmatter.tags optional)", () =>
     const result = ApiVaultFileResponse({
       ...incomplete,
       frontmatter: {},
+    });
+    expect(result).toBeInstanceOf(type.errors);
+  });
+});
+
+describe("ApiNoteJson — issue #81 (array-valued frontmatter keys)", () => {
+  const baseNote = {
+    content: "# Heading\n\nBody text.",
+    path: "Notes/example.md",
+    stat: { ctime: 1700000000000, mtime: 1700000000000, size: 42 },
+    tags: ["#todo"],
+  };
+
+  test("accepts a note whose frontmatter has an array-valued `aliases` key", () => {
+    // The original bug: Obsidian Flavored Markdown routinely declares
+    // `aliases` as a YAML sequence. A Record<string, string> shape
+    // rejected every such note at the validation boundary, making
+    // `get_vault_file(format: "json")` unusable. Record<string, unknown>
+    // accepts the array verbatim.
+    const result = ApiNoteJson({
+      ...baseNote,
+      frontmatter: { aliases: ["Example", "ex"] },
+    });
+    expect(result).toMatchObject({
+      frontmatter: { aliases: ["Example", "ex"] },
+    });
+  });
+
+  test("accepts the full OFM convention set (aliases + tags + up + down)", () => {
+    // Representative real-world frontmatter from an OFM-heavy vault:
+    // linked-note keys (`up`, `down`, `next`, `previous`) carrying
+    // wikilink arrays, `tags` as an array, scalar title. All of these
+    // must validate in a single pass; this test pins that intent.
+    const ofmFrontmatter = {
+      title: "Example",
+      aliases: ["Example", "ex"],
+      tags: ["topic/example", "source/user"],
+      up: ["[[Parent Note]]"],
+      down: ["[[Child A]]", "[[Child B]]"],
+      next: ["[[Next Note]]"],
+      previous: ["[[Previous Note]]"],
+      cssclasses: ["wide-layout"],
+    };
+    const result = ApiNoteJson({
+      ...baseNote,
+      frontmatter: ofmFrontmatter,
+    });
+    expect(result).toMatchObject({ frontmatter: ofmFrontmatter });
+  });
+
+  test("accepts frontmatter with mixed scalar and array values", () => {
+    // Backwards compatibility: a plain string-valued key must still
+    // pass alongside array-valued keys. YAML permits both on the same
+    // document and Obsidian emits both routinely.
+    const result = ApiNoteJson({
+      ...baseNote,
+      frontmatter: {
+        title: "Plain scalar",
+        aliases: ["alt"],
+        created: "2026-04-24",
+      },
+    });
+    expect(result).toMatchObject({
+      frontmatter: {
+        title: "Plain scalar",
+        aliases: ["alt"],
+        created: "2026-04-24",
+      },
+    });
+  });
+
+  test("accepts frontmatter with non-string scalars (number, boolean, null)", () => {
+    // YAML allows these; Obsidian passes them through unchanged. The
+    // wrapper must not reject them — the caller (often an LLM agent)
+    // can inspect types on the receiving side.
+    const result = ApiNoteJson({
+      ...baseNote,
+      frontmatter: {
+        priority: 3,
+        pinned: true,
+        archived: false,
+        parent: null,
+      },
+    });
+    expect(result).toMatchObject({
+      frontmatter: {
+        priority: 3,
+        pinned: true,
+        archived: false,
+        parent: null,
+      },
+    });
+  });
+
+  test("accepts frontmatter with a nested object value", () => {
+    // YAML mapping as a frontmatter value. Uncommon but legal, and
+    // some plugins (e.g. custom metadata plugins) do emit them.
+    const result = ApiNoteJson({
+      ...baseNote,
+      frontmatter: {
+        links: { github: "https://example.com", wiki: "[[Home]]" },
+      },
+    });
+    expect(result).toMatchObject({
+      frontmatter: {
+        links: { github: "https://example.com", wiki: "[[Home]]" },
+      },
+    });
+  });
+
+  test("accepts an empty frontmatter object", () => {
+    const result = ApiNoteJson({ ...baseNote, frontmatter: {} });
+    expect(result).toMatchObject({ frontmatter: {} });
+  });
+
+  test("still rejects a response missing a required core field", () => {
+    // Sanity check: the frontmatter relaxation has not accidentally
+    // widened the overall schema. `content`, `path`, `stat`, `tags`
+    // remain load-bearing.
+    const { content: _content, ...incomplete } = baseNote;
+    const result = ApiNoteJson({
+      ...incomplete,
+      frontmatter: { aliases: ["ex"] },
     });
     expect(result).toBeInstanceOf(type.errors);
   });

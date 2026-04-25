@@ -61,6 +61,53 @@ community smoke test on this alpha.
 - Upstream context: jacksteamdev/obsidian-mcp-tools#79
 - Installer regression fixed in the same cycle: #3
 
+## [0.3.7] — 2026-04-24
+
+### Fixed
+- **`patch_active_file` / `patch_vault_file` block-in-table silent
+  corruption** — `Create-Target-If-Missing` now defaults per target
+  type: `true` for `heading` and `frontmatter` (upstream 0.2.x compat,
+  unchanged), `false` for `block`. `markdown-patch`'s block indexer
+  does not search inside markdown table cells, so a block `^id` sitting
+  in a cell was unresolvable; under the previous single `true` default,
+  the Local REST API silently appended the caller's `content` at EOF
+  and returned HTTP 200. Retries compounded the damage. Block targets
+  now fail loud on unresolved ids so callers can decide the recovery
+  path explicitly. Heading + frontmatter behavior is preserved.
+  Closes the block-in-table half of upstream issue #71 (heading half
+  was fixed in 0.3.0); reported by @folotp.
+
+### Changed
+- Updated the JSDoc on `ApiPatchParameters.createTargetIfMissing` and
+  the runtime `.describe()` string so model callers see the new
+  per-target-type default contract.
+- Added 6 regression tests in `patchVaultFile.test.ts` pinning the
+  per-target-type defaults (block → false, heading → true,
+  frontmatter → true) against accidental regression, plus opt-in
+  overrides for block targets (explicit `true` and `false`) and
+  heading-target strict-mode (explicit `false`).
+
+## [0.3.6] — 2026-04-24
+
+### Fixed
+- `get_vault_file(format: "json")` failed ArkType validation on any
+  note whose frontmatter contained a list-valued key — `aliases`,
+  `tags`, `up`, `down`, `next`, `previous`, `cssclasses`, etc. are
+  routinely arrays in Obsidian Flavored Markdown. The `ApiNoteJson`
+  schema declared `frontmatter: Record<string, string>`, so Local
+  REST API's correct array payload was rejected at the wrapper
+  boundary with `frontmatter.aliases must be a string (was an
+  object)`, making the `json` format effectively unusable on
+  realistic vaults. Widened the shape to `Record<string, unknown>`
+  to match YAML/OFM semantics. Added 7 regression tests in
+  `plugin-local-rest-api.test.ts` covering the canonical aliases
+  repro, the full OFM convention set (aliases + tags + up + down +
+  next + previous + cssclasses), mixed scalar+array frontmatter,
+  non-string scalars (number, boolean, null), nested mapping
+  values, empty frontmatter, and a sanity check that the top-level
+  schema was not incidentally widened. Fixes upstream issue #81,
+  diagnosed by @folotp.
+
 ## [0.3.5] — 2026-04-23
 
 ### Fixed
