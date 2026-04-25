@@ -3,6 +3,89 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0-alpha.2] — 2026-04-25
+
+### Added — Phase 2 tool migration (HTTP-embedded pivot)
+
+Feature parity with `0.3.7` is reached: all 20 tools now run inside the
+Obsidian plugin process and respond over the Streamable HTTP transport
+introduced in `0.4.0-alpha.1`. No external binary, no Local REST API
+required for the core path.
+
+- **14 vault tools** (`get_active_file`, `update_active_file`,
+  `append_to_active_file`, `patch_active_file`, `delete_active_file`,
+  `show_file_in_obsidian`, `list_vault_files`, `get_vault_file`,
+  `create_vault_file`, `append_to_vault_file`, `patch_vault_file`,
+  `delete_vault_file`, `search_vault_simple`, plus `search_vault`
+  which gracefully degrades to Local REST API when installed)
+  migrated to native Obsidian API calls (`app.vault.*`,
+  `app.workspace.*`, `app.metadataCache.*`, `app.fileManager.*`).
+- **2 command tools** (`list_obsidian_commands`,
+  `execute_obsidian_command`) migrated; the existing
+  `command-permissions` policy module (deny-by-default, two-phase
+  mutex, soft rate limit, presets) is preserved intact.
+- **1 web tool** (`fetch`) migrated to use Obsidian's `requestUrl`
+  instead of Node `fetch` — the community-plugin ESLint rule that
+  previously required a `/skip` exemption is now satisfied.
+- **1 template tool** (`execute_template`) bypasses Local REST API
+  and calls Templater's API directly via the plugin's existing
+  `loadTemplaterAPI` reactive loader.
+- **1 semantic tool** (`search_vault_smart`) bypasses Local REST API
+  and calls Smart Connections directly via the plugin's existing
+  `loadSmartSearchAPI` reactive loader. v2 (`window.SmartSearch`)
+  and v3+ (`smartEnv.smart_sources`) backends both supported.
+
+### Fixed
+- **`fetch` schema crashed `tools/list`** — the `url` field used
+  ArkType's `string.url` shorthand, which is implemented as a
+  `predicate: isParsableUrl`. Predicates are not convertible to
+  JSON Schema, so `registry.list()` threw on the per-tool
+  `.toJsonSchema()` call and the MCP SDK swallowed the error,
+  responding with `tools: []`. Schema relaxed to `"string"`; URL
+  validity is enforced at runtime by `requestUrl()` and the
+  existing handler try/catch. Same pattern as the 0.3.x
+  `mcp-server` schema.
+
+### Changed
+- `RegisterToolsContext` carries `app: App` and
+  `plugin: McpToolsPlugin` references so handlers receive the
+  context they need without globals.
+- Mock runtime (`src/test-setup.ts`) extended with in-memory
+  vault, workspace, metadata, file manager, commands, and
+  `requestUrl` plumbing — `mockApp()`, `mockPlugin()`,
+  `setMockFile()`, `setMockMetadata()`, `setMockCommands()`,
+  `setMockRequestUrl()`, `getExecutedCommands()`,
+  `resetMockVault()`.
+- `services/patchHelpers.ts` extracted as a shared module for
+  `patch_active_file` and `patch_vault_file` — heading path
+  resolution, append-body normalization, block lookup against
+  `metadataCache.blocks`.
+
+### Known limitations remaining
+- No native semantic search yet — Phase 3 will add MiniLM
+  embeddings with a tri-state setting (native / Smart Connections
+  / auto).
+- No migration UX for 0.3.x users yet (Phase 4).
+- No per-client "Copy config" generators yet (Phase 4).
+- Local REST API still required for `search_vault` (DQL/JsonLogic);
+  the dependency becomes optional only when Phase 3 lands the
+  native semantic search.
+- Manual smoke test in a real vault not yet logged for this alpha.
+
+### Testing summary
+
+351 unit + integration tests pass across the plugin (up from 244 in
+`alpha.1`). End-to-end `mcpServer.test.ts` confirms `tools/list`
+exposes `get_server_info` plus the 19 ported tools, and `tools/call`
+dispatches to each registered handler.
+
+### References
+
+- Plan: `docs/plans/0.4.0-phase-2-tool-migration.md`
+- Design: `docs/design/2026-04-24-http-embedded-design.md`
+- Manual smoke runbook: `handoff.md` § F "Test 0.4.0-alpha in
+  Obsidian"
+
 ## [0.4.0-alpha.1] — 2026-04-24
 
 ### Added — Phase 1 infrastructure foundation (HTTP-embedded pivot)
