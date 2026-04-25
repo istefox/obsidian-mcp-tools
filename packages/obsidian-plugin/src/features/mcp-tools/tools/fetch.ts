@@ -13,7 +13,10 @@ const DEFAULT_MAX_LENGTH = 5000;
 export const fetchSchema = type({
   name: '"fetch"',
   arguments: {
-    url: type("string.url").describe("URL to fetch."),
+    // ArkType `string.url` uses the `isParsableUrl` predicate, which is not
+    // convertible to JSON Schema and would crash `tools/list`. URL validity
+    // is enforced at runtime by Obsidian's `requestUrl` (see handler).
+    url: type("string").describe("URL to fetch."),
     "format?": type('"markdown"|"html"').describe(
       "Response format. Default markdown (HTML→MD via Turndown).",
     ),
