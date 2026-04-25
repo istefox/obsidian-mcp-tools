@@ -5,6 +5,8 @@
  * Used by patch_active_file (T6) and patch_vault_file (T13).
  */
 
+import type { App, TFile } from "obsidian";
+
 export type PatchOperation = "append" | "prepend" | "replace";
 
 /**
@@ -152,3 +154,202 @@ export function findBlockPositionFromCache(
     endLine: entry.position.end.line,
   };
 }
+
+// === PatchArgs type and applyPatch function (shared by T6 and T13) ===
+
+export type PatchArgs = {
+  operation: PatchOperation;
+  targetType: "heading" | "block" | "frontmatter";
+  target: string;
+  content: string;
+  targetDelimiter?: string;
+  createTargetIfMissing?: boolean;
+};
+
+/**
+ * Apply a patch operation (append/prepend/replace) to a vault file using the
+ * native Obsidian API. Handles three target types:
+ *
+ * - **heading**: finds the section bounded by the target heading and the next
+ *   sibling/parent heading, then inserts or replaces content in that region.
+ *   If the heading is not found and `createTargetIfMissing` is true (default),
+ *   the content is appended at EOF.
+ * - **block**: looks up the block `^id` via metadataCache (preferred) or regex
+ *   fallback. Returns an error if not found and `createTargetIfMissing` is
+ *   false (the default for blocks — see upstream issue #71).
+ * - **frontmatter**: uses `app.fileManager.processFrontMatter` to mutate the
+ *   requested key according to the operation.
+ *
+ * Args:
+ *   app: Obsidian App instance.
+ *   file: The TFile to patch.
+ *   args: Patch parameters (operation, targetType, target, content, …).
+ *
+ * Returns:
+ *   An MCP-shaped result object. Sets `isError: true` on failure.
+ */
+export async function applyPatch(
+  app: App,
+  file: TFile,
+  args: PatchArgs,
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const targetDelimiter = args.targetDelimiter ?? "::";
+  // Default createTargetIfMissing: true for heading/frontmatter, false for block
+  // (see upstream issue #71 — block in table is not indexed by metadataCache).
+  const defaultCreate = args.targetType !== "block";
+  const createIfMissing = args.createTargetIfMissing ?? defaultCreate;
+
+  // ── frontmatter branch ──────────────────────────────────────────────────
+  if (args.targetType === "frontmatter") {
+    await app.fileManager.processFrontMatter(file, (fm) => {
+      const existing = fm[args.target];
+      if (args.operation === "replace") {
+        fm[args.target] = args.content;
+      } else if (args.operation === "append") {
+        fm[args.target] =
+          existing != null ? String(existing) + args.content : args.content;
+      } else {
+        // prepend
+        fm[args.target] =
+          existing != null ? args.content + String(existing) : args.content;
+      }
+    });
+    return { content: [{ type: "text", text: "File patched successfully" }] };
+  }
+
+  // ── heading / block branch — read raw content ────────────────────────
+  const rawContent = await app.vault.read(file);
+  const lines = rawContent.split("\n");
+
+  if (args.targetType === "heading") {
+    // Resolve partial leaf name to full hierarchical path so the lookup
+    // matches even when the heading is nested (e.g. "A" → "Top::A").
+    let resolvedTarget = args.target;
+    if (!args.target.includes(targetDelimiter)) {
+      const fullPath = resolveHeadingPath(rawContent, args.target, targetDelimiter);
+      if (fullPath) resolvedTarget = fullPath;
+    }
+
+    // Find the heading line by comparing the full path.
+    const targetParts = resolvedTarget.split(targetDelimiter);
+    const leafHeading = targetParts[targetParts.length - 1];
+    let headingLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+(.+)$/);
+      if (m && m[2].trim() === leafHeading) {
+        headingLine = i;
+        break;
+      }
+    }
+
+    if (headingLine === -1) {
+      // Heading not found — respect createTargetIfMissing.
+      if (!createIfMissing) {
+        return {
+          content: [{ type: "text", text: `Heading not found: ${args.target}` }],
+          isError: true,
+        };
+      }
+      // Append at EOF.
+      const body = normalizeAppendBody(args.content, args.operation);
+      await app.vault.modify(file, rawContent + body);
+      return { content: [{ type: "text", text: "File patched successfully" }] };
+    }
+
+    // Find the end of this heading's section: the next heading of same or
+    // higher level (lower number means higher in hierarchy), or EOF.
+    const headingLevel = (lines[headingLine].match(/^(#+)/))?.[1].length ?? 1;
+    let sectionEnd = lines.length; // exclusive index of last section line
+    for (let i = headingLine + 1; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s/);
+      if (m && m[1].length <= headingLevel) {
+        sectionEnd = i;
+        break;
+      }
+    }
+
+    // The section body is the lines between the heading and the next heading.
+    // We want to insert content just before sectionEnd (append) or just after
+    // headingLine (prepend) or replace the whole body (replace).
+    const body = normalizeAppendBody(args.content, args.operation);
+    let newLines: string[];
+    if (args.operation === "replace") {
+      newLines = [
+        ...lines.slice(0, headingLine + 1),
+        body,
+        ...lines.slice(sectionEnd),
+      ];
+    } else if (args.operation === "prepend") {
+      newLines = [
+        ...lines.slice(0, headingLine + 1),
+        body,
+        ...lines.slice(headingLine + 1),
+      ];
+    } else {
+      // append — insert before the next heading (sectionEnd)
+      newLines = [
+        ...lines.slice(0, sectionEnd),
+        body,
+        ...lines.slice(sectionEnd),
+      ];
+    }
+    await app.vault.modify(file, newLines.join("\n"));
+    return { content: [{ type: "text", text: "File patched successfully" }] };
+  }
+
+  // ── block branch ─────────────────────────────────────────────────────
+  const cache = app.metadataCache.getFileCache(file);
+  let blockPos = findBlockPositionFromCache(cache, args.target);
+
+  if (!blockPos) {
+    // Fallback: regex scan (doesn't work for blocks inside tables — #71).
+    blockPos = findBlockReferenceInContent(rawContent, args.target);
+  }
+
+  if (!blockPos) {
+    // Block not found — for blocks the default is fail-loud (createIfMissing=false).
+    if (!createIfMissing) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Block not found: ^${args.target} (unresolved — block may be inside a table, which is not indexed by Obsidian's metadataCache)`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    // Caller explicitly opted into createIfMissing — append at EOF.
+    const body = normalizeAppendBody(args.content, args.operation);
+    await app.vault.modify(file, rawContent + body);
+    return { content: [{ type: "text", text: "File patched successfully" }] };
+  }
+
+  // Apply operation to the block region.
+  const body = normalizeAppendBody(args.content, args.operation);
+  let newLines: string[];
+  if (args.operation === "replace") {
+    // Replace the block lines entirely (keeps the ^id marker on last line only
+    // if the new content doesn't already include it — here we strip the old
+    // marker and let the caller own the new content verbatim).
+    newLines = [
+      ...lines.slice(0, blockPos.startLine),
+      body,
+      ...lines.slice(blockPos.endLine + 1),
+    ];
+  } else if (args.operation === "prepend") {
+    newLines = [
+      ...lines.slice(0, blockPos.startLine),
+      body,
+      ...lines.slice(blockPos.startLine),
+    ];
+  } else {
+    // append — insert after the last line of the block
+    newLines = [
+      ...lines.slice(0, blockPos.endLine + 1),
+      body,
+      ...lines.slice(blockPos.endLine + 1),
+    ];
+  }
+  await app.vault.modify(file, newLines.join("\n"));
+  return { content: [{ type: "text", text: "File patched successfully" }] };
