@@ -1,5 +1,10 @@
 import { describe, expect, test, afterEach } from "bun:test";
+import type { App } from "obsidian";
+import type McpToolsPlugin from "$/main";
 import { createMcpService, destroyMcpService, type McpService } from "./mcpServer";
+
+const stubApp = {} as App;
+const stubPlugin = { manifest: { version: "0.4.0-alpha.1" } } as unknown as McpToolsPlugin;
 
 const active: McpService[] = [];
 afterEach(async () => {
@@ -8,7 +13,7 @@ afterEach(async () => {
 
 describe("createMcpService", () => {
   test("exposes a request handler compatible with StreamableHTTPServerTransport", async () => {
-    const svc = await createMcpService({ pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({ app: stubApp, plugin: stubPlugin, pluginVersion: "0.4.0-alpha.1" });
     active.push(svc);
     expect(typeof svc.handleRequest).toBe("function");
   });
@@ -17,7 +22,7 @@ describe("createMcpService", () => {
 describe("end-to-end: HTTP → McpServer", () => {
   test("tools/list responds with get_server_info registered", async () => {
     const { startHttpServer } = await import("./httpServer");
-    const svc = await createMcpService({ pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({ app: stubApp, plugin: stubPlugin, pluginVersion: "0.4.0-alpha.1" });
     active.push(svc);
 
     const server = await startHttpServer({
@@ -52,7 +57,7 @@ describe("end-to-end: HTTP → McpServer", () => {
 
   test("tools/call get_server_info returns health payload", async () => {
     const { startHttpServer } = await import("./httpServer");
-    const svc = await createMcpService({ pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({ app: stubApp, plugin: stubPlugin, pluginVersion: "0.4.0-alpha.1" });
     active.push(svc);
 
     const server = await startHttpServer({

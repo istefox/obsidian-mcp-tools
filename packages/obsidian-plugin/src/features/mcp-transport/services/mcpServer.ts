@@ -5,11 +5,15 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { App } from "obsidian";
+import type McpToolsPlugin from "$/main";
 import { ToolRegistryClass } from "./toolRegistry";
 import type { ToolRegistry } from "./toolRegistry";
 import { registerTools } from "$/features/mcp-tools";
 
 export type McpServiceConfig = {
+  app: App;
+  plugin: McpToolsPlugin;
   pluginVersion: string;
 };
 
@@ -58,7 +62,11 @@ export async function createMcpService(
   const registry = new ToolRegistryClass();
 
   // Register all plugin-side tools (get_server_info, …) into the registry.
-  await registerTools(registry, { pluginVersion: config.pluginVersion });
+  await registerTools(registry, {
+    app: config.app,
+    plugin: config.plugin,
+    pluginVersion: config.pluginVersion,
+  });
 
   // Wire the ArkType-based registry against the underlying SDK Server instance
   // so that tools/list and tools/call go through our registry (with boolean

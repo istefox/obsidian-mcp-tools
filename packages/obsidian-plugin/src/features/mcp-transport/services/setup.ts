@@ -1,4 +1,4 @@
-import type { Plugin } from "obsidian";
+import type McpToolsPlugin from "$/main";
 import { logger } from "$/shared";
 import {
   startHttpServer,
@@ -38,7 +38,7 @@ export type SetupResult =
  * Returns:
  *   SetupResult — success with the running state, or failure with an error message.
  */
-export async function setup(plugin: Plugin): Promise<SetupResult> {
+export async function setup(plugin: McpToolsPlugin): Promise<SetupResult> {
   try {
     const settings = ((await plugin.loadData()) ?? {}) as Record<
       string,
@@ -60,8 +60,11 @@ export async function setup(plugin: Plugin): Promise<SetupResult> {
       });
     }
 
-    const pluginVersion = plugin.manifest.version;
-    const mcp = await createMcpService({ pluginVersion });
+    const mcp = await createMcpService({
+      app: plugin.app,
+      plugin,
+      pluginVersion: plugin.manifest.version,
+    });
     const server = await startHttpServer({
       bearerToken,
       requestHandler: mcp.handleRequest,
@@ -69,7 +72,7 @@ export async function setup(plugin: Plugin): Promise<SetupResult> {
 
     logger.info("MCP Connector HTTP server listening", {
       port: server.port,
-      pluginVersion,
+      pluginVersion: plugin.manifest.version,
     });
 
     return { success: true, state: { server, mcp, bearerToken } };
