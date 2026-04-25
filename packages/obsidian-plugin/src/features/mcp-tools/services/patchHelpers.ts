@@ -353,3 +353,4 @@ export async function applyPatch(
   }
   await app.vault.modify(file, newLines.join("\n"));
   return { content: [{ type: "text", text: "File patched successfully" }] };
+}
