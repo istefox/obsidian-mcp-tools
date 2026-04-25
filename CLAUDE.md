@@ -13,7 +13,7 @@ Two shipping components glued together by the Local REST API plugin:
 
 Why the detour through Local REST API instead of reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the server invoke other Obsidian plugins (Templater, Smart Connections, Dataview) through their APIs.
 
-Current version: **0.2.27** (see root `package.json`). License: MIT.
+Current versions (2026-04-25): **`main` ships 0.3.7** (stable, 20 MCP tools, stdio+binary architecture as described above), **`feat/http-embedded` ships 0.4.0-alpha.1** (in-process HTTP server inside the plugin, no binary; see § Branch protection policy below). License: MIT.
 
 ### Fork status
 
@@ -28,7 +28,7 @@ Active branches as of 2026-04-25:
 | Branch | Version | Status | Use |
 |---|---|---|---|
 | `main` | **0.3.7** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
-| `feat/http-embedded` | **0.4.0-alpha.1** | Active development — Phase 1 infrastructure | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` |
+| `feat/http-embedded` | **0.4.0-alpha.1** | Active development — Phase 1 ✅ done, Phase 2 22/24 done (T23 registration + T24 alpha.2 release pending) | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` and `docs/plans/0.4.0-phase-2-tool-migration.md` |
 
 **Hard rules — apply unless Stefano explicitly authorizes the specific action:**
 
@@ -303,7 +303,7 @@ Items in flight, ordered by priority:
 2. **Phase 3 — Native semantic search** (`feat/http-embedded`): Transformers.js + MiniLM-L6-v2, indexer with live + low-power modes. See § Semantic search of the design doc.
 3. **Phase 4 — Migration UX, client config, polish, store submission update** (`feat/http-embedded`): migration modal for 0.3.x users, Node.js detection + `mcp-remote` pre-warm, three "Copy config" generators (Claude Desktop / Claude Code / Cursor-Cline-Continue), 0.4.0 stable cut.
 4. **Discord DM to @jacksteamdev**: only when the community store listing is live AND 0.4.0 ships HTTP. Carries a PR against `jacksteamdev/obsidian-mcp-tools` updating the README, per his stated conditions.
-5. **Weekly check on store PR #11919** automated via routine `trig_01Lpi3a8jHiisxjDN22D5FSX` (Mondays 09:00 Europe/Rome). Notifies on real activity, silent on quiet weeks.
+5. **Weekly check on store PR #11919** automated via routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Mondays 07:00 UTC = 09:00 Rome CEST / 08:00 Rome CET). Notifies on real activity, silent on quiet weeks. Three older overlapping routines (`trig_01Lpi3a8jHiisxjDN22D5FSX` weekly duplicate, `trig_011d3JKRDd5v2mvm5wJgyAfB` and `trig_01HnQUut4yNKn3NNMArJSkWH` daily duplicates) disabled 2026-04-25. The hourly issue #79 watcher (`trig_01Dx8sZTD78yBj7buuVYP9KE`) remains active for orthogonal scope.
 
 Items resolved and out of "pending":
 
