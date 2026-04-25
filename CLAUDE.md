@@ -17,7 +17,29 @@ Current version: **0.2.27** (see root `package.json`). License: MIT.
 
 ### Fork status
 
-Active work happens on the **`istefox/obsidian-mcp-tools`** fork (remote `myfork`). Upstream `jacksteamdev/obsidian-mcp-tools` is effectively dormant — treat it as frozen. For the list of open upstream items still relevant, see "Pending work" at the bottom; everything else has been landed locally and is visible in `git log`.
+Active work happens on the **`istefox/obsidian-mcp-connector`** fork. Upstream `jacksteamdev/obsidian-mcp-tools` was officially declared unmaintained on 2026-04-24 (see issue #79); the maintainer recommended migration to MCP over HTTP and offered to link the upstream README to any successor plugin that uses HTTP transport AND is published in the official Obsidian community store.
+
+### Branch protection policy (2026-04-25, set by Stefano)
+
+**`main` is the production-ready, user-facing branch — currently 0.3.7. Treat it as protected.**
+
+Active branches as of 2026-04-25:
+
+| Branch | Version | Status | Use |
+|---|---|---|---|
+| `main` | **0.3.7** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
+| `feat/http-embedded` | **0.4.0-alpha.1** | Active development — Phase 1 infrastructure | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` |
+
+**Hard rules — apply unless Stefano explicitly authorizes the specific action:**
+
+1. **Never merge** `feat/http-embedded` (or any experimental branch) **into `main`**. The merge to 0.4.0 happens only when Stefano gives explicit go-ahead, after Phase 2-3-4 are complete and feature parity with 0.3.x is verified.
+2. **Never force-push, rebase, or `reset --hard`** on `main` under any circumstance.
+3. **Never delete or overwrite tags** on the 0.3.x line (0.3.0 through 0.3.7).
+4. **Never delete the `0.3.x` GitHub releases** from the releases page.
+5. Bug fixes against 0.3.x are welcome — branch from `main`, PR, merge as 0.3.8 / 0.3.9 etc. This pattern preserves the stable line; it does not replace it.
+6. Merging `main` → `feat/http-embedded` (the inverse direction, to keep the dev branch aligned) is **safe and encouraged** — it does not touch `main`.
+
+If a request seems likely to compromise `main`'s functionality, stop and ask before acting.
 
 ## Stack
 
@@ -263,22 +285,31 @@ Active traps in the current tree. Historical bugs already fixed in the fork are 
 
 3. **`bun run check` at the repo root** (again) — shared-package changes cascade; both runtime packages must still type-check.
 
-## Project status
+## Project status (2026-04-25)
 
-Upstream `jacksteamdev/obsidian-mcp-tools` is effectively dormant since 2025-07 (maintainer call closed 2025-09-30, no new maintainer named, 23 issues + 23 PRs accumulated without merges as of 2026-04-11). Treat upstream as frozen. If you need a fix, expect to fork or cherry-pick.
+Upstream `jacksteamdev/obsidian-mcp-tools` is **officially unmaintained** (declared by @jacksteamdev on issue #79 the 2026-04-24). Recommendation: migrate to MCP over HTTP. Conditional offer: link to any plugin that uses HTTP transport AND is published in the Obsidian community store.
+
+Current state of the fork:
+
+- `main` at **0.3.7**, stable, on BRAT, fully functional (all 20 MCP tools). Protected per the policy above.
+- `feat/http-embedded` at **0.4.0-alpha.1**, Phase 1 of the HTTP-embedded pivot complete: in-process HTTP server, Bearer auth, Origin validation, ToolRegistry ported, smoke tool `get_server_info`, settings UI for token rotation. **Not user-usable yet** — only the smoke tool is exposed; the 19 real tools land in Phase 2.
+- Community plugin store submission `obsidianmd/obsidian-releases#11919` open since 2026-04-13, automated lint cleared on 2026-04-18, awaiting human review.
 
 ## Pending work
 
-Items still open upstream **and** not yet addressed in the fork:
+Items in flight, ordered by priority:
 
-1. **Maintainership stance** — decide between upstream contribution (needs jacksteamdev buy-in) or permanent fork-and-rebrand (rename package, change `manifest.json` → `id`). Currently the fork still ships under the original `obsidian-mcp-tools` id.
-2. **PR #44 (OAuth)** and **PR #20 (multi-vault)** — ambitious upstream PRs, not evaluated.
-3. **Binary content types for `get_vault_file`** — SDK 1.29.0 now supports native audio/image responses; commit `f6d004a` left a text short-circuit in place to keep the SDK bump's blast radius small. Can now be replaced.
-4. **Stale remote branches on `origin`** — only relevant if maintainership migrates.
+1. **Phase 2 — Tool handler migration** (`feat/http-embedded`, when Phase 1 alpha validation is done): port the 19 vault/search/template/command tools from `packages/mcp-server/` to `packages/obsidian-plugin/src/features/mcp-tools/`. Plan to be written after Phase 1 manual smoke test is logged.
+2. **Phase 3 — Native semantic search** (`feat/http-embedded`): Transformers.js + MiniLM-L6-v2, indexer with live + low-power modes. See § Semantic search of the design doc.
+3. **Phase 4 — Migration UX, client config, polish, store submission update** (`feat/http-embedded`): migration modal for 0.3.x users, Node.js detection + `mcp-remote` pre-warm, three "Copy config" generators (Claude Desktop / Claude Code / Cursor-Cline-Continue), 0.4.0 stable cut.
+4. **Discord DM to @jacksteamdev**: only when the community store listing is live AND 0.4.0 ships HTTP. Carries a PR against `jacksteamdev/obsidian-mcp-tools` updating the README, per his stated conditions.
+5. **Weekly check on store PR #11919** automated via routine `trig_01Lpi3a8jHiisxjDN22D5FSX` (Mondays 09:00 Europe/Rome). Notifies on real activity, silent on quiet weeks.
 
-(#29 Fase 1 + 2 + 3 all landed on `myfork/main` — see `git log --first-parent` for the four Fase 3 merge commits.)
+Items resolved and out of "pending":
 
-Everything else from prior planning docs has landed on `myfork/main` — check `git log` for SHAs.
+- ~~`#3` installer 404 — fixed in 0.3.5, validated by @Metal0gic.~~
+- ~~Maintainership stance — settled by jacksteamdev's 2026-04-24 declaration; we are the continuation maintainer.~~
+- ~~Binary content types for `get_vault_file` — landed in 0.3.4 (#59).~~
 
 ## References
 
