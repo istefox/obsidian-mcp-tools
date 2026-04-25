@@ -28,7 +28,7 @@ import {
 import { logger } from "./shared/logger";
 
 export default class McpToolsPlugin extends Plugin {
-  private localRestApi: Dependencies["obsidian-local-rest-api"] = {
+  localRestApi: Dependencies["obsidian-local-rest-api"] = {
     id: "obsidian-local-rest-api",
     name: "Local REST API",
     required: true,
