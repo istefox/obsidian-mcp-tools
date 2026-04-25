@@ -11,7 +11,17 @@ import {
   type PromptArgAccessor,
   type SearchResponse,
 } from "shared";
-import { handleCommandPermissionRequest } from "./features/command-permissions";
+import {
+  CommandPermissionModal,
+  createMutex,
+  decidePermission,
+  appendAuditEntry,
+  createRuntimeRateCounter,
+  isDestructiveCommand,
+  SOFT_RATE_LIMIT_PER_MINUTE,
+  handleCommandPermissionRequest,
+} from "./features/command-permissions";
+import type { CommandAuditEntry } from "./features/command-permissions";
 import { setup as setupCore } from "./features/core";
 import {
   setup as mcpTransportSetup,
@@ -27,6 +37,15 @@ import {
 } from "./shared";
 import { logger } from "./shared/logger";
 
+// Module-level singletons for the in-process permission-check path.
+// These parallel the module-level state in
+// `features/command-permissions/services/permissionCheck.ts` but are
+// used by `checkCommandPermission()` (the in-process MCP tool path)
+// rather than by the HTTP handler.
+const _inProcessSettingsMutex = createMutex();
+const _inProcessRateCounter = createRuntimeRateCounter();
+const IN_PROCESS_MODAL_TIMEOUT_MS = 30_000;
+
 export default class McpToolsPlugin extends Plugin {
   localRestApi: Dependencies["obsidian-local-rest-api"] = {
     id: "obsidian-local-rest-api",
@@ -39,6 +58,184 @@ export default class McpToolsPlugin extends Plugin {
 
   getLocalRestApiKey(): string | undefined {
     return this.localRestApi.plugin?.settings?.apiKey;
+  }
+
+  /**
+   * In-process permission check for the `execute_obsidian_command`
+   * MCP tool. Implements the same two-phase mutex policy as the HTTP
+   * handler in `features/command-permissions/services/permissionCheck.ts`
+   * but returns a plain `{ outcome, reason }` instead of writing to an
+   * Express response.
+   *
+   * Fast path: if the master toggle is off, or the command is already
+   * in the allowlist (allow) or not (deny), the decision is made under
+   * the settings mutex and returned immediately.
+   *
+   * Slow path: if the master toggle is on and the command is not in the
+   * allowlist, a modal is opened in the Obsidian UI. The method awaits
+   * the user's decision (or a 30-second timeout). Phase B then persists
+   * the outcome under the mutex.
+   *
+   * The runtime soft-rate-limit counter is updated on every call so the
+   * modal can display a warning banner when activity is high.
+   */
+  async checkCommandPermission(
+    commandId: string,
+  ): Promise<{ outcome: "allow" | "deny"; reason?: string }> {
+    // Record this call in the soft-rate counter (UI warning only —
+    // hard enforcement is the rate limiter in services/rateLimit.ts).
+    _inProcessRateCounter.record();
+
+    // Phase A: decide under the settings mutex.
+    type PhaseAResult =
+      | { kind: "done"; outcome: "allow" | "deny"; reason?: string }
+      | { kind: "needs-modal"; softRateLimit: number };
+
+    const phaseA: PhaseAResult = await _inProcessSettingsMutex.run(
+      async () => {
+        const settings = (await this.loadData()) ?? {};
+        const perms = settings.commandPermissions ?? {};
+
+        const pureOutcome = decidePermission(
+          commandId,
+          perms.enabled,
+          perms.allowlist,
+        );
+
+        const inAllowlist = (perms.allowlist ?? []).includes(commandId);
+        const needsModal =
+          perms.enabled === true &&
+          pureOutcome.decision === "deny" &&
+          !inAllowlist;
+
+        if (needsModal) {
+          return {
+            kind: "needs-modal",
+            softRateLimit: perms.softRateLimit ?? SOFT_RATE_LIMIT_PER_MINUTE,
+          };
+        }
+
+        // Fast path: write audit entry and return.
+        const auditEntry: CommandAuditEntry = {
+          timestamp: new Date().toISOString(),
+          commandId,
+          decision: pureOutcome.decision,
+          ...(pureOutcome.reason ? { reason: pureOutcome.reason } : {}),
+        };
+        settings.commandPermissions = {
+          ...perms,
+          recentInvocations: appendAuditEntry(
+            perms.recentInvocations,
+            auditEntry,
+          ),
+        };
+        await this.saveData(settings);
+
+        return {
+          kind: "done",
+          outcome: pureOutcome.decision,
+          reason: pureOutcome.reason,
+        };
+      },
+    );
+
+    if (phaseA.kind === "done") {
+      return { outcome: phaseA.outcome, reason: phaseA.reason };
+    }
+
+    // Slow path: open the confirmation modal.
+    const commandName = (
+      this.app as unknown as {
+        commands?: {
+          commands?: Record<string, { id: string; name: string }>;
+        };
+      }
+    ).commands?.commands?.[commandId]?.name;
+
+    const isDestructive = isDestructiveCommand(commandId, commandName);
+    const rateCount = _inProcessRateCounter.countInLastMinute();
+    const showRateWarning = rateCount > phaseA.softRateLimit;
+
+    const modal = new CommandPermissionModal(this.app, {
+      commandId,
+      commandName,
+      isDestructive,
+      showRateWarning,
+      rateCount,
+    });
+    modal.open();
+
+    // Race the modal decision against the timeout.
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    type ModalOutcome =
+      | { kind: "decided"; decision: import("./features/command-permissions").ModalDecision }
+      | { kind: "timeout" };
+
+    const outcome = await Promise.race<ModalOutcome>([
+      modal.waitForDecision().then((d) => ({ kind: "decided" as const, decision: d })),
+      new Promise<ModalOutcome>((resolve) => {
+        timeoutHandle = setTimeout(
+          () => resolve({ kind: "timeout" }),
+          IN_PROCESS_MODAL_TIMEOUT_MS,
+        );
+      }),
+    ]);
+
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (outcome.kind === "timeout") modal.close();
+
+    let finalOutcome: "allow" | "deny";
+    let finalReason: string | undefined;
+    let persistAllowlistEntry = false;
+
+    if (outcome.kind === "timeout") {
+      finalOutcome = "deny";
+      finalReason = `User did not respond within ${IN_PROCESS_MODAL_TIMEOUT_MS / 1000} seconds.`;
+    } else {
+      const d = outcome.decision;
+      if (d === "deny") {
+        finalOutcome = "deny";
+        finalReason = `User denied permission for command '${commandId}' via the confirmation modal.`;
+      } else {
+        finalOutcome = "allow";
+        if (d === "allow-always") persistAllowlistEntry = true;
+      }
+    }
+
+    // Phase B: persist outcome under the mutex.
+    await _inProcessSettingsMutex.run(async () => {
+      const settings = (await this.loadData()) ?? {};
+      const perms = settings.commandPermissions ?? {};
+
+      const auditEntry: CommandAuditEntry = {
+        timestamp: new Date().toISOString(),
+        commandId,
+        decision: finalOutcome,
+        ...(finalReason ? { reason: finalReason } : {}),
+      };
+
+      let updatedAllowlist: string[] | undefined;
+      if (
+        persistAllowlistEntry &&
+        !(perms.allowlist ?? []).includes(commandId)
+      ) {
+        updatedAllowlist = [...(perms.allowlist ?? []), commandId];
+      }
+
+      settings.commandPermissions = {
+        ...perms,
+        ...(updatedAllowlist !== undefined
+          ? { allowlist: updatedAllowlist }
+          : {}),
+        recentInvocations: appendAuditEntry(
+          perms.recentInvocations,
+          auditEntry,
+        ),
+      };
+      await this.saveData(settings);
+    });
+
+    return { outcome: finalOutcome, reason: finalReason };
   }
 
   async onload() {

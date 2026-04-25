@@ -2,6 +2,10 @@ import type { App } from "obsidian";
 import type McpToolsPlugin from "$/main";
 import type { ToolRegistry } from "$/features/mcp-transport/services/toolRegistry";
 import { getServerInfoHandler, getServerInfoSchema } from "./tools/getServerInfo";
+import {
+  executeObsidianCommandHandler,
+  executeObsidianCommandSchema,
+} from "./tools/executeObsidianCommand";
 
 export type RegisterToolsContext = {
   app: App;
@@ -15,5 +19,15 @@ export async function registerTools(
 ): Promise<void> {
   registry.register(getServerInfoSchema, async ({ arguments: args }) =>
     getServerInfoHandler({ arguments: args, pluginVersion: ctx.pluginVersion }),
+  );
+
+  registry.register(
+    executeObsidianCommandSchema,
+    async ({ arguments: args }) =>
+      executeObsidianCommandHandler({
+        arguments: args,
+        app: ctx.app,
+        plugin: ctx.plugin,
+      }),
   );
 }
