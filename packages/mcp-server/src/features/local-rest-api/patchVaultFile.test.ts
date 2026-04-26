@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildPatchHeaders,
+  coerceFrontmatterAppendArrayContent,
+  detectFrontmatterReplaceArrayMismatch,
   normalizeAppendBody,
   resolveHeadingPath,
 } from "./index";
@@ -335,5 +337,247 @@ describe("normalizeAppendBody — trailing newline safeguard", () => {
     // must not crash, and the `\n\n` is preserved semantics (a zero-length
     // payload followed by separation) rather than a special case.
     expect(normalizeAppendBody("", "append")).toBe("\n\n");
+  });
+});
+
+describe("detectFrontmatterReplaceArrayMismatch — issue #12 (silent array→scalar corruption)", () => {
+  const replaceTextMd = {
+    targetType: "frontmatter" as const,
+    operation: "replace" as const,
+  };
+
+  test("returns an error for an array-valued field with text/markdown replace", () => {
+    // The exact scenario folotp reported: tags is an array, the caller
+    // passes a plain string, the REST API would coerce array→scalar
+    // silently. We must reject so the corruption never reaches the file.
+    const message = detectFrontmatterReplaceArrayMismatch(
+      { tags: ["alpha", "beta"] },
+      replaceTextMd,
+      "tags",
+    );
+    expect(message).not.toBeNull();
+    expect(message).toContain('"tags"');
+    expect(message).toContain("application/json");
+  });
+
+  test("returns null when the field exists but is a scalar string", () => {
+    // Replacing a scalar with another scalar is the legitimate, safe case
+    // and must keep working with no extra friction.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { title: "old" },
+        replaceTextMd,
+        "title",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null when the field exists but is a number", () => {
+    // Numbers are scalars too; no array-shape concern.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { rating: 4 },
+        replaceTextMd,
+        "rating",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null when the field is absent (caller is creating it)", () => {
+    // If the field doesn't exist yet, there is no array structure to
+    // preserve; createTargetIfMissing handles the rest at the REST API.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { other: "value" },
+        replaceTextMd,
+        "tags",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null when frontmatter itself is undefined", () => {
+    // Defensive: pre-fetch may have failed (404, permission). We bail
+    // out cleanly instead of throwing.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(undefined, replaceTextMd, "tags"),
+    ).toBeNull();
+  });
+
+  test("returns null when frontmatter itself is null", () => {
+    // Same defensive case for null.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(null, replaceTextMd, "tags"),
+    ).toBeNull();
+  });
+
+  test("returns null when caller has explicitly opted into application/json", () => {
+    // Explicit JSON content type means the caller knows what they're
+    // doing — even if the resulting write reshapes the field, that's
+    // an explicit signal, not silent corruption.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { tags: ["alpha"] },
+        {
+          targetType: "frontmatter",
+          operation: "replace",
+          contentType: "application/json",
+        },
+        "tags",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null for non-replace operations (append/prepend handled elsewhere)", () => {
+    // The append/prepend silent-coercion class is handled by the
+    // coerceFrontmatterAppendArrayContent helper, not this one.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { tags: ["alpha"] },
+        { targetType: "frontmatter", operation: "append" },
+        "tags",
+      ),
+    ).toBeNull();
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { tags: ["alpha"] },
+        { targetType: "frontmatter", operation: "prepend" },
+        "tags",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null for non-frontmatter targets", () => {
+    // The wrapper only owns frontmatter shape preservation; heading and
+    // block patches go through their own (#71) safety nets.
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { tags: ["alpha"] },
+        { targetType: "heading", operation: "replace" },
+        "tags",
+      ),
+    ).toBeNull();
+    expect(
+      detectFrontmatterReplaceArrayMismatch(
+        { tags: ["alpha"] },
+        { targetType: "block", operation: "replace" },
+        "tags",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("coerceFrontmatterAppendArrayContent — issue #13 (500 on JSON scalar append)", () => {
+  const jsonAppend = {
+    targetType: "frontmatter" as const,
+    operation: "append" as const,
+    contentType: "application/json" as const,
+  };
+  const jsonPrepend = {
+    targetType: "frontmatter" as const,
+    operation: "prepend" as const,
+    contentType: "application/json" as const,
+  };
+
+  test('wraps a JSON string scalar in a single-element array on append', () => {
+    // The exact 500 case folotp reported: '"new-tag"' becomes '["new-tag"]'.
+    expect(coerceFrontmatterAppendArrayContent('"new-tag"', jsonAppend)).toBe(
+      '["new-tag"]',
+    );
+  });
+
+  test("wraps a JSON number scalar in a single-element array on append", () => {
+    expect(coerceFrontmatterAppendArrayContent("42", jsonAppend)).toBe("[42]");
+  });
+
+  test("wraps a JSON boolean scalar in a single-element array on append", () => {
+    expect(coerceFrontmatterAppendArrayContent("true", jsonAppend)).toBe(
+      "[true]",
+    );
+  });
+
+  test("wraps a JSON null scalar in a single-element array on append", () => {
+    // `null` is technically a scalar too — wrap it consistently rather
+    // than special-case (the user is explicit about wanting it appended).
+    expect(coerceFrontmatterAppendArrayContent("null", jsonAppend)).toBe(
+      "[null]",
+    );
+  });
+
+  test("wraps an object payload in a single-element array on append", () => {
+    // Same logic for an object payload — the REST API expects array form
+    // on the append/prepend op against an array-valued field.
+    expect(
+      coerceFrontmatterAppendArrayContent('{"key":"val"}', jsonAppend),
+    ).toBe('[{"key":"val"}]');
+  });
+
+  test("leaves a JSON array payload untouched on append", () => {
+    // Array form is the documented path; do not double-wrap.
+    expect(coerceFrontmatterAppendArrayContent('["new-tag"]', jsonAppend)).toBe(
+      '["new-tag"]',
+    );
+    expect(coerceFrontmatterAppendArrayContent("[1,2,3]", jsonAppend)).toBe(
+      "[1,2,3]",
+    );
+  });
+
+  test("applies the same wrap on prepend", () => {
+    // Prepend has the same scalar-vs-array constraint as append.
+    expect(coerceFrontmatterAppendArrayContent('"head"', jsonPrepend)).toBe(
+      '["head"]',
+    );
+  });
+
+  test("forwards malformed JSON untouched (lets the REST API surface its own error)", () => {
+    // Silently rewriting an invalid payload would just move the failure
+    // further down the stack and produce more confusing diagnostics.
+    expect(
+      coerceFrontmatterAppendArrayContent("not valid json", jsonAppend),
+    ).toBe("not valid json");
+    expect(coerceFrontmatterAppendArrayContent("{unbalanced", jsonAppend)).toBe(
+      "{unbalanced",
+    );
+  });
+
+  test("does not touch content when contentType is not application/json", () => {
+    // Plain text content (default) is not in scope — the REST API treats
+    // it differently and the auto-wrap reasoning does not apply.
+    expect(
+      coerceFrontmatterAppendArrayContent("plain text", {
+        targetType: "frontmatter",
+        operation: "append",
+      }),
+    ).toBe("plain text");
+  });
+
+  test("does not touch content on replace (replace ambiguity is handled elsewhere)", () => {
+    // Replace + scalar is intentionally NOT auto-wrapped — caller's
+    // intent is ambiguous (set scalar vs set single-element array). That
+    // ambiguity is handled by detectFrontmatterReplaceArrayMismatch.
+    expect(
+      coerceFrontmatterAppendArrayContent('"gamma"', {
+        targetType: "frontmatter",
+        operation: "replace",
+        contentType: "application/json",
+      }),
+    ).toBe('"gamma"');
+  });
+
+  test("does not touch content for non-frontmatter targets", () => {
+    // Heading / block content is markdown text, not JSON.
+    expect(
+      coerceFrontmatterAppendArrayContent('"foo"', {
+        targetType: "heading",
+        operation: "append",
+        contentType: "application/json",
+      }),
+    ).toBe('"foo"');
+    expect(
+      coerceFrontmatterAppendArrayContent('"foo"', {
+        targetType: "block",
+        operation: "prepend",
+        contentType: "application/json",
+      }),
+    ).toBe('"foo"');
   });
 });
