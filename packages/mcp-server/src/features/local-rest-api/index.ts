@@ -80,6 +80,62 @@ export function normalizeAppendBody(
 }
 
 /**
+ * Detect a "root-orphan" heading match: a non-H1 heading at the root of the
+ * file with no preceding H1 ancestor. The Local REST API's `markdown-patch`
+ * indexer keys headings by their full hierarchical path starting from H1,
+ * so a root-orphan H2/H3/… cannot be addressed by leaf name (or by any path
+ * the wrapper can synthesize). Under the upstream-compat default
+ * `Create-Target-If-Missing: true` for headings, the PATCH falls through to
+ * the silent-create branch and appends the caller's content at EOF, leaving
+ * the file with a duplicate heading and no in-place edit. Same family as
+ * the silent EOF append behaviour fixed for `block` targets in #71 (0.3.7).
+ *
+ * Returns an actionable error message string when the call must be rejected,
+ * or `null` when it is safe to proceed. Pure / synchronous so it can be unit
+ * tested without network. Closes the heading half of upstream
+ * `jacksteamdev/obsidian-mcp-tools#71`; reported by @folotp on the v0.3.7
+ * follow-up.
+ *
+ * Walks the document in order; the first match of `leafName` decides the
+ * outcome. If two headings share the same name and the earlier one is
+ * orphan-root, the call is rejected — that ambiguity is itself a footgun
+ * and a loud failure beats a coin-flip resolution.
+ */
+export function detectOrphanRootHeading(
+  content: string,
+  leafName: string,
+): string | null {
+  const lines = content.split("\n");
+  let hasH1Before = false;
+  for (const line of lines) {
+    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    if (!match) continue;
+    const level = match[1].length;
+    const headingText = match[2].trim();
+    if (level === 1) hasH1Before = true;
+    if (headingText === leafName) {
+      if (level > 1 && !hasH1Before) {
+        return (
+          `Heading "${leafName}" is a level-${level} heading at the root ` +
+          `of the file with no level-1 (\`#\`) parent. The Local REST API's ` +
+          `markdown-patch indexer keys headings by their full hierarchical ` +
+          `path starting from H1 and cannot resolve a root-orphan H${level}+ ` +
+          `by leaf name; the PATCH would silently fall through to ` +
+          `Create-Target-If-Missing and append the content at EOF, leaving ` +
+          `a duplicate heading and no in-place edit. Workarounds: ` +
+          `(1) add a level-1 heading at the top of the file before this ` +
+          `section so the indexer has a key to anchor against; or ` +
+          `(2) pass createTargetIfMissing=false on the call to make the ` +
+          `failure explicit instead of a silent EOF append.`
+        );
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
  * Parse markdown content and resolve a partial heading name to its full
  * hierarchical path as expected by the Local REST API `markdown-patch`
  * indexer (e.g. `"Section A"` → `"Top Level::Section A"`).
@@ -544,6 +600,15 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
           "/active/",
           { headers: { Accept: "text/markdown" } },
         );
+        // Reject root-orphan H2+ targets BEFORE handing off to the REST API:
+        // markdown-patch keys headings under H1 and a leaf-only path for an
+        // orphan H2/H3 hits the silent-create branch. Closes the heading
+        // half of upstream #71. See detectOrphanRootHeading for the full
+        // rationale and workarounds.
+        const orphanError = detectOrphanRootHeading(fileContent, args.target);
+        if (orphanError) {
+          throw new McpError(ErrorCode.InvalidParams, orphanError);
+        }
         const fullPath = resolveHeadingPath(
           fileContent,
           args.target,
@@ -940,6 +1005,13 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
           fileEndpoint,
           { headers: { Accept: "text/markdown" } },
         );
+        // See patch_active_file for the full rationale: reject root-orphan
+        // H2+ targets before they hit the silent-create branch upstream.
+        // Closes the heading half of upstream #71.
+        const orphanError = detectOrphanRootHeading(fileContent, args.target);
+        if (orphanError) {
+          throw new McpError(ErrorCode.InvalidParams, orphanError);
+        }
         const fullPath = resolveHeadingPath(
           fileContent,
           args.target,
