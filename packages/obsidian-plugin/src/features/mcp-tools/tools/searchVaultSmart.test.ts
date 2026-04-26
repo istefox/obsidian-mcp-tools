@@ -4,147 +4,163 @@ import {
   searchVaultSmartSchema,
 } from "./searchVaultSmart";
 import { mockApp, mockPlugin, resetMockVault } from "$/test-setup";
+import type {
+  SearchOpts,
+  SearchResult,
+  SemanticSearchProvider,
+} from "$/features/semantic-search";
 
 beforeEach(() => resetMockVault());
 
-describe("search_vault_smart tool", () => {
+type ProviderSpy = {
+  provider: SemanticSearchProvider;
+  calls: () => Array<{ query: string; opts: SearchOpts }>;
+};
+
+function fakeProvider(opts: {
+  ready?: boolean;
+  results?: SearchResult[];
+  throws?: Error;
+}): ProviderSpy {
+  const calls: Array<{ query: string; opts: SearchOpts }> = [];
+  const provider: SemanticSearchProvider = {
+    isReady: () => opts.ready ?? true,
+    search: async (query: string, sopts: SearchOpts) => {
+      calls.push({ query, opts: sopts });
+      if (opts.throws) throw opts.throws;
+      return opts.results ?? [];
+    },
+  };
+  return { provider, calls: () => [...calls] };
+}
+
+describe("search_vault_smart tool — dispatch contract (T11)", () => {
   test("schema declares the tool name", () => {
     expect(searchVaultSmartSchema.get("name")?.toString()).toContain(
       "search_vault_smart",
     );
   });
 
-  test("returns informative error when Smart Connections not loaded", async () => {
-    const plugin = mockPlugin({
-      smartSearch: undefined,
-    } as never);
-
+  test("returns informative error when the plugin has no semanticSearchState", async () => {
+    const plugin = mockPlugin({ semanticSearchState: undefined } as never);
     const result = await searchVaultSmartHandler({
-      arguments: { query: "machine learning notes" },
+      arguments: { query: "x" },
       app: mockApp(),
       plugin,
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(
-      /smart connections|not available|not installed/i,
-    );
+    expect(result.content[0]?.text).toMatch(/not initialized/i);
   });
 
-  test("delegates query to Smart Connections API", async () => {
-    const calls: Array<{ method: string; args: unknown[] }> = [];
-    const fakeSmartSearch = {
-      search: async (query: string, opts: unknown) => {
-        calls.push({ method: "search", args: [query, opts] });
-        return [
-          {
-            item: {
-              path: "Notes/ml.md",
-              breadcrumbs: "Notes > ml",
-              read: async () => "machine learning content",
-            },
-            score: 0.9,
-          },
-          {
-            item: {
-              path: "Notes/ai.md",
-              breadcrumbs: "Notes > ai",
-              read: async () => "artificial intelligence content",
-            },
-            score: 0.8,
-          },
-        ];
-      },
-    };
+  test("returns informative error when provider.isReady() is false", async () => {
+    const spy = fakeProvider({ ready: false });
     const plugin = mockPlugin({
-      smartSearch: fakeSmartSearch,
+      semanticSearchState: { provider: spy.provider },
     } as never);
-
     const result = await searchVaultSmartHandler({
-      arguments: { query: "machine learning" },
+      arguments: { query: "x" },
       app: mockApp(),
       plugin,
     });
-    expect(result.isError).toBeUndefined();
-    expect(calls.length).toBe(1);
-    expect(calls[0].args[0]).toBe("machine learning");
-    const data = JSON.parse(result.content[0].text as string);
-    expect(
-      Array.isArray(data) || (data.results && Array.isArray(data.results)),
-    ).toBe(true);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/not ready|reconfigure|provider/i);
+    // Provider was never called.
+    expect(spy.calls()).toHaveLength(0);
   });
 
-  test("respects folder include/exclude filters and limit", async () => {
-    const receivedOpts: unknown[] = [];
-    const fakeSmartSearch = {
-      search: async (
-        _q: string,
-        opts: {
-          filter?: {
-            exclude_key_starts_with_any?: string[];
-            key_starts_with_any?: string[];
-          };
-          limit?: number;
-        },
-      ) => {
-        receivedOpts.push(opts);
-        // Verify opts received
-        expect(opts).toBeDefined();
-        return [];
-      },
-    };
+  test("forwards query and mapped filter args to the provider", async () => {
+    const spy = fakeProvider({ ready: true, results: [] });
     const plugin = mockPlugin({
-      smartSearch: fakeSmartSearch,
+      semanticSearchState: { provider: spy.provider },
     } as never);
 
-    const result = await searchVaultSmartHandler({
+    await searchVaultSmartHandler({
       arguments: {
-        query: "x",
+        query: "machine learning",
         filter: {
-          excludeFolders: ["Archive"],
           includeFolders: ["Notes"],
+          excludeFolders: ["Archive"],
         },
         limit: 5,
       },
       app: mockApp(),
       plugin,
     });
-    expect(result.isError).toBeUndefined();
 
-    // Verify that filters and limit were forwarded to the API
-    const opts = receivedOpts[0] as Record<string, unknown>;
-    expect(opts.key_starts_with_any).toEqual(["Notes"]);
-    expect(opts.exclude_key_starts_with_any).toEqual(["Archive"]);
-    expect(opts.limit).toBe(5);
+    expect(spy.calls()).toHaveLength(1);
+    expect(spy.calls()[0]?.query).toBe("machine learning");
+    expect(spy.calls()[0]?.opts).toEqual({
+      folders: ["Notes"],
+      excludeFolders: ["Archive"],
+      limit: 5,
+    });
   });
 
-  test("returns results with path, score, breadcrumbs, and text", async () => {
-    const fakeSmartSearch = {
-      search: async () => [
-        {
-          item: {
-            path: "Zettelkasten/idea.md",
-            breadcrumbs: "Zettelkasten > idea",
-            read: async () => "The idea content",
-          },
-          score: 0.95,
-        },
-      ],
-    };
+  test("filter and limit are optional — provider receives undefined fields", async () => {
+    const spy = fakeProvider({ ready: true, results: [] });
     const plugin = mockPlugin({
-      smartSearch: fakeSmartSearch,
+      semanticSearchState: { provider: spy.provider },
+    } as never);
+
+    await searchVaultSmartHandler({
+      arguments: { query: "q" },
+      app: mockApp(),
+      plugin,
+    });
+
+    expect(spy.calls()[0]?.opts).toEqual({
+      folders: undefined,
+      excludeFolders: undefined,
+      limit: undefined,
+    });
+  });
+
+  test("serializes provider results into { results: [...] } JSON", async () => {
+    const sampleResults: SearchResult[] = [
+      {
+        filePath: "Notes/ml.md",
+        heading: "ML Notes",
+        excerpt: "ML Notes: introduction to gradient descent.",
+        score: 0.91,
+      },
+      {
+        filePath: "Notes/dl.md",
+        heading: null,
+        excerpt: "Deep learning summary.",
+        score: 0.84,
+      },
+    ];
+    const spy = fakeProvider({ ready: true, results: sampleResults });
+    const plugin = mockPlugin({
+      semanticSearchState: { provider: spy.provider },
     } as never);
 
     const result = await searchVaultSmartHandler({
-      arguments: { query: "idea" },
+      arguments: { query: "ml" },
       app: mockApp(),
       plugin,
     });
     expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text as string);
-    expect(data.results).toHaveLength(1);
-    expect(data.results[0].path).toBe("Zettelkasten/idea.md");
-    expect(data.results[0].score).toBe(0.95);
-    expect(data.results[0].text).toBe("The idea content");
-    expect(data.results[0].breadcrumbs).toBe("Zettelkasten > idea");
+    const parsed = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(parsed.results).toEqual(sampleResults);
+  });
+
+  test("provider.search throwing is surfaced as a tool-level error (no crash)", async () => {
+    const spy = fakeProvider({
+      ready: true,
+      throws: new Error("transient backend hiccup"),
+    });
+    const plugin = mockPlugin({
+      semanticSearchState: { provider: spy.provider },
+    } as never);
+
+    const result = await searchVaultSmartHandler({
+      arguments: { query: "boom" },
+      app: mockApp(),
+      plugin,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/Semantic search failed/);
+    expect(result.content[0]?.text).toMatch(/transient backend hiccup/);
   });
 });

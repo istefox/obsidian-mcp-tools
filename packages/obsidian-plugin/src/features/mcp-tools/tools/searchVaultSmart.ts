@@ -1,8 +1,6 @@
 import { type } from "arktype";
 import type { App } from "obsidian";
 import type McpToolsPlugin from "$/main";
-import type { SmartConnections } from "shared";
-import { mapFolderFilter } from "$/features/semantic-search/services/smartConnectionsProvider";
 
 export const searchVaultSmartSchema = type({
   name: '"search_vault_smart"',
@@ -23,7 +21,7 @@ export const searchVaultSmartSchema = type({
     ),
   },
 }).describe(
-  "Semantic search via the Smart Connections plugin. Requires Smart Connections to be installed and indexed. Returns notes ranked by similarity to the query.",
+  "Semantic search through the configured semantic search provider — native Transformers.js (default) or Smart Connections, per Settings → MCP Connector → Semantic Search. Returns notes ranked by similarity to the query.",
 );
 
 export type SearchVaultSmartContext = {
@@ -36,87 +34,68 @@ export type SearchVaultSmartContext = {
   plugin: McpToolsPlugin;
 };
 
-type SmartSearchResult = {
-  item: {
-    path: string;
-    breadcrumbs?: string;
-    read: () => Promise<string>;
-  };
-  score: number;
+type ToolResult = {
+  content: Array<{ type: "text"; text: string }>;
+  isError?: true;
 };
 
-/**
- * Retrieve the SmartSearch API from the plugin instance.
- *
- * The field `plugin.smartSearch` is injected by the feature setup
- * (and overridable in tests via `mockPlugin`). It holds a
- * `SmartConnections.SmartSearch`-compatible object. We read it through
- * an `unknown` cast so we don't widen `McpToolsPlugin`'s public type
- * here — the feature setup is the canonical place for that declaration.
- */
-function getSmartSearch(
-  plugin: McpToolsPlugin,
-): SmartConnections.SmartSearch | undefined {
-  return (
-    plugin as unknown as { smartSearch?: SmartConnections.SmartSearch }
-  ).smartSearch;
+function errorResult(text: string): ToolResult {
+  return {
+    content: [{ type: "text", text }],
+    isError: true,
+  };
 }
 
 /**
  * Handler for the `search_vault_smart` MCP tool.
  *
- * Bypasses the Local REST API `/search/smart` HTTP endpoint and calls
- * the Smart Connections plugin API directly in-process, avoiding the
- * HTTP round-trip overhead and the need for Local REST API to be running.
+ * Dispatches through `plugin.semanticSearchState.provider`, which is
+ * picked by the Phase 3 provider factory based on the user's tri-state
+ * setting (native / smart-connections / auto). The tool no longer
+ * knows or cares which backend services the search — it only forwards
+ * the query and filters to the active provider, then JSON-serializes
+ * the unified `SearchResult[]` shape back to the MCP client.
  *
- * Filter mapping (user-facing camelCase → SmartSearch snake_case):
- *   includeFolders → key_starts_with_any
- *   excludeFolders → exclude_key_starts_with_any
- *   limit          → limit
+ * Argument mapping:
+ *   filter.includeFolders → opts.folders          (provider-side)
+ *   filter.excludeFolders → opts.excludeFolders   (provider-side)
+ *   limit                 → opts.limit
+ *
+ * Output (alpha.3 onward, breaking vs alpha.2):
+ *   { results: [{ filePath, heading, excerpt, score }, ...] }
+ *
+ * Until production wiring lands (T15), the default state.provider is
+ * a NoopProvider; in that case `provider.isReady() === false` and the
+ * tool returns an actionable error pointing at the settings panel.
  */
 export async function searchVaultSmartHandler(
   ctx: SearchVaultSmartContext,
-): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: true }> {
-  const smartSearch = getSmartSearch(ctx.plugin);
-
-  if (!smartSearch) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Smart Connections plugin is not installed or not yet loaded with an indexed vault. Install Smart Connections from Obsidian community plugins, let it index, then retry.",
-        },
-      ],
-      isError: true,
-    };
+): Promise<ToolResult> {
+  const state = ctx.plugin.semanticSearchState;
+  if (!state) {
+    return errorResult(
+      "Semantic search is not initialized yet. Reload the MCP Connector plugin and try again, or check the developer console for the setup error.",
+    );
   }
 
-  // Filter mapping (camelCase tool args → SmartSearch snake_case)
-  // lives in the SmartConnectionsProvider so the same conversion is
-  // shared with the Phase 3 provider abstraction. T11 will replace
-  // this direct call with `plugin.semanticSearchState.provider.search`.
-  const filter = mapFolderFilter({
-    folders: ctx.arguments.filter?.includeFolders,
-    excludeFolders: ctx.arguments.filter?.excludeFolders,
-    limit: ctx.arguments.limit,
-  });
+  const provider = state.provider;
+  if (!provider.isReady()) {
+    return errorResult(
+      "Semantic search is not ready. The provider may still be loading the embedding model, or the configured backend is unavailable. Open Settings → MCP Connector → Semantic Search to choose or reconfigure a provider.",
+    );
+  }
 
-  const rawResults = await smartSearch.search(
-    ctx.arguments.query,
-    filter as Parameters<SmartConnections.SmartSearch["search"]>[1],
-  );
-
-  // Materialise note content for each result. The SmartSearch API returns
-  // lazy `read()` methods — we await them here so the MCP client gets
-  // self-contained text without needing a follow-up vault read call.
-  const results = await Promise.all(
-    (rawResults as SmartSearchResult[]).map(async (r) => ({
-      path: r.item.path,
-      score: r.score,
-      breadcrumbs: r.item.breadcrumbs,
-      text: await r.item.read(),
-    })),
-  );
+  let results;
+  try {
+    results = await provider.search(ctx.arguments.query, {
+      folders: ctx.arguments.filter?.includeFolders,
+      excludeFolders: ctx.arguments.filter?.excludeFolders,
+      limit: ctx.arguments.limit,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return errorResult(`Semantic search failed: ${message}`);
+  }
 
   return {
     content: [{ type: "text", text: JSON.stringify({ results }, null, 2) }],
