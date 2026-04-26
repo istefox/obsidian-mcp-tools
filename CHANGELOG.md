@@ -3,6 +3,30 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.10] — 2026-04-26
+
+### Changed
+- **Diagnostic logging in `updateClaudeConfig`** to make Install
+  Server failures self-diagnosable from the Obsidian developer
+  console. INFO at entry (configPath, presence/length of serverPath
+  and apiKey, extraEnv keys), DEBUG when reading existing config
+  (pre-existing `mcpServers` keys, whether our entry was already
+  there), ERROR with structured context (`errorName`, `errorCode`,
+  `errorMessage`) on non-ENOENT read failures, INFO post-write
+  (final `mcpServers` keys, whether our entry was persisted, length
+  of our command). No credential leak — only flags and lengths are
+  ever logged. Motivated by fork issue #11 (folotp), where the
+  symptom (`mcpServers: {}` after Install with location=outside
+  vault) could not be reproduced from the code path; the new logs
+  pinpoint root cause unambiguously when the next user hits the
+  same symptom.
+- **8 new regression tests** in `config.test.ts` pinning the
+  invariants `updateClaudeConfig` upholds across edge cases:
+  folotp's exact toggle sequence, `serverPath` empty/undefined,
+  malformed/empty/BOM-prefixed existing config, missing
+  `mcpServers` key. All proven on `main`; act as guard rails
+  against future regressions that would match the #11 symptom.
+
 ## [0.3.9] — 2026-04-26
 
 ### Fixed
