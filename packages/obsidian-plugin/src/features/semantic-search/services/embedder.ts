@@ -181,20 +181,77 @@ export function createEmbedder(opts: EmbedderOpts): Embedder {
  * Transformers.js's image pipelines pull in) is never touched in the
  * text-only path we actually use.
  */
-// Static import: bundles Transformers.js into main.js (~+800KB measured;
-// design § Runtime cost projected ~+200KB but the actual ONNX-web runtime
-// + tokenizer plumbing land closer to 800KB). Static beats dynamic in
-// Obsidian/Electron because the plugin runtime does not resolve
-// node_modules — a bundled require() works, a runtime `import(...)`
-// would 404. Sharp transitive is tree-shaken by Bun (we only use the
-// text feature-extraction pipeline; the image pipelines that pull
-// sharp are unreachable code in our bundle).
-import { pipeline as _xenovaPipeline } from "@xenova/transformers";
+// Static import: bundles Transformers.js into main.js. Static beats
+// dynamic in Obsidian/Electron because the plugin runtime does not
+// resolve node_modules — a bundled require() works, a runtime
+// `import(...)` would 404.
+//
+// `sharp` is stubbed at bundle time (image pipelines are unreachable in
+// our text-only path). `onnxruntime-node` is REDIRECTED to
+// `onnxruntime-web` at bundle time — see bun.config.ts for the rationale
+// (Electron renderer reports `process.release.name === 'node'`, so
+// Transformers.js v2.17.2 picks the node branch; routing it to the WASM
+// runtime is the only way to actually run inference here).
+//
+// Pinned to @xenova/transformers v2.17.2. The successor
+// @huggingface/transformers v4 was tested 2026-04-26 in a spike; it
+// uses `import.meta.url` at runtime which Obsidian's eval-based plugin
+// loader cannot parse. Reverting to v2 keeps the plugin loadable.
+import {
+  pipeline as _xenovaPipeline,
+  env as _xenovaEnv,
+} from "@xenova/transformers";
+
+// One-shot ONNX runtime configuration applied the first time
+// realPipelineFactory is called. Reasons for each setting:
+//
+// * `env.backends.onnx.wasm.wasmPaths`: onnxruntime-web's default
+//   wasm-blob loader resolves siblings via `fetch(new URL(...,
+//   import.meta.url))`. Bun's CJS bundle does not preserve
+//   `import.meta.url` meaningfully, so the loader 404s. Pointing at
+//   the matching CDN sidesteps the whole `import.meta.url` dance.
+//   Pinned to 1.14.0 to match @xenova/transformers@2.17.2's bundled
+//   onnxruntime-web; updating the lib also requires updating this URL
+//   or the WASM ABI may not match the JS glue.
+// * `env.backends.onnx.wasm.numThreads = 1`: Electron's renderer does
+//   not have COOP/COEP cross-origin isolation headers, so
+//   SharedArrayBuffer is restricted. Single-threaded WASM avoids the
+//   worker spin-up path entirely.
+// * `env.allowLocalModels = false`: always use the remote (Hugging
+//   Face Hub), so the lazy first-call download flow drives the
+//   ModelDownloader UI.
+// * `env.useBrowserCache = true`: persist the downloaded model to the
+//   Cache API so subsequent loads are fast.
+const ORT_WASM_PATHS =
+  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/";
+
+let _envConfigured = false;
+function configureEnv(): void {
+  if (_envConfigured) return;
+  _envConfigured = true;
+  const e = _xenovaEnv as unknown as {
+    backends?: {
+      onnx?: {
+        wasm?: { numThreads?: number; simd?: boolean; wasmPaths?: string };
+      };
+    };
+    allowLocalModels?: boolean;
+    useBrowserCache?: boolean;
+  };
+  if (e.backends?.onnx?.wasm) {
+    e.backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
+    e.backends.onnx.wasm.numThreads = 1;
+    e.backends.onnx.wasm.simd = true;
+  }
+  e.allowLocalModels = false;
+  e.useBrowserCache = true;
+}
 
 export async function realPipelineFactory(
   model: string,
   onProgress?: ProgressCallback,
 ): Promise<PipelineFn> {
+  configureEnv();
   const pipe = await _xenovaPipeline("feature-extraction", model, {
     progress_callback: onProgress,
   } as Parameters<typeof _xenovaPipeline>[2]);

@@ -19,19 +19,33 @@ const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");
 const isProd = args.includes("--prod");
 
-// Stub `onnxruntime-node` and `sharp` with empty modules. Transformers.js
-// has eager `require()` paths for these node-only optional dependencies
-// (no try/catch fallback), so even marking them `external` leaves a
-// runtime `require("onnxruntime-node")` that Electron's renderer can't
-// resolve — the plugin then fails to load with "Cannot find module
-// 'onnxruntime-node'". Replacing them with an empty module makes the
-// require return `{}`; Transformers.js's runtime detection then picks
-// the WASM/onnxruntime-web backend, which is what we actually want in
-// the Electron environment.
+// `onnxruntime-node` redirect + `sharp` stub. Transformers.js v2.17.2
+// has eager `import * as ONNX_NODE from 'onnxruntime-node'` and chooses
+// it whenever `process?.release?.name === 'node'` — which in Electron
+// renderer is **true** (process.release.name === 'node' is inherited).
+// Stubbing onnxruntime-node to an empty module made
+// `ONNX.InferenceSession` undefined and produced
+// "Cannot read properties of undefined (reading 'create')" at
+// `from_pretrained` time. Fix: redirect the import to `onnxruntime-web`
+// so the WASM backend is picked up instead. Sharp stays stubbed to an
+// empty module since it's only used by image pipelines we don't touch.
 const stubEmptyModulesPlugin: BunPlugin = {
   name: "stub-empty-modules",
   setup(build) {
-    build.onResolve({ filter: /^(onnxruntime-node|sharp)$/ }, (args) => ({
+    // Redirect onnxruntime-node → onnxruntime-web (re-export wrapper).
+    build.onResolve({ filter: /^onnxruntime-node$/ }, () => ({
+      path: "onnxruntime-node-shim",
+      namespace: "ort-node-redirect",
+    }));
+    build.onLoad(
+      { filter: /.*/, namespace: "ort-node-redirect" },
+      () => ({
+        contents: "module.exports = require('onnxruntime-web');",
+        loader: "js",
+      }),
+    );
+    // Stub sharp.
+    build.onResolve({ filter: /^sharp$/ }, (args) => ({
       path: args.path,
       namespace: "stub-empty",
     }));
