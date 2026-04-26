@@ -7,6 +7,10 @@ import {
   INSTALL_PATH,
   type Platform,
 } from "$/features/mcp-server-install/constants";
+import {
+  FORK_PLUGIN_ID,
+  LEGACY_PLUGIN_ID,
+} from "$/features/mcp-client-config/services/claudeDesktop";
 
 /**
  * Detection of leftover 0.3.x state in a fresh-load 0.4.0 vault.
@@ -60,11 +64,19 @@ export type DetectLegacyInstallInput = {
   /** Result of `plugin.loadData()`. Pass-through, no mutation. */
   pluginData: unknown;
   /**
-   * Plugin id used in `claude_desktop_config.json`'s `mcpServers`
-   * map. Defaults to "mcp-tools-istefox" (the fork id). Override only
-   * for tests against fixture configs.
+   * Override the new (fork-aligned) plugin id used in
+   * `claude_desktop_config.json`'s `mcpServers` map. Defaults to
+   * `mcp-tools-istefox`. Override only for tests against fixture
+   * configs.
    */
   pluginId?: string;
+  /**
+   * Override the legacy plugin id checked alongside the new id.
+   * Defaults to `obsidian-mcp-tools` (the upstream key 0.3.x of this
+   * fork wrote into `claude_desktop_config.json`). Override only in
+   * tests where the legacy id differs.
+   */
+  legacyPluginId?: string;
   /**
    * Absolute path to `claude_desktop_config.json`. If undefined the
    * detector resolves it from the platform default (same logic as
@@ -79,17 +91,17 @@ export type DetectLegacyInstallInput = {
   binaryInstallDirOverride?: string;
 };
 
-const DEFAULT_PLUGIN_ID = "mcp-tools-istefox";
-
 export async function detectLegacyInstall(
   input: DetectLegacyInstallInput,
 ): Promise<LegacyInstallState> {
-  const pluginId = input.pluginId ?? DEFAULT_PLUGIN_ID;
+  const newPluginId = input.pluginId ?? FORK_PLUGIN_ID;
+  const legacyPluginId = input.legacyPluginId ?? LEGACY_PLUGIN_ID;
 
   const hasLegacySettingsKeys = detectLegacySettingsKeys(input.pluginData);
   const binaryProbe = await probeLegacyBinary(input.binaryInstallDirOverride);
   const claudeProbe = await probeLegacyClaudeConfigEntry(
-    pluginId,
+    newPluginId,
+    legacyPluginId,
     input.claudeConfigPath,
   );
 
@@ -162,7 +174,8 @@ type ClaudeProbeResult = {
 };
 
 async function probeLegacyClaudeConfigEntry(
-  pluginId: string,
+  newPluginId: string,
+  legacyPluginId: string,
   configPathOverride?: string,
 ): Promise<ClaudeProbeResult> {
   const configPath = configPathOverride ?? defaultClaudeConfigPath();
@@ -195,20 +208,38 @@ async function probeLegacyClaudeConfigEntry(
   if (!servers || typeof servers !== "object") {
     return { isLegacy: false, configPath };
   }
+  const map = servers as Record<string, unknown>;
 
-  const entry = (servers as Record<string, unknown>)[pluginId];
-  if (!entry || typeof entry !== "object") {
+  // Two cases of "legacy" we care about:
+  //   (a) Entry under `legacyPluginId` (`obsidian-mcp-tools` upstream
+  //       key) exists at all. Even with a 0.4.0-shaped `npx mcp-remote`
+  //       payload, the key needs to migrate to `newPluginId` so the
+  //       fork's plugin id matches the manifest.
+  //   (b) Entry under `newPluginId` exists with a non-0.4.0 shape
+  //       (i.e. command !== "npx" OR args missing "mcp-remote").
+  //       Means the plugin id was right but the payload is stale.
+
+  const legacyEntry =
+    legacyPluginId !== newPluginId
+      ? (map[legacyPluginId] as Record<string, unknown> | undefined)
+      : undefined;
+  if (legacyEntry && typeof legacyEntry === "object") {
+    const command =
+      typeof legacyEntry.command === "string" ? legacyEntry.command : "";
+    return { isLegacy: true, configPath, entryCommand: command || undefined };
+  }
+
+  const newEntry = map[newPluginId] as Record<string, unknown> | undefined;
+  if (!newEntry || typeof newEntry !== "object") {
     return { isLegacy: false, configPath };
   }
 
-  const e = entry as Record<string, unknown>;
-  const command = typeof e.command === "string" ? e.command : "";
-  const args = Array.isArray(e.args) ? (e.args as unknown[]) : [];
+  const command = typeof newEntry.command === "string" ? newEntry.command : "";
+  const args = Array.isArray(newEntry.args)
+    ? (newEntry.args as unknown[])
+    : [];
 
   // 0.4.0 shape: command="npx", args contains the literal "mcp-remote".
-  // Anything else is legacy. Two literal checks are enough — we don't
-  // need to validate the full new shape here, only recognize that the
-  // entry has been moved off the binary path.
   const usesNpx = command === "npx";
   const usesMcpRemote = args.some(
     (a) => typeof a === "string" && a === "mcp-remote",

@@ -1,0 +1,20 @@
+/**
+ * MCP client config feature — generates and writes config snippets
+ * for the supported MCP client families (Claude Desktop via
+ * `mcp-remote`, Claude Code CLI, Cursor / Cline / Continue / VS Code
+ * via streamable-http).
+ *
+ * Public API surface today is the Claude Desktop writer (T3).
+ * Pure-function generators for the three client families (T4) and
+ * the Settings UI (T5) ride in subsequent commits.
+ */
+
+export {
+  FORK_PLUGIN_ID,
+  LEGACY_PLUGIN_ID,
+  defaultClaudeDesktopConfigPath,
+  removeFromClaudeDesktopConfig,
+  updateClaudeDesktopConfig,
+  updateClaudeDesktopConfigInputSchema,
+  type UpdateClaudeDesktopConfigInput,
+} from "./services/claudeDesktop";

@@ -281,6 +281,66 @@ describe("detectLegacyInstall", () => {
     expect(hasAnyLegacySignal(state)).toBe(false);
   });
 
+  test("entry under legacy `obsidian-mcp-tools` key → hasLegacyClaudeConfigEntry=true (key migration needed)", async () => {
+    // 0.3.x of this fork wrote the entry under the upstream key. Even
+    // if the payload shape were 0.4.0-compatible, the key itself must
+    // migrate to mcp-tools-istefox.
+    const configPath = path.join(tmpRoot, "claude_desktop_config.json");
+    await fsp.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          "obsidian-mcp-tools": {
+            command: "/path/to/binary",
+            env: { OBSIDIAN_API_KEY: "k" },
+          },
+        },
+      }),
+    );
+
+    const state = await detectLegacyInstall({
+      pluginData: {},
+      claudeConfigPath: configPath,
+      binaryInstallDirOverride: path.join(tmpRoot, "nope"),
+    });
+
+    expect(state.hasLegacyClaudeConfigEntry).toBe(true);
+    expect(state.legacyClaudeConfigEntryCommand).toBe("/path/to/binary");
+  });
+
+  test("legacy key takes precedence even if both keys present", async () => {
+    const configPath = path.join(tmpRoot, "claude_desktop_config.json");
+    await fsp.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          "obsidian-mcp-tools": { command: "/legacy/path" },
+          "mcp-tools-istefox": {
+            command: "npx",
+            args: [
+              "-y",
+              "mcp-remote",
+              "http://127.0.0.1:27200/mcp",
+              "--header",
+              "Authorization: Bearer x",
+            ],
+          },
+        },
+      }),
+    );
+
+    const state = await detectLegacyInstall({
+      pluginData: {},
+      claudeConfigPath: configPath,
+      binaryInstallDirOverride: path.join(tmpRoot, "nope"),
+    });
+
+    // Legacy key still present → migration needed (deletion of the
+    // stale key, not rewrite of the new one).
+    expect(state.hasLegacyClaudeConfigEntry).toBe(true);
+    expect(state.legacyClaudeConfigEntryCommand).toBe("/legacy/path");
+  });
+
   test("custom pluginId override is honored", async () => {
     const configPath = path.join(tmpRoot, "claude_desktop_config.json");
     await fsp.writeFile(
