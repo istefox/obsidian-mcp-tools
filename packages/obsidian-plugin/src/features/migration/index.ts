@@ -25,3 +25,10 @@ export {
   type MigrationStepResult,
   type MutatePluginData,
 } from "./services/plan";
+
+export {
+  MigrationModalHost,
+  type MigrationModalOptions,
+} from "./services/migrationModalHost";
+
+export { setupMigration } from "./services/setup";

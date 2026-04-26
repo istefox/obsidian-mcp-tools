@@ -29,6 +29,7 @@ import {
   type McpTransportState,
 } from "./features/mcp-transport";
 import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
+import { setupMigration } from "./features/migration";
 import {
   setup as semanticSearchSetup,
   teardown as semanticSearchTeardown,
@@ -415,6 +416,17 @@ export default class McpToolsPlugin extends Plugin {
     }
 
     await setupMcpServerInstall(this);
+
+    // Migration UX (Phase 4 T8) — detect leftover 0.3.x state and,
+    // if found, queue the migration modal at workspace.onLayoutReady.
+    // Pure no-op for fresh installs and for users who already
+    // dismissed the modal (skippedAt persisted in data.json).
+    const migrationResult = await setupMigration(this);
+    if (!migrationResult.success) {
+      logger.warn("Migration setup failed (non-fatal)", {
+        error: migrationResult.error,
+      });
+    }
 
     // Check for required dependencies
     lastValueFrom(loadLocalRestAPI(this))
