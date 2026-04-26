@@ -181,13 +181,22 @@ export function createEmbedder(opts: EmbedderOpts): Embedder {
  * Transformers.js's image pipelines pull in) is never touched in the
  * text-only path we actually use.
  */
+// Static import: bundles Transformers.js into main.js (~+800KB measured;
+// design § Runtime cost projected ~+200KB but the actual ONNX-web runtime
+// + tokenizer plumbing land closer to 800KB). Static beats dynamic in
+// Obsidian/Electron because the plugin runtime does not resolve
+// node_modules — a bundled require() works, a runtime `import(...)`
+// would 404. Sharp transitive is tree-shaken by Bun (we only use the
+// text feature-extraction pipeline; the image pipelines that pull
+// sharp are unreachable code in our bundle).
+import { pipeline as _xenovaPipeline } from "@xenova/transformers";
+
 export async function realPipelineFactory(
   model: string,
   onProgress?: ProgressCallback,
 ): Promise<PipelineFn> {
-  const mod = await import("@xenova/transformers");
-  const pipe = await mod.pipeline("feature-extraction", model, {
+  const pipe = await _xenovaPipeline("feature-extraction", model, {
     progress_callback: onProgress,
-  } as Parameters<typeof mod.pipeline>[2]);
+  } as Parameters<typeof _xenovaPipeline>[2]);
   return pipe as unknown as PipelineFn;
 }

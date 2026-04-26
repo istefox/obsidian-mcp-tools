@@ -13,6 +13,8 @@ import {
   type ProviderFactoryDeps,
 } from "./services/providerFactory";
 import type { ModelDownloader } from "./services/modelDownloader";
+import type { SemanticIndexer } from "./services/indexer";
+import type { EmbeddingStore } from "./services/store";
 
 export { default as FeatureSettings } from "./components/SemanticSettingsSection.svelte";
 export {
@@ -65,15 +67,37 @@ export type SemanticSearchState = {
    * provider. Present iff `setup()` was called with `factoryDeps`.
    * The settings UI (T12) calls this on a tri-state change to swap
    * `state.provider` without rebuilding the embedder/store.
+   * Optional in the type so test fixtures can construct partial
+   * state shapes; populated to either ProviderChooser or null at
+   * runtime by `setup()`.
    */
-  chooser: ProviderChooser | null;
+  chooser?: ProviderChooser | null;
   /**
-   * Optional reference to the model downloader so the settings UI
-   * (T13) can subscribe to the first-run download progress without
-   * importing internal feature plumbing. Wired by T15 production
-   * setup; remains `null` in tests and in the early lifecycle.
+   * Reference to the model downloader so the settings UI (T13) can
+   * subscribe to the first-run download progress without importing
+   * internal feature plumbing. Wired by T15 production setup;
+   * absent in tests and in the early lifecycle.
    */
-  downloader: ModelDownloader | null;
+  downloader?: ModelDownloader | null;
+  /**
+   * The constructed indexer (live or low-power per setting) when
+   * Phase 3 is wired. Not auto-started — the search tool calls
+   * `startIndexerIfNeeded()` on first use (Q4 = lazy).
+   */
+  indexer?: SemanticIndexer | null;
+  /**
+   * The embedding store, wired by T15 production setup. Used by the
+   * settings UI to surface the indexed-chunks count.
+   */
+  store?: EmbeddingStore | null;
+  /**
+   * Lazy indexer-start hook. First call starts the indexer in
+   * background (fire-and-forget); subsequent calls are no-ops. The
+   * search tool handler invokes this so vault events are subscribed
+   * and a missing index begins building — without blocking the
+   * request on a multi-minute first build.
+   */
+  startIndexerIfNeeded?: () => void;
   teardown: () => Promise<void>;
 };
 
@@ -183,8 +207,12 @@ export async function setup(
       settingsMutex,
       chooser,
       downloader: null,
+      indexer: null,
+      store: opts.factoryDeps?.store ?? null,
+      startIndexerIfNeeded: undefined, // T15 wiring overrides this
       teardown: async () => {
-        // No-op for now. T9/T10 add indexer flush + model unload here.
+        // T15 production wiring overrides this to flush+close the
+        // store, stop the indexer, and unload the embedder model.
       },
     };
     return { success: true, state };

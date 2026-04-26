@@ -78,6 +78,12 @@ export async function searchVaultSmartHandler(
     );
   }
 
+  // Lazy indexer kick (Q4 = lazy on first query). Fire-and-forget:
+  // the indexer's start() runs the first full vault build in the
+  // background and subscribes to vault events for incremental
+  // updates. Subsequent calls are no-ops.
+  state.startIndexerIfNeeded?.();
+
   const provider = state.provider;
   if (!provider.isReady()) {
     return errorResult(

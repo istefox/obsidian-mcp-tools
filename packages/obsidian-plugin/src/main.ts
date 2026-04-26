@@ -32,8 +32,22 @@ import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
 import {
   setup as semanticSearchSetup,
   teardown as semanticSearchTeardown,
+  createModelDownloader,
   type SemanticSearchState,
 } from "./features/semantic-search";
+import {
+  createEmbedder,
+  realPipelineFactory,
+} from "./features/semantic-search/services/embedder";
+import { createEmbeddingStore } from "./features/semantic-search/services/store";
+import type { VaultAdapter } from "./features/semantic-search/services/store";
+import {
+  createLiveIndexer,
+  createLowPowerIndexer,
+  type VaultLike,
+} from "./features/semantic-search/services/indexer";
+import { chunk as semanticChunk } from "./features/semantic-search/services/chunker";
+import type { ExcerptResolver } from "./features/semantic-search/services/nativeProvider";
 import {
   loadLocalRestAPI,
   loadSmartSearchAPI,
@@ -258,14 +272,145 @@ export default class McpToolsPlugin extends Plugin {
       logger.error("MCP transport setup failed", { error: mcpResult.error });
     }
 
-    // 0.4.0 semantic search — Phase 3 scaffolding (no-op provider).
-    // Full pipeline lands in T2-T15 of the Phase 3 plan.
-    const semanticResult = await semanticSearchSetup(this);
-    if (semanticResult.success) {
-      this.semanticSearchState = semanticResult.state;
-    } else {
-      logger.error("Semantic search setup failed", {
-        error: semanticResult.error,
+    // 0.4.0 semantic search — Phase 3 production wiring (T15).
+    // Construct vault adapter, embedder (via model downloader),
+    // store, indexer and excerpt resolver against the live Obsidian
+    // app, then hand them to the feature setup as factoryDeps so
+    // the provider factory yields a real provider matching the
+    // user's tri-state setting.
+    try {
+      const ssAdapter: VaultAdapter = {
+        exists: (p) => this.app.vault.adapter.exists(p),
+        read: (p) => this.app.vault.adapter.read(p),
+        write: (p, d) => this.app.vault.adapter.write(p, d),
+        readBinary: (p) => this.app.vault.adapter.readBinary(p),
+        writeBinary: (p, d) => this.app.vault.adapter.writeBinary(p, d),
+        remove: (p) => this.app.vault.adapter.remove(p),
+      };
+
+      const ssVault: VaultLike = {
+        getMarkdownFiles: () =>
+          this.app.vault.getMarkdownFiles().map((f) => ({
+            path: f.path,
+            mtime: f.stat.mtime,
+          })),
+        read: async (path) => {
+          const f = this.app.vault.getAbstractFileByPath(path);
+          if (!(f instanceof TFile)) {
+            throw new Error(`semantic-search: not a file: ${path}`);
+          }
+          return this.app.vault.cachedRead(f);
+        },
+        on: (event, handler) => {
+          // Obsidian's vault.on signatures are event-specific. The
+          // unsubscribe is offref(EventRef). Wrap so our VaultLike
+          // contract stays clean.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ref = (this.app.vault as any).on(event, (f: unknown) => {
+            if (f instanceof TFile) handler(f.path);
+          });
+          return () => this.app.vault.offref(ref);
+        },
+      };
+
+      const ssExcerpt: ExcerptResolver = async (path, _offset, maxLen) => {
+        const f = this.app.vault.getAbstractFileByPath(path);
+        if (!(f instanceof TFile)) return "";
+        const text = await this.app.vault.cachedRead(f);
+        return text.slice(_offset, _offset + maxLen);
+      };
+
+      const downloader = createModelDownloader({
+        innerFactory: realPipelineFactory,
+      });
+      const embedder = createEmbedder({
+        pipelineFactory: downloader.factory,
+      });
+
+      const pluginDir =
+        this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`;
+      const store = createEmbeddingStore({
+        adapter: ssAdapter,
+        binPath: `${pluginDir}/embeddings.bin`,
+        indexPath: `${pluginDir}/embeddings.index.json`,
+        vectorDim: 384,
+      });
+      await store.init();
+
+      const semanticResult = await semanticSearchSetup(this, {
+        factoryDeps: {
+          plugin: this,
+          embedder,
+          store,
+          excerptResolver: ssExcerpt,
+        },
+      });
+
+      if (semanticResult.success) {
+        const state = semanticResult.state;
+        state.downloader = downloader;
+        state.store = store;
+
+        // Construct the indexer matching the saved indexing mode but
+        // do NOT auto-start (Q4 = lazy). The search tool will call
+        // startIndexerIfNeeded() on first use, kicking off the full
+        // build + the model download in background.
+        const indexer =
+          state.settings.indexingMode === "low-power"
+            ? createLowPowerIndexer({
+                vault: ssVault,
+                chunker: semanticChunk,
+                embedder,
+                store,
+              })
+            : createLiveIndexer({
+                vault: ssVault,
+                chunker: semanticChunk,
+                embedder,
+                store,
+              });
+        state.indexer = indexer;
+
+        let indexerStarted = false;
+        state.startIndexerIfNeeded = () => {
+          if (indexerStarted) return;
+          indexerStarted = true;
+          indexer.start().catch((err) => {
+            logger.error("semantic-search: indexer start failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        };
+
+        state.teardown = async () => {
+          if (indexerStarted) {
+            try {
+              await indexer.stop();
+            } catch {
+              // best-effort: don't block plugin unload
+            }
+          }
+          try {
+            await embedder.unload();
+          } catch {
+            // best-effort
+          }
+          try {
+            await store.close();
+          } catch {
+            // best-effort
+          }
+        };
+
+        this.semanticSearchState = state;
+      } else {
+        logger.error("Semantic search setup failed", {
+          error: semanticResult.error,
+        });
+      }
+    } catch (error) {
+      logger.error("Semantic search wiring failed", {
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
