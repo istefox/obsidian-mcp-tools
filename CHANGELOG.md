@@ -3,6 +3,66 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0-alpha.4] — 2026-04-26
+
+### Fixed — native semantic search provider works in Electron renderer
+
+- **`search_vault_smart` with `provider="native"` no longer fails with
+  `Cannot read properties of undefined (reading 'create')`.** Closes the
+  known limitation documented in 0.4.0-alpha.3.
+
+  Root cause: Transformers.js v2.17.2's `backends/onnx.js` selects
+  `onnxruntime-node` whenever `process?.release?.name === 'node'`. In
+  Electron the renderer process **inherits** `process.release` from the
+  main Node process, so this check is **true** even though we're in a
+  browser-like environment. The previous bundle stubbed
+  `onnxruntime-node` to an empty module, leaving `ONNX.InferenceSession`
+  undefined; `from_pretrained` then threw at the first `.create()` call.
+
+  Fix:
+  - `bun.config.ts` now **redirects** `onnxruntime-node` resolves to a
+    shim that re-exports `onnxruntime-web` (the WASM backend) instead of
+    stubbing it empty. Sharp stays stubbed since image pipelines are
+    unreachable in our text-only path.
+  - `embedder.ts` configures `onnxruntime-web` env on first
+    `realPipelineFactory` call: `wasmPaths` pointed at jsdelivr CDN for
+    `onnxruntime-web@1.14.0` (works around Bun CJS not preserving
+    `import.meta.url` for `.wasm` sibling resolution); `numThreads = 1`
+    (Electron renderer lacks COOP/COEP, so SharedArrayBuffer is
+    restricted and the worker spin-up path is unsafe);
+    `allowLocalModels = false`; `useBrowserCache = true`.
+
+  Verified end-to-end in vault TEST: `search_vault_smart` with
+  `provider="native"` returns 11 semantic matches (cosine score
+  0.39-0.47) in 15 ms after first cold load. Model is cached in the
+  browser Cache API so subsequent reloads skip the download.
+
+### Cosmetic — ONNX runtime warning at first cold load
+
+- A non-fatal `Unable to determine content-length from response headers.
+  Will expand buffer when needed.` warning may appear in DevTools
+  console on the first model download. It comes from `onnxruntime-web`'s
+  internal XHR loader: HuggingFace serves the model via a 302 redirect
+  to a CAS bridge (`cas-bridge.xethub.hf.co`) that does not always
+  include `Content-Length` for chunked responses. The loader recovers
+  by using an expandable buffer — search results are unaffected. Only
+  visible at first cold load; subsequent loads hit the cache.
+
+### Notes for upgrades from 0.4.0-alpha.3
+
+- No data migration. The native model is downloaded the first time
+  `provider="native"` (or `"auto"` without Smart Connections) is
+  invoked; ~25 MB MiniLM-L6-v2 + tokenizer, cached in the browser
+  Cache API.
+- If you stayed on `provider="auto"` with Smart Connections installed,
+  nothing changes for you — the auto-router still prefers SC.
+
+### References
+
+- Fix commit: `f9c8e49` (`fix(semantic-search): redirect
+  onnxruntime-node to onnxruntime-web in Electron`)
+- Plan: `docs/plans/0.4.0-phase-3-semantic-search.md`
+
 ## [0.4.0-alpha.3] — 2026-04-26
 
 ### Fixed — critical regression in 0.4.0-alpha.2 dispatch
