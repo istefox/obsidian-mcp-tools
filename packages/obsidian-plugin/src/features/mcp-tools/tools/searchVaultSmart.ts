@@ -2,6 +2,7 @@ import { type } from "arktype";
 import type { App } from "obsidian";
 import type McpToolsPlugin from "$/main";
 import type { SmartConnections } from "shared";
+import { mapFolderFilter } from "$/features/semantic-search/services/smartConnectionsProvider";
 
 export const searchVaultSmartSchema = type({
   name: '"search_vault_smart"',
@@ -90,26 +91,15 @@ export async function searchVaultSmartHandler(
     };
   }
 
-  // Build the filter object in the shape SmartSearch.search() expects.
-  // Only include keys that are actually provided — SmartSearch treats
-  // absent keys differently from empty arrays.
-  const filter: Record<string, unknown> = {};
-
-  if (ctx.arguments.filter?.includeFolders?.length) {
-    // key_starts_with_any: include only notes whose path starts with one
-    // of these prefixes (folder-level restriction).
-    filter.key_starts_with_any = ctx.arguments.filter.includeFolders;
-  }
-
-  if (ctx.arguments.filter?.excludeFolders?.length) {
-    // exclude_key_starts_with_any: skip notes whose path starts with one
-    // of these prefixes (e.g. Archive, Private).
-    filter.exclude_key_starts_with_any = ctx.arguments.filter.excludeFolders;
-  }
-
-  if (ctx.arguments.limit !== undefined) {
-    filter.limit = ctx.arguments.limit;
-  }
+  // Filter mapping (camelCase tool args → SmartSearch snake_case)
+  // lives in the SmartConnectionsProvider so the same conversion is
+  // shared with the Phase 3 provider abstraction. T11 will replace
+  // this direct call with `plugin.semanticSearchState.provider.search`.
+  const filter = mapFolderFilter({
+    folders: ctx.arguments.filter?.includeFolders,
+    excludeFolders: ctx.arguments.filter?.excludeFolders,
+    limit: ctx.arguments.limit,
+  });
 
   const rawResults = await smartSearch.search(
     ctx.arguments.query,
