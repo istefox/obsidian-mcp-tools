@@ -282,3 +282,177 @@ describe("removeFromClaudeConfig", () => {
     expect(content).toEqual(originalContent);
   });
 });
+
+describe("updateClaudeConfig — issue #11 investigation (folotp toggle scenario + edge cases)", () => {
+  if (os.platform() !== "darwin") {
+    test.skip("issue #11 investigation tests run only on macOS", () => {});
+    return;
+  }
+
+  let tmpRoot: string;
+  let configPath: string;
+  let homedirSpy: Mock<typeof os.homedir>;
+
+  const SYS = "/Users/folotp/Library/Application Support/obsidian-mcp-tools/bin/mcp-server";
+  const VAULT = "/Users/folotp/Obsidian/vault/.obsidian/plugins/mcp-tools-istefox/bin/mcp-server";
+  const KEY = "test-api-key-64-hex-chars";
+
+  beforeEach(async () => {
+    tmpRoot = await fsp.mkdtemp(
+      path.join(os.tmpdir(), "mcp-tools-issue11-test-"),
+    );
+    homedirSpy = spyOn(os, "homedir").mockReturnValue(tmpRoot);
+    configPath = path.join(
+      tmpRoot,
+      "Library/Application Support/Claude/claude_desktop_config.json",
+    );
+  });
+
+  afterEach(async () => {
+    homedirSpy.mockRestore();
+    await fsp.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  test("folotp's exact toggle sequence: outside → vault → outside leaves the entry intact", async () => {
+    // The bug @folotp reported on the fork at #11 says: under
+    // "Outside vault" location, Install Server downloads the binary
+    // but the config is rewritten with `mcpServers: {}`. Toggling to
+    // "Inside vault" and re-installing fixes it; toggling back loses
+    // it again. handleInstallLocationChange does NOT call
+    // updateClaudeConfig — only the Install button does. So the
+    // observable sequence in the config writer is: write SYS, write
+    // VAULT, write SYS. This test pins that the writer never produces
+    // the empty `mcpServers: {}` shape across that sequence.
+
+    // Step 1: Install while location=outside-vault.
+    await updateClaudeConfig(null, SYS, KEY);
+    let content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect(content.mcpServers["obsidian-mcp-tools"]?.command).toBe(SYS);
+
+    // Step 2 (no-op in the writer): toggle to vault.
+
+    // Step 3: Install while location=vault.
+    await updateClaudeConfig(null, VAULT, KEY);
+    content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect(content.mcpServers["obsidian-mcp-tools"]?.command).toBe(VAULT);
+
+    // Step 4 (no-op): toggle back to outside-vault.
+
+    // Step 5: Install while location=outside-vault.
+    await updateClaudeConfig(null, SYS, KEY);
+    content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    // The bug would be: mcpServers === {} or entry missing.
+    expect(content.mcpServers["obsidian-mcp-tools"]?.command).toBe(SYS);
+    expect(Object.keys(content.mcpServers)).toContain("obsidian-mcp-tools");
+  });
+
+  test("serverPath as empty string still writes an entry (does NOT produce `mcpServers: {}`)", async () => {
+    // Defensive: even with a falsy serverPath, the writer assigns the
+    // entry. JSON.stringify omits undefined values inside the entry but
+    // keeps the entry key itself. This test pins that the writer never
+    // collapses to empty `mcpServers` regardless of serverPath shape.
+    await updateClaudeConfig(null, "", KEY);
+    const content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect("obsidian-mcp-tools" in content.mcpServers).toBe(true);
+    expect(content.mcpServers["obsidian-mcp-tools"].command).toBe("");
+    // mcpServers is NOT empty — the bug shape would be { mcpServers: {} }
+    expect(Object.keys(content.mcpServers).length).toBe(1);
+  });
+
+  test("serverPath as undefined still writes an entry (env survives, command omitted by JSON.stringify)", async () => {
+    // Probes the exact shape: undefined as serverPath via type cast
+    // (mimicking a buggy caller).
+    await updateClaudeConfig(null, undefined as unknown as string, KEY);
+    const content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect("obsidian-mcp-tools" in content.mcpServers).toBe(true);
+    // command is undefined → JSON.stringify omits the key, but the
+    // entry object survives because env is still there.
+    expect("command" in content.mcpServers["obsidian-mcp-tools"]).toBe(false);
+    expect(content.mcpServers["obsidian-mcp-tools"].env).toEqual({
+      OBSIDIAN_API_KEY: KEY,
+    });
+    // Entry NOT empty.
+    expect(Object.keys(content.mcpServers).length).toBe(1);
+  });
+
+  test("malformed existing JSON throws — the writer does NOT silently overwrite to `mcpServers: {}`", async () => {
+    // Pre-existing config that fails JSON.parse: the writer must
+    // throw, not swallow + overwrite with a fresh empty config.
+    // Folotp's "rewritten with empty mcpServers" symptom would
+    // manifest here if the writer caught SyntaxError silently.
+    await fsp.mkdir(path.dirname(configPath), { recursive: true });
+    const corrupt = "{ mcpServers: { invalid json no quotes";
+    await fsp.writeFile(configPath, corrupt);
+
+    await expect(
+      updateClaudeConfig(null, SYS, KEY),
+    ).rejects.toThrow(/Failed to update Claude config/);
+
+    // Confirm the writer did NOT replace the corrupt content.
+    const after = await fsp.readFile(configPath, "utf8");
+    expect(after).toBe(corrupt);
+  });
+
+  test("empty existing file throws (JSON.parse('') is a SyntaxError) — the writer does NOT overwrite", async () => {
+    // Same defensive guarantee for the special case of a zero-byte
+    // file. Some users hit this when an editor or sync tool truncates
+    // the config mid-write and leaves a 0-byte stub.
+    await fsp.mkdir(path.dirname(configPath), { recursive: true });
+    await fsp.writeFile(configPath, "");
+
+    await expect(
+      updateClaudeConfig(null, SYS, KEY),
+    ).rejects.toThrow(/Failed to update Claude config/);
+
+    const after = await fsp.readFile(configPath, "utf8");
+    expect(after).toBe("");
+  });
+
+  test("existing config with `mcpServers: {}` is written CORRECTLY with the entry on a fresh install", async () => {
+    // The control test: if a user's config legitimately has empty
+    // `mcpServers: {}` (e.g. they removed all entries manually), the
+    // first Install Server call must populate it correctly. If folotp
+    // saw `mcpServers: {}` AFTER clicking Install, this test path
+    // proves the writer does not produce that shape on this input.
+    await fsp.mkdir(path.dirname(configPath), { recursive: true });
+    await fsp.writeFile(configPath, JSON.stringify({ mcpServers: {} }));
+
+    await updateClaudeConfig(null, SYS, KEY);
+    const content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect(content.mcpServers["obsidian-mcp-tools"]?.command).toBe(SYS);
+  });
+
+  test("BOM-prefixed JSON file is rejected (writer does not silently strip and overwrite)", async () => {
+    // Some Windows editors prepend U+FEFF to JSON files. JSON.parse
+    // chokes on it. The writer must throw, not silently overwrite the
+    // BOM file with a fresh `mcpServers: {}` config.
+    await fsp.mkdir(path.dirname(configPath), { recursive: true });
+    const bomContent =
+      "﻿" + JSON.stringify({ mcpServers: { existing: { command: "/x" } } });
+    await fsp.writeFile(configPath, bomContent);
+
+    await expect(
+      updateClaudeConfig(null, SYS, KEY),
+    ).rejects.toThrow(/Failed to update Claude config/);
+    // The BOM-prefixed file is preserved on throw — not clobbered.
+    const after = await fsp.readFile(configPath, "utf8");
+    expect(after).toBe(bomContent);
+  });
+
+  test("missing top-level `mcpServers` key (config has only unrelated keys) gets `mcpServers` recreated and entry added", async () => {
+    // The `config.mcpServers = config.mcpServers || {}` guard at line
+    // 96 of config.ts kicks in here. Defensive against an existing
+    // config that someone edited to remove the mcpServers section
+    // entirely.
+    await fsp.mkdir(path.dirname(configPath), { recursive: true });
+    await fsp.writeFile(
+      configPath,
+      JSON.stringify({ unrelatedTopLevelKey: "preserve me" }),
+    );
+
+    await updateClaudeConfig(null, SYS, KEY);
+    const content = JSON.parse(await fsp.readFile(configPath, "utf8"));
+    expect(content.mcpServers["obsidian-mcp-tools"]?.command).toBe(SYS);
+    expect(content.unrelatedTopLevelKey).toBe("preserve me");
+  });
+});
