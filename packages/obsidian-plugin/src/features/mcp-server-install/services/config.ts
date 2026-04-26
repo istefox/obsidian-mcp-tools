@@ -85,20 +85,60 @@ export async function updateClaudeConfig(
     const configPath = getConfigPath();
     const configDir = path.dirname(configPath);
 
+    // Defensive logging: capture the inputs every time. Tracking down
+    // user reports that "the config is empty after Install" requires
+    // knowing what was actually called and with what arguments. We
+    // never log the apiKey itself — only its presence and length —
+    // because it is a credential.
+    logger.info("updateClaudeConfig: invoked", {
+      configPath,
+      serverPathLength: serverPath?.length ?? 0,
+      hasServerPath: typeof serverPath === "string" && serverPath.length > 0,
+      hasApiKey: typeof apiKey === "string" && apiKey.length > 0,
+      apiKeyLength: apiKey?.length ?? 0,
+      extraEnvKeys: extraEnv ? Object.keys(extraEnv) : [],
+    });
+
     // Ensure config directory exists
     await fsp.mkdir(configDir, { recursive: true });
 
     // Read existing config or create new one
     let config: ClaudeConfig = { mcpServers: {} };
+    let preExistingMcpServerKeys: string[] = [];
+    let fileExistedBefore = false;
     try {
       const content = await fsp.readFile(configPath, "utf8");
+      fileExistedBefore = true;
       config = JSON.parse(content);
       config.mcpServers = config.mcpServers || {};
+      preExistingMcpServerKeys = Object.keys(config.mcpServers);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        // SyntaxError on JSON.parse, EACCES, EISDIR, etc. — log the
+        // shape so diagnosis does not require attaching to the actual
+        // user's machine. Then propagate (caller decides how to recover).
+        logger.error("updateClaudeConfig: failed to read existing config", {
+          configPath,
+          errorName: error instanceof Error ? error.name : "Unknown",
+          errorCode: (error as NodeJS.ErrnoException).code,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
       // File doesn't exist, use default empty config
+      logger.debug("updateClaudeConfig: config file did not exist, will create", {
+        configPath,
+      });
+    }
+
+    if (fileExistedBefore) {
+      logger.debug("updateClaudeConfig: read existing config", {
+        configPath,
+        preExistingMcpServerKeys,
+        hadOurEntryAlready: preExistingMcpServerKeys.includes(
+          "obsidian-mcp-tools",
+        ),
+      });
     }
 
     // Update config with our server entry. Any extra env vars are
@@ -111,9 +151,20 @@ export async function updateClaudeConfig(
       },
     };
 
+    const finalKeys = Object.keys(config.mcpServers);
+
     // Write updated config
     await fsp.writeFile(configPath, JSON.stringify(config, null, 2));
-    logger.info("Updated Claude config", { configPath });
+    // Defensive: log the post-write shape so a user reporting "the
+    // entry is missing after Install" can be cross-checked against
+    // what the writer actually persisted in the same process tick.
+    logger.info("updateClaudeConfig: wrote config", {
+      configPath,
+      mcpServerKeysAfter: finalKeys,
+      ourEntryWritten: finalKeys.includes("obsidian-mcp-tools"),
+      ourCommandLength:
+        config.mcpServers["obsidian-mcp-tools"]?.command?.length ?? 0,
+    });
   } catch (error) {
     logger.error("Failed to update Claude config:", { error });
     throw new Error(
