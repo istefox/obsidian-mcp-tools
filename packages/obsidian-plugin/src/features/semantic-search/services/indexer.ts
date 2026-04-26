@@ -31,7 +31,15 @@ export type ChunkerFn = (content: string) => Promise<Chunk[]>;
 export type VaultEvent = "modify" | "create" | "delete";
 
 export interface VaultLike {
-  getMarkdownFiles(): Array<{ path: string }>;
+  /**
+   * `mtime` is optional so the live-mode tests (and the live wiring
+   * itself, which doesn't need it) don't have to fabricate it. The
+   * low-power indexer requires it; entries missing `mtime` are
+   * processed on every scan (degraded fallback rather than skipped,
+   * so a misconfigured wrapper still indexes — just less
+   * efficiently).
+   */
+  getMarkdownFiles(): Array<{ path: string; mtime?: number }>;
   read(path: string): Promise<string>;
   /** Returns an unsubscribe function. */
   on(event: VaultEvent, handler: (path: string) => void): () => void;
@@ -158,57 +166,208 @@ class LiveIndexerImpl implements SemanticIndexer {
   }
 
   private async doProcessFile(path: string): Promise<void> {
-    let content: string | null;
-    try {
-      content = await this.opts.vault.read(path);
-    } catch {
-      // File no longer readable (deleted, renamed, or permission
-      // issue). Drop everything we had indexed for it.
-      content = null;
-    }
-
-    if (content === null) {
-      await this.opts.store.delete(path);
-      return;
-    }
-
-    const chunks = await this.opts.chunker(content);
-    if (chunks.length === 0) {
-      // File became too small or all sections below the min-token
-      // threshold — treat as a delete from the index.
-      await this.opts.store.delete(path);
-      return;
-    }
-
-    // Index existing records for this path by contentHash so we can
-    // reuse vectors for unchanged chunks (chunk-delta).
-    const existingByHash = new Map<string, EmbeddingRecord>();
-    for await (const r of this.opts.store.scan()) {
-      if (r.filePath === path) existingByHash.set(r.contentHash, r);
-    }
-
-    const records: EmbeddingRecord[] = [];
-    for (const c of chunks) {
-      const reused = existingByHash.get(c.contentHash);
-      const vector = reused?.vector ?? (await this.opts.embedder.embed(c.text));
-      records.push({
-        chunkId: `${path}#${c.id}`,
-        filePath: path,
-        offset: c.offset,
-        heading: c.heading,
-        contentHash: c.contentHash,
-        vector,
-      });
-    }
-
-    // Replace the entire set of records for this path. The store's
-    // upsert by chunkId would leave stranded records when the new
-    // chunk count is smaller than the old — easier to delete first.
-    await this.opts.store.delete(path);
-    await this.opts.store.upsert(records);
+    await processOnePath(this.opts, path);
   }
 }
 
 export function createLiveIndexer(opts: LiveIndexerOpts): SemanticIndexer {
   return new LiveIndexerImpl(opts);
+}
+
+// ---------------------------------------------------------------------------
+// Low-power indexer (design D9, opt-in)
+// ---------------------------------------------------------------------------
+
+export type LowPowerIndexerOpts = {
+  vault: VaultLike;
+  chunker: ChunkerFn;
+  embedder: Embedder;
+  store: EmbeddingStore;
+  /** Scan interval. Default 5 minutes (300_000 ms). */
+  intervalMs?: number;
+};
+
+const DEFAULT_LOW_POWER_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Low-power indexer — interval-driven scan instead of event-driven
+ * live updates. Each cycle:
+ *   1. Snapshot vault.getMarkdownFiles().
+ *   2. Diff against the in-memory `lastSeenMtime` map: only files
+ *      whose mtime advanced (or that we've never seen) are
+ *      re-processed.
+ *   3. Process each affected file via the same path-level helper as
+ *      the live indexer (chunk-delta reuse stays intact).
+ *   4. Drop any path that disappeared from the vault.
+ *   5. Single store.flush() at the end of the cycle, so a 5-minute
+ *      run produces one writeBinary instead of one per file.
+ *
+ * `lastSeenMtime` is in-memory and lost on restart. That's intentional
+ * — at first start after a restart everything looks "stale", but the
+ * chunker contentHash check inside processOne means we still don't
+ * re-embed unchanged content (we only re-read + re-chunk; embeds are
+ * skipped because the hash matches an existing record).
+ */
+class LowPowerIndexerImpl implements SemanticIndexer {
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+  private cycleInFlight: Promise<void> | null = null;
+  private lastSeenMtime = new Map<string, number>();
+  private readonly intervalMs: number;
+
+  constructor(private opts: LowPowerIndexerOpts) {
+    this.intervalMs = opts.intervalMs ?? DEFAULT_LOW_POWER_INTERVAL_MS;
+  }
+
+  async start(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    // Run the first scan immediately so the user doesn't wait
+    // `intervalMs` for indexing to begin. Subsequent scans tick on
+    // the interval.
+    await this.runCycle();
+    this.timer = setInterval(() => {
+      // Skip if a cycle is still in flight to avoid stacking.
+      if (this.cycleInFlight) return;
+      this.runCycle().catch((err) => {
+        logger.error("low-power indexer: cycle failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }, this.intervalMs);
+  }
+
+  async stop(): Promise<void> {
+    this.running = false;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    if (this.cycleInFlight) await this.cycleInFlight;
+  }
+
+  async rebuildAll(): Promise<void> {
+    // Force every file to be considered stale, then run a cycle.
+    this.lastSeenMtime.clear();
+    await this.runCycle();
+  }
+
+  async flush(): Promise<void> {
+    // Test helper: trigger a cycle now and wait for it to finish.
+    await this.runCycle();
+  }
+
+  pending(): number {
+    return this.cycleInFlight ? 1 : 0;
+  }
+
+  private async runCycle(): Promise<void> {
+    if (this.cycleInFlight) {
+      await this.cycleInFlight;
+      return;
+    }
+    const cycle = (async () => {
+      const files = this.opts.vault.getMarkdownFiles();
+      const seenPaths = new Set<string>();
+
+      for (const f of files) {
+        seenPaths.add(f.path);
+        const prev = this.lastSeenMtime.get(f.path);
+        const cur = f.mtime ?? Number.POSITIVE_INFINITY; // unknown mtime → process every cycle
+        if (prev !== undefined && cur <= prev) continue;
+        await processOnePath(this.opts, f.path);
+        if (f.mtime !== undefined) this.lastSeenMtime.set(f.path, f.mtime);
+      }
+
+      // Files that vanished from the vault since the last cycle:
+      // drop their records from the store and forget their mtime.
+      for (const knownPath of Array.from(this.lastSeenMtime.keys())) {
+        if (!seenPaths.has(knownPath)) {
+          await this.opts.store.delete(knownPath);
+          this.lastSeenMtime.delete(knownPath);
+        }
+      }
+
+      await this.opts.store.flush();
+    })();
+    this.cycleInFlight = cycle;
+    try {
+      await cycle;
+    } finally {
+      this.cycleInFlight = null;
+    }
+  }
+}
+
+export function createLowPowerIndexer(
+  opts: LowPowerIndexerOpts,
+): SemanticIndexer {
+  return new LowPowerIndexerImpl(opts);
+}
+
+// ---------------------------------------------------------------------------
+// Shared per-path processing
+// ---------------------------------------------------------------------------
+
+type ProcessDeps = {
+  vault: VaultLike;
+  chunker: ChunkerFn;
+  embedder: Embedder;
+  store: EmbeddingStore;
+};
+
+/**
+ * Module-level helper used by both indexers. Reads the file, chunks
+ * it, reuses vectors for chunks whose contentHash matches an existing
+ * record, embeds the rest, and replaces the path's record set
+ * atomically (delete + upsert).
+ *
+ * Read failure is treated as "file deleted" — drop the records.
+ * Empty/below-threshold content is also treated as a delete so the
+ * index stays consistent with what `chunker` would produce on a
+ * fresh re-build.
+ */
+async function processOnePath(
+  deps: ProcessDeps,
+  path: string,
+): Promise<void> {
+  let content: string | null;
+  try {
+    content = await deps.vault.read(path);
+  } catch {
+    content = null;
+  }
+
+  if (content === null) {
+    await deps.store.delete(path);
+    return;
+  }
+
+  const chunks = await deps.chunker(content);
+  if (chunks.length === 0) {
+    await deps.store.delete(path);
+    return;
+  }
+
+  const existingByHash = new Map<string, EmbeddingRecord>();
+  for await (const r of deps.store.scan()) {
+    if (r.filePath === path) existingByHash.set(r.contentHash, r);
+  }
+
+  const records: EmbeddingRecord[] = [];
+  for (const c of chunks) {
+    const reused = existingByHash.get(c.contentHash);
+    const vector = reused?.vector ?? (await deps.embedder.embed(c.text));
+    records.push({
+      chunkId: `${path}#${c.id}`,
+      filePath: path,
+      offset: c.offset,
+      heading: c.heading,
+      contentHash: c.contentHash,
+      vector,
+    });
+  }
+
+  await deps.store.delete(path);
+  await deps.store.upsert(records);
 }

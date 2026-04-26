@@ -1,5 +1,10 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { createLiveIndexer, type VaultEvent, type VaultLike } from "./indexer";
+import {
+  createLiveIndexer,
+  createLowPowerIndexer,
+  type VaultEvent,
+  type VaultLike,
+} from "./indexer";
 import type { Embedder } from "./embedder";
 import { createEmbeddingStore, type EmbeddingRecord, type VaultAdapter } from "./store";
 import type { Chunk } from "./chunker";
@@ -298,5 +303,216 @@ describe("live indexer", () => {
     expect(store.size()).toBe(0);
 
     await indexer.stop();
+  });
+});
+
+/** mtime-aware in-memory vault for the low-power tests. */
+function makeMtimeVault(initial: Record<string, { content: string; mtime: number }>): {
+  vault: VaultLike;
+  files: Map<string, { content: string; mtime: number }>;
+} {
+  const files = new Map(Object.entries(initial));
+  const vault: VaultLike = {
+    getMarkdownFiles: () =>
+      Array.from(files.entries()).map(([path, { mtime }]) => ({ path, mtime })),
+    read: async (path) => {
+      const v = files.get(path);
+      if (v === undefined) throw new Error(`ENOENT ${path}`);
+      return v.content;
+    },
+    on: () => () => undefined, // low-power doesn't subscribe
+  };
+  return { vault, files };
+}
+
+/** Adapter that counts writeBinary calls so we can assert batching. */
+function countingAdapter(): {
+  adapter: VaultAdapter;
+  writeBinaryCount: () => number;
+} {
+  const f = new Map<string, string>();
+  const b = new Map<string, ArrayBuffer>();
+  let writeBinary = 0;
+  const adapter: VaultAdapter = {
+    async exists(p) {
+      return f.has(p) || b.has(p);
+    },
+    async read(p) {
+      const v = f.get(p);
+      if (v === undefined) throw new Error(`ENOENT ${p}`);
+      return v;
+    },
+    async write(p, d) {
+      f.set(p, d);
+    },
+    async readBinary(p) {
+      const v = b.get(p);
+      if (v === undefined) throw new Error(`ENOENT ${p}`);
+      return v.slice(0);
+    },
+    async writeBinary(p, d) {
+      writeBinary += 1;
+      b.set(p, d.slice(0));
+    },
+    async remove(p) {
+      f.delete(p);
+      b.delete(p);
+    },
+  };
+  return { adapter, writeBinaryCount: () => writeBinary };
+}
+
+describe("low-power indexer", () => {
+  test("first start processes every file (lastSeenMtime is empty)", async () => {
+    const localStore = await makeStore();
+    const { vault } = makeMtimeVault({
+      "a.md": { content: "alpha", mtime: 100 },
+      "b.md": { content: "bravo", mtime: 200 },
+    });
+    const { embedder, embeds } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10_000,
+    });
+    await indexer.start();
+    expect(embeds()).toEqual(expect.arrayContaining(["alpha", "bravo"]));
+    expect(localStore.size()).toBe(2);
+    await indexer.stop();
+  });
+
+  test("second cycle skips files whose mtime did not advance", async () => {
+    const localStore = await makeStore();
+    const { vault, files } = makeMtimeVault({
+      "a.md": { content: "alpha", mtime: 100 },
+    });
+    const { embedder, embeds } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10_000,
+    });
+    await indexer.start();
+    expect(embeds()).toEqual(["alpha"]);
+
+    // Same mtime → next cycle is a no-op for this file.
+    await indexer.flush();
+    expect(embeds()).toEqual(["alpha"]); // no new embeds
+
+    // Bump mtime + change content → cycle picks it up.
+    files.set("a.md", { content: "alpha v2", mtime: 200 });
+    await indexer.flush();
+    expect(embeds()).toEqual(["alpha", "alpha v2"]);
+
+    await indexer.stop();
+  });
+
+  test("disappeared files are dropped from the index on the next cycle", async () => {
+    const localStore = await makeStore();
+    const { vault, files } = makeMtimeVault({
+      "doomed.md": { content: "go away", mtime: 100 },
+      "kept.md": { content: "stays", mtime: 100 },
+    });
+    const { embedder } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10_000,
+    });
+    await indexer.start();
+    expect(localStore.size()).toBe(2);
+
+    files.delete("doomed.md");
+    await indexer.flush();
+    expect(localStore.size()).toBe(1);
+    const recs: EmbeddingRecord[] = [];
+    for await (const r of localStore.scan()) recs.push(r);
+    expect(recs[0]?.filePath).toBe("kept.md");
+
+    await indexer.stop();
+  });
+
+  test("batched flush: one writeBinary per cycle, not one per file", async () => {
+    const { adapter, writeBinaryCount } = countingAdapter();
+    const localStore = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: DIM,
+    });
+    await localStore.init();
+
+    const { vault } = makeMtimeVault({
+      "a.md": { content: "alpha", mtime: 100 },
+      "b.md": { content: "bravo", mtime: 100 },
+      "c.md": { content: "charlie", mtime: 100 },
+    });
+    const { embedder } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10_000,
+    });
+
+    expect(writeBinaryCount()).toBe(0);
+    await indexer.start(); // runs the first cycle
+    expect(writeBinaryCount()).toBe(1); // one batched flush, not three
+
+    await indexer.stop();
+  });
+
+  test("rebuildAll forces a full re-process even if mtimes haven't changed", async () => {
+    const localStore = await makeStore();
+    const { vault } = makeMtimeVault({
+      "a.md": { content: "alpha", mtime: 100 },
+    });
+    const { embedder, embeds } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10_000,
+    });
+    await indexer.start();
+    expect(embeds()).toEqual(["alpha"]);
+
+    await indexer.rebuildAll();
+    // Content unchanged → contentHash matches → reused vector,
+    // no new embed call. The processOnePath helper still runs but
+    // chunk-delta keeps embed work to zero.
+    expect(embeds()).toEqual(["alpha"]);
+
+    await indexer.stop();
+  });
+
+  test("stop clears the interval and waits for in-flight cycle", async () => {
+    const localStore = await makeStore();
+    const { vault } = makeMtimeVault({
+      "a.md": { content: "alpha", mtime: 100 },
+    });
+    const { embedder } = fakeEmbedder();
+    const indexer = createLowPowerIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: localStore,
+      intervalMs: 10,
+    });
+    await indexer.start();
+    await indexer.stop();
+    // Wait long enough that another tick would have fired had stop()
+    // not cleared the interval.
+    const sizeAfterStop = localStore.size();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(localStore.size()).toBe(sizeAfterStop);
   });
 });
