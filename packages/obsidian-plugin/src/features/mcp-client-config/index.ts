@@ -40,7 +40,16 @@ export {
 
 export {
   clearNodeDetectCache,
+  detectBrew,
   detectNode,
+  getDetectedBrewPath,
+  getDetectedNodeBinDir,
+  getDetectedNodePath,
+  getDetectedNpxPath,
+  installNodeViaBrew,
+  type BrewDetectResult,
+  type BrewInstallNodeResult,
+  type BrewInstallRunner,
   type ExecRunner,
   type NodeDetectResult,
 } from "./services/nodeDetect";

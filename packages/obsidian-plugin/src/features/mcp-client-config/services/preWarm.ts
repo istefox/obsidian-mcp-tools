@@ -1,6 +1,11 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import { logger } from "$/shared/logger";
+import {
+  detectNode,
+  getDetectedNodeBinDir,
+  getDetectedNpxPath,
+} from "./nodeDetect";
 
 /**
  * `mcp-remote` pre-warm (Phase 4 T10).
@@ -15,6 +20,11 @@ import { logger } from "$/shared/logger";
  * Read-only of the user's filesystem (npm cache lives under
  * `~/.npm/_npx`). Network egress: required (npm registry). Idempotent:
  * re-running just bumps `lastWarmedAt`.
+ *
+ * **PATH gotcha**: same launchctl-PATH issue as `nodeDetect`. We don't
+ * call plain `npx ...` — instead we resolve the absolute npx binary
+ * from the detected Node install (`getDetectedNpxPath`). If Node was
+ * not detected, we don't even try; the UI surfaces the install hint.
  *
  * Persistence: `data.json` slice
  * `mcpClientConfig.mcpRemotePreWarm = { lastWarmedAt, version? }`.
@@ -37,13 +47,13 @@ export type PreWarmResult =
 
 export type ExecRunner = (
   command: string,
-  options?: { timeout?: number },
+  options?: { timeout?: number; env?: NodeJS.ProcessEnv },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 const defaultRunner: ExecRunner = (command, options) => {
   const exec_ = promisify(exec) as (
     cmd: string,
-    opts?: { timeout?: number },
+    opts?: { timeout?: number; env?: NodeJS.ProcessEnv },
   ) => Promise<{ stdout: string; stderr: string }>;
   return exec_(command, options);
 };
@@ -101,25 +111,61 @@ async function persistPreWarmCache(
  */
 export async function preWarm(
   plugin: PluginLike,
-  opts?: { runner?: ExecRunner },
+  opts?: { runner?: ExecRunner; npxPath?: string },
 ): Promise<PreWarmResult> {
   const runner = opts?.runner ?? defaultRunner;
+
+  // Resolve the absolute npx path from detectNode() — running plain
+  // `npx ...` from Obsidian on macOS fails with ENOENT because the
+  // launchctl PATH does not include /opt/homebrew/bin. The explicit
+  // override (`opts.npxPath`) lets tests skip detection entirely.
+  let npxPath = opts?.npxPath ?? getDetectedNpxPath();
+  if (!npxPath) {
+    // detectNode hasn't run yet (or its cache was cleared); run it
+    // once now so we have a path to use.
+    await detectNode();
+    npxPath = getDetectedNpxPath();
+  }
+  if (!npxPath) {
+    return {
+      ok: false,
+      error: "npx not available — install Node.js from nodejs.org first.",
+    };
+  }
+
   try {
-    const { stdout, stderr } = await runner(
-      "npx -y mcp-remote@latest --help",
-      { timeout: PREWARM_TIMEOUT_MS },
-    );
+    // Quote the path so spaces survive the shell.
+    const cmd = `"${npxPath}" -y mcp-remote@latest --help`;
+
+    // Build the child env. `npx` is a shebang script that re-invokes
+    // `node` via `env node`, which does a PATH lookup INSIDE the
+    // child process. If Obsidian's inherited PATH lacks the Node bin
+    // dir (the macOS launchctl gotcha), the inner lookup fails with
+    // "env: node: No such file or directory". Prepend the detected
+    // Node bin dir so the inner lookup succeeds.
+    const nodeBinDir = getDetectedNodeBinDir();
+    const env = {
+      ...process.env,
+      ...(nodeBinDir
+        ? { PATH: `${nodeBinDir}:${process.env.PATH ?? ""}` }
+        : {}),
+    };
+
+    const { stdout, stderr } = await runner(cmd, {
+      timeout: PREWARM_TIMEOUT_MS,
+      env,
+    });
 
     // `mcp-remote` prints its help banner to stdout; some versions
     // include the version line ("mcp-remote 0.x.y"). Best-effort
     // parse — the success of the install is what matters, not the
-    // version string. We log stderr at debug level for diagnostics.
+    // version string.
     if (stderr) {
-      logger.debug("preWarm: stderr from mcp-remote --help", {
+      logger.debug("preWarm: stderr from mcp-remote", {
         stderr: stderr.slice(0, 200),
       });
     }
-    const version = parseVersionFromHelp(stdout);
+    const version = parseVersionFromHelp(stdout) ?? parseVersionFromHelp(stderr);
     const entry: PreWarmCacheEntry = {
       lastWarmedAt: new Date().toISOString(),
       ...(version ? { version } : {}),
@@ -128,6 +174,31 @@ export async function preWarm(
     return { ok: true, entry };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+
+    // `mcp-remote` does not implement `--help`/`--version`: it requires
+    // a URL as the first positional argument and emits an Invalid URL
+    // error otherwise. From npx's standpoint that is a non-zero exit,
+    // but at this point the package HAS been downloaded into
+    // ~/.npm/_npx/<hash>/node_modules/mcp-remote — the goal of the
+    // pre-warm. Distinguish that case from real failures (network
+    // errors, missing Node, package not found in registry) by looking
+    // at the error text.
+    if (
+      /mcp-remote/i.test(message) ||
+      /ERR_INVALID_URL/i.test(message) ||
+      /Invalid URL/i.test(message)
+    ) {
+      logger.debug(
+        "preWarm: npx exited non-zero but mcp-remote was loaded — treating as success",
+        { message: message.slice(0, 300) },
+      );
+      const entry: PreWarmCacheEntry = {
+        lastWarmedAt: new Date().toISOString(),
+      };
+      await persistPreWarmCache(plugin, entry);
+      return { ok: true, entry };
+    }
+
     return { ok: false, error: classifyError(message) };
   }
 }

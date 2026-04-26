@@ -28,7 +28,13 @@ import {
   teardown as mcpTransportTeardown,
   type McpTransportState,
 } from "./features/mcp-transport";
-import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
+// `mcp-server-install` setup was the 0.3.x install-prompt entry point.
+// In 0.4.0 the server runs in-process — no binary to install. The setup
+// is no longer invoked at plugin load. The module stays in the tree as
+// a rollback safety net (and `updateClaudeConfig` legacy is still
+// imported by `tool-toggle/components/ToolToggleSettings.svelte` in a
+// branch that no longer fires in 0.4.0). T14 retires it for good.
+// import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
 import { setupMigration } from "./features/migration";
 import {
   setup as semanticSearchSetup,
@@ -415,7 +421,8 @@ export default class McpToolsPlugin extends Plugin {
       });
     }
 
-    await setupMcpServerInstall(this);
+    // 0.4.0: mcp-server-install setup is intentionally not invoked.
+    // See the import site at the top of this file for the rationale.
 
     // Migration UX (Phase 4 T8) — detect leftover 0.3.x state and,
     // if found, queue the migration modal at workspace.onLayoutReady.
@@ -428,45 +435,38 @@ export default class McpToolsPlugin extends Plugin {
       });
     }
 
-    // Check for required dependencies
+    // Local REST API: optional in 0.4.0.
+    //
+    // In 0.3.x the binary mcp-server called back into the plugin via
+    // three LRA-mounted endpoints (/search/smart, /templates/execute,
+    // /mcp-tools/command-permission/). In 0.4.0 the MCP server runs
+    // in-process and calls Obsidian APIs directly — those endpoints are
+    // dead and intentionally not registered.
+    //
+    // The single LRA consumer that survives is the `search_vault` tool
+    // (DQL / JsonLogic via Dataview), which uses LRA's `/search/`
+    // endpoint with an apiKey. If LRA is not installed, that tool
+    // returns an actionable error to the MCP client; the rest of the
+    // 19 tools work without LRA. Hence: load best-effort, log debug,
+    // never show a "required" Notice.
     lastValueFrom(loadLocalRestAPI(this))
       .then((localRestApi) => {
         this.localRestApi = localRestApi;
-
-        if (!this.localRestApi.api) {
-          new Notice(
-            `${this.manifest.name}: Local REST API plugin is required but not found. Please install it from the community plugins and restart Obsidian.`,
-            0,
+        if (this.localRestApi.api) {
+          logger.info("Local REST API detected — `search_vault` is available");
+        } else {
+          logger.debug(
+            "Local REST API not installed — `search_vault` will return an actionable error if invoked; the other 19 tools are unaffected",
           );
-          return;
         }
-
-        // Register endpoints
-        this.localRestApi.api
-          .addRoute("/search/smart")
-          .post(this.handleSearchRequest.bind(this));
-
-        this.localRestApi.api
-          .addRoute("/templates/execute")
-          .post(this.handleTemplateExecution.bind(this));
-
-        // Command execution gate (issue #29). The MCP server calls
-        // this endpoint before every `execute_obsidian_command` to
-        // check the user's allowlist + enabled toggle. Deny-by-default:
-        // if the user has not opted in, every request returns "deny".
-        this.localRestApi.api
-          .addRoute("/mcp-tools/command-permission/")
-          .post((req: Request, res: Response) =>
-            handleCommandPermissionRequest(this, req, res),
-          );
-
-        logger.info("MCP Tools Plugin loaded");
       })
       .catch((error: unknown) => {
-        logger.error("Failed to load Local REST API", {
+        logger.debug("Local REST API load skipped", {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+
+    logger.info("MCP Tools Plugin loaded");
   }
 
   private async handleTemplateExecution(req: Request, res: Response) {

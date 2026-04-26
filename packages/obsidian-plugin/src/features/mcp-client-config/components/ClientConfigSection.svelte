@@ -15,7 +15,10 @@
     applyAutoWrite,
   } from "../services/autoWrite";
   import {
+    detectBrew,
     detectNode,
+    installNodeViaBrew,
+    type BrewDetectResult,
     type NodeDetectResult,
   } from "../services/nodeDetect";
   import {
@@ -48,12 +51,18 @@
 
   // Claude Desktop integration (T9 + T10): Node.js presence + mcp-remote
   // pre-warm. Both are read-only/idempotent UX hints driven from the
-  // services in this module.
+  // services in this module. Homebrew is detected on macOS so we can
+  // offer a one-click `brew install node` if Node is missing.
   let nodeStatus: NodeDetectResult | null = null;
   let nodeBusy = false;
+  let brewStatus: BrewDetectResult | null = null;
+  let brewInstallBusy = false;
+  let brewInstallStatus: string | null = null;
   let preWarmEntry: PreWarmCacheEntry | null = null;
   let preWarmBusy = false;
   let preWarmError: string | null = null;
+
+  const NODEJS_DOWNLOAD_URL = "https://nodejs.org/en/download/";
 
   $: {
     token = plugin.mcpTransportState?.bearerToken ?? "";
@@ -65,6 +74,11 @@
     autoWrite = await getAutoWriteEnabled(plugin);
     nodeStatus = await detectNode();
     preWarmEntry = await getPreWarmCache(plugin);
+    // Detect Homebrew lazily — only after we know Node is missing,
+    // since the brew offer is meaningless if Node is already detected.
+    if (nodeStatus && !nodeStatus.found) {
+      brewStatus = await detectBrew();
+    }
   });
 
   async function handleVerifyNode(): Promise<void> {
@@ -72,9 +86,53 @@
     nodeBusy = true;
     try {
       nodeStatus = await detectNode({ forceRefresh: true });
+      // Re-evaluate brew offer based on the refreshed state.
+      if (nodeStatus && !nodeStatus.found && brewStatus === null) {
+        brewStatus = await detectBrew();
+      }
     } finally {
       nodeBusy = false;
     }
+  }
+
+  function handleOpenNodeDownload(): void {
+    window.open(NODEJS_DOWNLOAD_URL, "_blank");
+  }
+
+  async function handleInstallNodeViaBrew(): Promise<void> {
+    if (brewInstallBusy) return;
+    brewInstallBusy = true;
+    brewInstallStatus = "Starting Homebrew install…";
+    try {
+      const result = await installNodeViaBrew({
+        onLine: (line) => {
+          // brew is verbose — keep just the latest meaningful line so
+          // the UI does not turn into a tail -f. Truncate long lines.
+          brewInstallStatusFromLine(line);
+        },
+      });
+      if (result.ok) {
+        brewInstallStatus = `Node ${result.version} installed.`;
+        nodeStatus = { found: true, version: result.version, raw: `v${result.version}` };
+        new Notice(`Node.js ${result.version} installed via Homebrew.`);
+      } else {
+        brewInstallStatus = `Failed: ${result.error}`;
+        new Notice(`Homebrew install failed: ${result.error}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      brewInstallStatus = `Failed: ${msg}`;
+      new Notice(`Homebrew install failed: ${msg}`);
+    } finally {
+      brewInstallBusy = false;
+    }
+  }
+
+  function brewInstallStatusFromLine(line: string): void {
+    // Trim arrow / progress prefixes brew emits.
+    const cleaned = line.replace(/^==> /, "").trim();
+    if (cleaned.length === 0) return;
+    brewInstallStatus = cleaned.length > 80 ? cleaned.slice(0, 77) + "…" : cleaned;
   }
 
   async function handlePreWarm(): Promise<void> {
@@ -268,6 +326,13 @@
           <span class="status-ok">Detected v{nodeStatus.version}</span>
         {:else}
           <span class="status-fail">{nodeStatus.error}</span>
+          <p class="hint">
+            <strong>Note for fnm / nvm / asdf users:</strong>
+            Obsidian inherits PATH from <code>launchctl</code> and does
+            not see version-manager-shimmed Node binaries. Install Node
+            globally (Homebrew on macOS, system installer otherwise) so
+            Obsidian and Claude Desktop can both find it.
+          </p>
         {/if}
       </div>
     </div>
@@ -282,6 +347,45 @@
       </button>
     </div>
   </div>
+
+  {#if nodeStatus !== null && !nodeStatus.found}
+    <div class="setting-item">
+      <div class="setting-item-info">
+        <div class="setting-item-name">Install Node.js</div>
+        <div class="setting-item-description">
+          {#if brewStatus?.found}
+            Homebrew detected (v{brewStatus.version}). Click below to
+            install Node.js with one command. No sudo needed.
+          {:else}
+            Open the Node.js download page and run the installer for
+            your platform.
+          {/if}
+          {#if brewInstallStatus}
+            <p class="brew-status">{brewInstallStatus}</p>
+          {/if}
+        </div>
+      </div>
+      <div class="setting-item-control install-buttons">
+        <button
+          type="button"
+          on:click={handleOpenNodeDownload}
+          aria-label="Open Node.js download page"
+        >
+          Open download page
+        </button>
+        {#if brewStatus?.found}
+          <button
+            type="button"
+            on:click={handleInstallNodeViaBrew}
+            disabled={brewInstallBusy}
+            aria-label="Install Node.js via Homebrew"
+          >
+            {brewInstallBusy ? "Installing…" : "Install via Homebrew"}
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <div class="setting-item">
     <div class="setting-item-info">
@@ -350,5 +454,21 @@
 
   .status-fail {
     color: var(--text-error);
+  }
+
+  .install-buttons {
+    display: flex;
+    gap: 0.4em;
+    flex-wrap: wrap;
+  }
+
+  .brew-status {
+    margin: 0.4em 0 0;
+    padding: 0.3em 0.5em;
+    border-radius: 3px;
+    background: var(--background-secondary);
+    font-family: var(--font-monospace);
+    font-size: 0.8em;
+    color: var(--text-muted);
   }
 </style>

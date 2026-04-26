@@ -39,7 +39,7 @@ describe("preWarm — success path", () => {
       stderr: "",
     });
 
-    const result = await preWarm(p, { runner });
+    const result = await preWarm(p, { runner, npxPath: "npx" });
     expect(result.ok).toBe(true);
     expect(result.ok && result.entry.version).toBe("1.2.3");
     expect(result.ok && typeof result.entry.lastWarmedAt).toBe("string");
@@ -60,7 +60,7 @@ describe("preWarm — success path", () => {
       stderr: "",
     });
 
-    const result = await preWarm(p, { runner });
+    const result = await preWarm(p, { runner, npxPath: "npx" });
     expect(result.ok).toBe(true);
     expect(result.ok && result.entry.version).toBeUndefined();
     expect(result.ok && result.entry.lastWarmedAt).toMatch(
@@ -79,7 +79,7 @@ describe("preWarm — success path", () => {
       stderr: "",
     });
 
-    await preWarm(p, { runner });
+    await preWarm(p, { runner, npxPath: "npx" });
 
     const data = p._data as Record<string, unknown>;
     expect(data.mcpTransport).toEqual({ bearerToken: "tok" });
@@ -97,14 +97,14 @@ describe("preWarm — success path", () => {
       stderr: "",
     });
 
-    const first = await preWarm(p, { runner });
+    const first = await preWarm(p, { runner, npxPath: "npx" });
     expect(first.ok).toBe(true);
     const firstAt = first.ok ? first.entry.lastWarmedAt : "";
 
     // Spin a tick so the ISO string differs.
     await new Promise((r) => setTimeout(r, 5));
 
-    const second = await preWarm(p, { runner });
+    const second = await preWarm(p, { runner, npxPath: "npx" });
     expect(second.ok).toBe(true);
     expect(second.ok && second.entry.lastWarmedAt).not.toBe(firstAt);
     expect(second.ok && second.entry.version).toBe("1.0.0");
@@ -118,7 +118,7 @@ describe("preWarm — error classification", () => {
       throw new Error("spawn npx ENOENT");
     };
 
-    const result = await preWarm(p, { runner });
+    const result = await preWarm(p, { runner, npxPath: "npx" });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toMatch(/Node\.js/i);
   });
@@ -129,7 +129,7 @@ describe("preWarm — error classification", () => {
       throw new Error("connect ETIMEDOUT 1.2.3.4:443");
     };
 
-    const result = await preWarm(p, { runner });
+    const result = await preWarm(p, { runner, npxPath: "npx" });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toMatch(/network|registry/i);
   });
@@ -140,9 +140,36 @@ describe("preWarm — error classification", () => {
       throw new Error("getaddrinfo EAI_AGAIN registry.npmjs.org");
     };
 
-    const result = await preWarm(p, { runner });
+    const result = await preWarm(p, { runner, npxPath: "npx" });
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.error).toContain("npm registry");
+  });
+
+  test("mcp-remote rejecting --help (Invalid URL) is treated as success — package is in cache", async () => {
+    // Reproduces the real-world behavior observed at run time:
+    // `mcp-remote@latest --help` does not implement --help, so it
+    // throws ERR_INVALID_URL. By the time that happens, npx has
+    // already downloaded the package into ~/.npm/_npx — the goal of
+    // pre-warm. We must NOT report failure to the user.
+    const p = fakePlugin({});
+    const runner: ExecRunner = async () => {
+      throw new Error(
+        'Command failed: "/opt/homebrew/bin/npx" -y mcp-remote@latest --help\n' +
+          "[46042] Fatal error: TypeError: Invalid URL\n" +
+          "    at new URL (node:internal/url:819:25)\n" +
+          "    at parseCommandLineArgs (file:///.../mcp-remote/dist/chunk-…) {\n" +
+          "  code: 'ERR_INVALID_URL',\n" +
+          "  input: '--help'\n" +
+          "}",
+      );
+    };
+
+    const result = await preWarm(p, { runner, npxPath: "npx" });
+    expect(result.ok).toBe(true);
+    // Cache populated with timestamp; version may be missing because
+    // mcp-remote did not print a banner this time.
+    const cached = await getPreWarmCache(p);
+    expect(cached?.lastWarmedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   test("error path does NOT update the cache (preserves last good result)", async () => {
@@ -158,7 +185,7 @@ describe("preWarm — error classification", () => {
       throw new Error("spawn npx ENOENT");
     };
 
-    await preWarm(p, { runner });
+    await preWarm(p, { runner, npxPath: "npx" });
 
     const cached = await getPreWarmCache(p);
     expect(cached?.lastWarmedAt).toBe("2026-01-01T00:00:00.000Z");
