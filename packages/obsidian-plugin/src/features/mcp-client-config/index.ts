@@ -18,3 +18,15 @@ export {
   updateClaudeDesktopConfigInputSchema,
   type UpdateClaudeDesktopConfigInput,
 } from "./services/claudeDesktop";
+
+export {
+  claudeCodeConfig,
+  claudeDesktopConfig,
+  clientConfigInputSchema,
+  streamableHttpConfig,
+  wrapInMcpServers,
+  type ClaudeCodeEntry,
+  type ClaudeDesktopEntry,
+  type ClientConfigInput,
+  type StreamableHttpEntry,
+} from "./services/generators";
