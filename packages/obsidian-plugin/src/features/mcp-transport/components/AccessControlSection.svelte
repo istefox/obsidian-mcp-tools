@@ -7,6 +7,7 @@
   } from "$/features/mcp-transport/services/setup";
   import { generateToken } from "$/features/mcp-transport/services/token";
   import { BIND_HOST, MCP_PATH_PREFIX } from "$/features/mcp-transport/constants";
+  import { applyAutoWrite } from "$/features/mcp-client-config";
 
   export let plugin: McpToolsPlugin;
 
@@ -81,7 +82,17 @@
       bearerToken = result.state.bearerToken;
       port = result.state.server.port;
 
-      new Notice("API key regenerated. Update your MCP client config.");
+      // 6. If the user has opted in to auto-write, sync
+      // claude_desktop_config.json so Claude Desktop picks up the new
+      // token without manual paste. Off by default — see autoWrite.ts.
+      const autoWriteResult = await applyAutoWrite(plugin);
+      if (autoWriteResult.applied) {
+        new Notice(
+          "API key regenerated and Claude Desktop config updated.",
+        );
+      } else {
+        new Notice("API key regenerated. Update your MCP client config.");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       new Notice(`MCP Connector: regenerate failed — ${message}`);

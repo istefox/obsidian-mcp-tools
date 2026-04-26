@@ -30,3 +30,12 @@ export {
   type ClientConfigInput,
   type StreamableHttpEntry,
 } from "./services/generators";
+
+export {
+  applyAutoWrite,
+  getAutoWriteEnabled,
+  setAutoWriteEnabled,
+  type ApplyAutoWriteResult,
+} from "./services/autoWrite";
+
+export { default as ClientConfigSection } from "./components/ClientConfigSection.svelte";

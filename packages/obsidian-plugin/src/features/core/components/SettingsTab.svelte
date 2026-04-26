@@ -4,6 +4,7 @@
   import { FeatureSettings as ToolToggleSettings } from "src/features/tool-toggle";
   import { FeatureSettings as SemanticSearchSettings } from "src/features/semantic-search";
   import { AccessControlSection } from "src/features/mcp-transport";
+  import { ClientConfigSection } from "src/features/mcp-client-config";
   import type McpServerPlugin from "src/main";
 
   export let plugin: McpServerPlugin;
@@ -11,6 +12,7 @@
 
 <div class="settings-container">
   <AccessControlSection {plugin} />
+  <ClientConfigSection {plugin} />
   <McpServerInstallSettings {plugin} />
   <ToolToggleSettings {plugin} />
   <CommandPermissionsSettings {plugin} />
