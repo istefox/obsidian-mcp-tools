@@ -106,11 +106,12 @@ describe("semantic-search setup — settings load/merge/persist", () => {
     expect(storage.semanticSearch).toEqual(DEFAULT_SEMANTIC_SETTINGS);
   });
 
-  test("provider before T6/T7 is a NoopProvider (isReady=false, search throws)", async () => {
+  test("setup without factoryDeps returns a NoopProvider (isReady=false, search throws, chooser=null)", async () => {
     const { plugin } = makePluginStub();
     const state = await setupOrThrow(plugin);
 
     expect(state.provider.isReady()).toBe(false);
+    expect(state.chooser).toBeNull();
     await expect(state.provider.search("anything", {})).rejects.toThrow(
       /not configured/i,
     );
@@ -129,5 +130,130 @@ describe("semantic-search setup — settings load/merge/persist", () => {
     expect(a.settings).toEqual(b.settings);
     expect(a.settings.provider).toBe("native");
     expect(a.settings.indexingMode).toBe(DEFAULT_SEMANTIC_SETTINGS.indexingMode);
+  });
+});
+
+describe("semantic-search setup — provider factory integration (T8)", () => {
+  test("with factoryDeps the provider is constructed via the chooser", async () => {
+    const { plugin } = makePluginStub({
+      semanticSearch: { provider: "native" },
+    });
+    // Lazily import the test helpers so this describe block stays
+    // self-contained and the providerFactory dep is exercised end-
+    // to-end. The factory + its deps are tested in isolation in
+    // services/providerFactory.test.ts; here we only check that the
+    // setup wires them through.
+    const { createEmbeddingStore } = await import("./services/store");
+    const memFiles = new Map<string, string>();
+    const memBins = new Map<string, ArrayBuffer>();
+    const adapter = {
+      async exists(p: string) {
+        return memFiles.has(p) || memBins.has(p);
+      },
+      async read(p: string) {
+        const v = memFiles.get(p);
+        if (v === undefined) throw new Error(`ENOENT ${p}`);
+        return v;
+      },
+      async write(p: string, d: string) {
+        memFiles.set(p, d);
+      },
+      async readBinary(p: string) {
+        const v = memBins.get(p);
+        if (v === undefined) throw new Error(`ENOENT ${p}`);
+        return v.slice(0);
+      },
+      async writeBinary(p: string, d: ArrayBuffer) {
+        memBins.set(p, d.slice(0));
+      },
+      async remove(p: string) {
+        memFiles.delete(p);
+        memBins.delete(p);
+      },
+    };
+    const store = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: 4,
+    });
+    await store.init();
+
+    const embedder = {
+      embed: async () => new Float32Array(4),
+      embedBatch: async (texts: string[]) =>
+        texts.map(() => new Float32Array(4)),
+      unload: async () => undefined,
+      isLoaded: () => true,
+    };
+
+    const result = await setup(plugin, {
+      factoryDeps: { plugin, embedder, store },
+    });
+    if (!result.success) throw new Error(result.error);
+
+    // settings.provider === "native" → NativeProvider, which is
+    // ready by contract (returns [] on empty store).
+    expect(result.state.chooser).not.toBeNull();
+    expect(result.state.provider.isReady()).toBe(true);
+    const out = await result.state.provider.search("anything", {});
+    expect(out).toEqual([]);
+  });
+
+  test("chooser swap on a settings-style change yields a different provider instance", async () => {
+    const { plugin } = makePluginStub({
+      semanticSearch: { provider: "native" },
+    });
+    const { createEmbeddingStore } = await import("./services/store");
+    const adapter = {
+      async exists() {
+        return false;
+      },
+      async read() {
+        throw new Error("nope");
+      },
+      async write() {
+        return undefined;
+      },
+      async readBinary() {
+        throw new Error("nope");
+      },
+      async writeBinary() {
+        return undefined;
+      },
+      async remove() {
+        return undefined;
+      },
+    };
+    const store = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: 4,
+    });
+    await store.init();
+
+    const embedder = {
+      embed: async () => new Float32Array(4),
+      embedBatch: async (texts: string[]) =>
+        texts.map(() => new Float32Array(4)),
+      unload: async () => undefined,
+      isLoaded: () => true,
+    };
+
+    // Plugin without smart-connections so the auto branch resolves
+    // to native and the smart-connections branch surfaces an error.
+    const result = await setup(plugin, {
+      factoryDeps: { plugin, embedder, store },
+    });
+    if (!result.success) throw new Error(result.error);
+    const initial = result.state.provider;
+
+    const swapped = result.state.chooser?.({
+      ...result.state.settings,
+      provider: "smart-connections",
+    });
+    expect(swapped).toBeDefined();
+    expect(swapped).not.toBe(initial);
   });
 });

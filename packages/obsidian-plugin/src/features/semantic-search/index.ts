@@ -7,6 +7,11 @@ import {
   semanticSearchSettingsSchema,
   type SemanticSearchSettings,
 } from "./types";
+import {
+  createProviderFactory,
+  type ProviderChooser,
+  type ProviderFactoryDeps,
+} from "./services/providerFactory";
 
 /**
  * Semantic search feature — Phase 3 scaffolding.
@@ -47,7 +52,25 @@ export type SemanticSearchState = {
   provider: SemanticSearchProvider;
   settings: SemanticSearchSettings;
   settingsMutex: Mutex;
+  /**
+   * Closure mapping `SemanticSearchSettings` to the matching
+   * provider. Present iff `setup()` was called with `factoryDeps`.
+   * The settings UI (T12) calls this on a tri-state change to swap
+   * `state.provider` without rebuilding the embedder/store.
+   */
+  chooser: ProviderChooser | null;
   teardown: () => Promise<void>;
+};
+
+export type SemanticSearchSetupOpts = {
+  /**
+   * Provider factory dependencies. When supplied, `setup` constructs
+   * a real provider via the factory and exposes the chooser closure.
+   * When omitted, the state stays on the NoopProvider — useful for
+   * the early plugin lifecycle and for tests that want to exercise
+   * settings persistence in isolation.
+   */
+  factoryDeps?: ProviderFactoryDeps;
 };
 
 /**
@@ -117,18 +140,33 @@ export type SetupResult =
   | { success: true; state: SemanticSearchState }
   | { success: false; error: string };
 
-export async function setup(plugin: McpToolsPlugin): Promise<SetupResult> {
+export async function setup(
+  plugin: McpToolsPlugin,
+  opts: SemanticSearchSetupOpts = {},
+): Promise<SetupResult> {
   try {
     const settingsMutex = createMutex();
     const settings = await loadAndPersistSettings(plugin, settingsMutex);
 
-    // Phase 3 T2: settings loaded under mutex. Provider remains a
-    // no-op until T6/T7/T8 land. The factory will read `settings`
-    // and return the right provider then.
+    // Phase 3 T8: if factoryDeps is supplied, construct the chooser
+    // and pick the provider matching the user's tri-state setting.
+    // Without deps, the state holds a NoopProvider; T11 will supply
+    // the real deps from main.ts after the embedder + store are
+    // wired up against the live vault.
+    let provider: SemanticSearchProvider;
+    let chooser: ProviderChooser | null = null;
+    if (opts.factoryDeps) {
+      chooser = createProviderFactory(opts.factoryDeps);
+      provider = chooser(settings);
+    } else {
+      provider = new NoopProvider();
+    }
+
     const state: SemanticSearchState = {
-      provider: new NoopProvider(),
+      provider,
       settings,
       settingsMutex,
+      chooser,
       teardown: async () => {
         // No-op for now. T9/T10 add indexer flush + model unload here.
       },
