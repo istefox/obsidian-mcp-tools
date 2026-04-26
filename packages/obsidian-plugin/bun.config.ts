@@ -19,6 +19,32 @@ const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");
 const isProd = args.includes("--prod");
 
+// Stub `onnxruntime-node` and `sharp` with empty modules. Transformers.js
+// has eager `require()` paths for these node-only optional dependencies
+// (no try/catch fallback), so even marking them `external` leaves a
+// runtime `require("onnxruntime-node")` that Electron's renderer can't
+// resolve — the plugin then fails to load with "Cannot find module
+// 'onnxruntime-node'". Replacing them with an empty module makes the
+// require return `{}`; Transformers.js's runtime detection then picks
+// the WASM/onnxruntime-web backend, which is what we actually want in
+// the Electron environment.
+const stubEmptyModulesPlugin: BunPlugin = {
+  name: "stub-empty-modules",
+  setup(build) {
+    build.onResolve({ filter: /^(onnxruntime-node|sharp)$/ }, (args) => ({
+      path: args.path,
+      namespace: "stub-empty",
+    }));
+    build.onLoad(
+      { filter: /.*/, namespace: "stub-empty" },
+      () => ({
+        contents: "module.exports = {};",
+        loader: "js",
+      }),
+    );
+  },
+};
+
 // Svelte plugin implementation
 const sveltePlugin: BunPlugin = {
 	name: "svelte",
@@ -54,7 +80,7 @@ const config: BuildConfig = {
   entrypoints: ["./src/main.ts"],
   outdir: "../..",
   minify: isProd,
-  plugins: [sveltePlugin],
+  plugins: [stubEmptyModulesPlugin, sveltePlugin],
   external: [
     "obsidian",
     "electron",
@@ -69,6 +95,13 @@ const config: BuildConfig = {
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
+    // Note: `onnxruntime-node` and `sharp` are NOT in this `external`
+    // list. They're handled by the `stubEmptyModulesPlugin` above
+    // which replaces them with empty modules at bundle time —
+    // marking them `external` would leave a literal
+    // `require("onnxruntime-node")` in main.js that Electron cannot
+    // resolve (observed: "Cannot find module 'onnxruntime-node'" at
+    // plugin load).
   ],
   target: "node",
   format: "cjs",
