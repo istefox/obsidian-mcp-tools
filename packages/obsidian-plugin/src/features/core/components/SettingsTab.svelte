@@ -2,6 +2,7 @@
   import { FeatureSettings as CommandPermissionsSettings } from "src/features/command-permissions";
   import { FeatureSettings as McpServerInstallSettings } from "src/features/mcp-server-install";
   import { FeatureSettings as ToolToggleSettings } from "src/features/tool-toggle";
+  import { FeatureSettings as SemanticSearchSettings } from "src/features/semantic-search";
   import { AccessControlSection } from "src/features/mcp-transport";
   import type McpServerPlugin from "src/main";
 
@@ -13,4 +14,5 @@
   <McpServerInstallSettings {plugin} />
   <ToolToggleSettings {plugin} />
   <CommandPermissionsSettings {plugin} />
+  <SemanticSearchSettings {plugin} />
 </div>

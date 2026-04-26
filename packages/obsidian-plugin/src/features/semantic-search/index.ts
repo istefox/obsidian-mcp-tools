@@ -13,6 +13,8 @@ import {
   type ProviderFactoryDeps,
 } from "./services/providerFactory";
 
+export { default as FeatureSettings } from "./components/SemanticSettingsSection.svelte";
+
 /**
  * Semantic search feature — Phase 3 scaffolding.
  *
@@ -180,4 +182,28 @@ export async function setup(
 
 export async function teardown(state: SemanticSearchState): Promise<void> {
   await state.teardown();
+}
+
+/**
+ * Persist a new SemanticSearchSettings value and swap the live
+ * provider via the chooser closure when one is available.
+ *
+ * Used by the settings UI (T12) on tri-state / mode / unload-toggle
+ * change. Held under the feature mutex so a rapid double-toggle
+ * cannot land out-of-order writes against `data.json`.
+ */
+export async function applySettings(
+  plugin: McpToolsPlugin,
+  state: SemanticSearchState,
+  next: SemanticSearchSettings,
+): Promise<void> {
+  await state.settingsMutex.run(async () => {
+    const data = ((await plugin.loadData()) as Record<string, unknown>) ?? {};
+    data.semanticSearch = next;
+    await plugin.saveData(data);
+  });
+  state.settings = next;
+  if (state.chooser) {
+    state.provider = state.chooser(next);
+  }
 }

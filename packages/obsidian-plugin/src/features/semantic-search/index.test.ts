@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import type McpToolsPlugin from "$/main";
-import { setup, type SemanticSearchState } from "./index";
-import { DEFAULT_SEMANTIC_SETTINGS } from "./types";
+import { applySettings, setup, type SemanticSearchState } from "./index";
+import { DEFAULT_SEMANTIC_SETTINGS, type SemanticSearchSettings } from "./types";
 
 /**
  * Minimal plugin stub: only loadData + saveData are exercised by the
@@ -255,5 +255,79 @@ describe("semantic-search setup — provider factory integration (T8)", () => {
     });
     expect(swapped).toBeDefined();
     expect(swapped).not.toBe(initial);
+  });
+});
+
+describe("applySettings — UI swap path (T12)", () => {
+  test("persists settings to data.json under the mutex", async () => {
+    const { plugin, getStorage } = makePluginStub();
+    const state = await setupOrThrow(plugin);
+    const next: SemanticSearchSettings = {
+      provider: "native",
+      indexingMode: "low-power",
+      unloadModelWhenIdle: false,
+    };
+
+    await applySettings(plugin, state, next);
+
+    expect(state.settings).toEqual(next);
+    expect(getStorage().semanticSearch).toEqual(next);
+  });
+
+  test("swaps the live provider via the chooser when one exists", async () => {
+    const { plugin } = makePluginStub();
+    const { createEmbeddingStore } = await import("./services/store");
+    const adapter = {
+      async exists() { return false; },
+      async read(): Promise<string> { throw new Error("nope"); },
+      async write() { return; },
+      async readBinary(): Promise<ArrayBuffer> { throw new Error("nope"); },
+      async writeBinary() { return; },
+      async remove() { return; },
+    };
+    const store = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: 4,
+    });
+    await store.init();
+    const embedder = {
+      embed: async () => new Float32Array(4),
+      embedBatch: async (ts: string[]) => ts.map(() => new Float32Array(4)),
+      unload: async () => undefined,
+      isLoaded: () => true,
+    };
+
+    const result = await setup(plugin, {
+      factoryDeps: { plugin, embedder, store },
+    });
+    if (!result.success) throw new Error(result.error);
+    const initial = result.state.provider;
+
+    await applySettings(plugin, result.state, {
+      ...result.state.settings,
+      provider: "smart-connections",
+    });
+
+    expect(result.state.provider).not.toBe(initial);
+    expect(result.state.settings.provider).toBe("smart-connections");
+  });
+
+  test("without chooser the provider stays NoopProvider but settings still persist", async () => {
+    const { plugin, getStorage } = makePluginStub();
+    const state = await setupOrThrow(plugin);
+    const initialProvider = state.provider;
+
+    await applySettings(plugin, state, {
+      ...state.settings,
+      provider: "native",
+    });
+
+    expect(state.provider).toBe(initialProvider); // unchanged (NoopProvider)
+    expect(state.settings.provider).toBe("native");
+    expect(
+      (getStorage().semanticSearch as { provider: string }).provider,
+    ).toBe("native");
   });
 });
