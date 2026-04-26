@@ -38,4 +38,18 @@ export {
   type ApplyAutoWriteResult,
 } from "./services/autoWrite";
 
+export {
+  clearNodeDetectCache,
+  detectNode,
+  type ExecRunner,
+  type NodeDetectResult,
+} from "./services/nodeDetect";
+
+export {
+  getPreWarmCache,
+  preWarm,
+  type PreWarmCacheEntry,
+  type PreWarmResult,
+} from "./services/preWarm";
+
 export { default as ClientConfigSection } from "./components/ClientConfigSection.svelte";

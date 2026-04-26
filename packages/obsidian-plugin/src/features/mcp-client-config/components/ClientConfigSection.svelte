@@ -14,6 +14,15 @@
     setAutoWriteEnabled,
     applyAutoWrite,
   } from "../services/autoWrite";
+  import {
+    detectNode,
+    type NodeDetectResult,
+  } from "../services/nodeDetect";
+  import {
+    getPreWarmCache,
+    preWarm,
+    type PreWarmCacheEntry,
+  } from "../services/preWarm";
 
   /**
    * Settings UI for MCP client configuration.
@@ -37,6 +46,15 @@
   let autoWrite = false;
   let busy = false;
 
+  // Claude Desktop integration (T9 + T10): Node.js presence + mcp-remote
+  // pre-warm. Both are read-only/idempotent UX hints driven from the
+  // services in this module.
+  let nodeStatus: NodeDetectResult | null = null;
+  let nodeBusy = false;
+  let preWarmEntry: PreWarmCacheEntry | null = null;
+  let preWarmBusy = false;
+  let preWarmError: string | null = null;
+
   $: {
     token = plugin.mcpTransportState?.bearerToken ?? "";
     port = plugin.mcpTransportState?.server.port ?? 0;
@@ -45,7 +63,45 @@
 
   onMount(async () => {
     autoWrite = await getAutoWriteEnabled(plugin);
+    nodeStatus = await detectNode();
+    preWarmEntry = await getPreWarmCache(plugin);
   });
+
+  async function handleVerifyNode(): Promise<void> {
+    if (nodeBusy) return;
+    nodeBusy = true;
+    try {
+      nodeStatus = await detectNode({ forceRefresh: true });
+    } finally {
+      nodeBusy = false;
+    }
+  }
+
+  async function handlePreWarm(): Promise<void> {
+    if (preWarmBusy) return;
+    preWarmBusy = true;
+    preWarmError = null;
+    try {
+      const r = await preWarm(plugin);
+      if (r.ok) {
+        preWarmEntry = r.entry;
+        new Notice("mcp-remote pre-warmed.");
+      } else {
+        preWarmError = r.error;
+        new Notice(`Pre-warm failed: ${r.error}`);
+      }
+    } finally {
+      preWarmBusy = false;
+    }
+  }
+
+  function formatTimestamp(iso: string): string {
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
 
   /**
    * Copy a JSON-serialized object to the clipboard. We pretty-print
@@ -192,6 +248,72 @@
       HTTP server is up.
     </p>
   {/if}
+
+  <h3>Claude Desktop integration</h3>
+  <p class="lead">
+    Claude Desktop reaches the in-process MCP server through the
+    <code>mcp-remote</code>
+    bridge, which requires Node.js on PATH. Other clients (Claude
+    Code, Cursor, Cline, Continue) speak HTTP MCP natively and do
+    NOT need either of these.
+  </p>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <div class="setting-item-name">Node.js</div>
+      <div class="setting-item-description">
+        {#if nodeStatus === null}
+          Checking…
+        {:else if nodeStatus.found}
+          <span class="status-ok">Detected v{nodeStatus.version}</span>
+        {:else}
+          <span class="status-fail">{nodeStatus.error}</span>
+        {/if}
+      </div>
+    </div>
+    <div class="setting-item-control">
+      <button
+        type="button"
+        on:click={handleVerifyNode}
+        disabled={nodeBusy}
+        aria-label="Verify Node.js installation"
+      >
+        {nodeBusy ? "Checking…" : "Verify again"}
+      </button>
+    </div>
+  </div>
+
+  <div class="setting-item">
+    <div class="setting-item-info">
+      <div class="setting-item-name">mcp-remote (npm cache)</div>
+      <div class="setting-item-description">
+        {#if preWarmEntry}
+          Cached
+          {#if preWarmEntry.version}
+            (v{preWarmEntry.version})
+          {/if}
+          on {formatTimestamp(preWarmEntry.lastWarmedAt)}.
+        {:else}
+          Not cached. The first Claude Desktop launch will pause for
+          20-60s while npx downloads the package (~5 MB).
+        {/if}
+        {#if preWarmError}
+          <span class="status-fail"> — {preWarmError}</span>
+        {/if}
+      </div>
+    </div>
+    <div class="setting-item-control">
+      <button
+        type="button"
+        on:click={handlePreWarm}
+        disabled={preWarmBusy ||
+          (nodeStatus !== null && !nodeStatus.found)}
+        aria-label="Pre-warm mcp-remote"
+      >
+        {preWarmBusy ? "Pre-warming…" : "Pre-warm now"}
+      </button>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -214,5 +336,19 @@
   code {
     font-family: var(--font-monospace);
     font-size: 0.9em;
+  }
+
+  .lead {
+    color: var(--text-normal);
+    margin: 0.5em 0 1em;
+  }
+
+  .status-ok {
+    color: var(--text-success);
+    font-weight: 600;
+  }
+
+  .status-fail {
+    color: var(--text-error);
   }
 </style>
