@@ -12,8 +12,14 @@ import {
   type ProviderChooser,
   type ProviderFactoryDeps,
 } from "./services/providerFactory";
+import type { ModelDownloader } from "./services/modelDownloader";
 
 export { default as FeatureSettings } from "./components/SemanticSettingsSection.svelte";
+export {
+  createModelDownloader,
+  type ModelDownloader,
+  type ModelState,
+} from "./services/modelDownloader";
 
 /**
  * Semantic search feature — Phase 3 scaffolding.
@@ -61,6 +67,13 @@ export type SemanticSearchState = {
    * `state.provider` without rebuilding the embedder/store.
    */
   chooser: ProviderChooser | null;
+  /**
+   * Optional reference to the model downloader so the settings UI
+   * (T13) can subscribe to the first-run download progress without
+   * importing internal feature plumbing. Wired by T15 production
+   * setup; remains `null` in tests and in the early lifecycle.
+   */
+  downloader: ModelDownloader | null;
   teardown: () => Promise<void>;
 };
 
@@ -169,6 +182,7 @@ export async function setup(
       settings,
       settingsMutex,
       chooser,
+      downloader: null,
       teardown: async () => {
         // No-op for now. T9/T10 add indexer flush + model unload here.
       },

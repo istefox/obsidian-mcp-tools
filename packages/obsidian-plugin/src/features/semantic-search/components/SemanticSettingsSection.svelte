@@ -7,6 +7,7 @@
     DEFAULT_SEMANTIC_SETTINGS,
     type SemanticSearchSettings,
   } from "../types";
+  import ModelDownloadProgress from "./ModelDownloadProgress.svelte";
 
   export let plugin: McpToolsPlugin;
 
@@ -181,6 +182,8 @@
       <span class="hint">frees ~150 MB of RAM after inactivity</span>
     </label>
   {/if}
+
+  <ModelDownloadProgress {plugin} />
 
   <div class="status">
     <span>{storeSize.toLocaleString()} chunks indexed</span>

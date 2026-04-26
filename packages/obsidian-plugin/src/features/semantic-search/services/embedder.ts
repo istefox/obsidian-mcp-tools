@@ -39,6 +39,30 @@ export type PipelineFn = (
 
 export type PipelineFactory = (model: string) => Promise<PipelineFn>;
 
+/**
+ * Progress event shape emitted by Transformers.js during model
+ * download. Only the fields the UI surfaces are typed; the library
+ * emits more (name, total, loaded, etc.) but they don't drive the
+ * progress bar.
+ */
+export type ProgressEvent = {
+  status: "initiate" | "download" | "progress" | "done" | "ready" | string;
+  progress?: number; // 0-100
+  file?: string;
+};
+
+export type ProgressCallback = (info: ProgressEvent) => void;
+
+/**
+ * Variant of PipelineFactory that forwards Transformers.js progress
+ * events. The model downloader (T13) wraps an instance of this and
+ * exposes the resulting state machine to the settings UI.
+ */
+export type PipelineFactoryWithProgress = (
+  model: string,
+  onProgress?: ProgressCallback,
+) => Promise<PipelineFn>;
+
 export interface Embedder {
   embed(text: string): Promise<Float32Array>;
   embedBatch(texts: string[]): Promise<Float32Array[]>;
@@ -157,8 +181,13 @@ export function createEmbedder(opts: EmbedderOpts): Embedder {
  * Transformers.js's image pipelines pull in) is never touched in the
  * text-only path we actually use.
  */
-export async function realPipelineFactory(model: string): Promise<PipelineFn> {
+export async function realPipelineFactory(
+  model: string,
+  onProgress?: ProgressCallback,
+): Promise<PipelineFn> {
   const mod = await import("@xenova/transformers");
-  const pipe = await mod.pipeline("feature-extraction", model);
+  const pipe = await mod.pipeline("feature-extraction", model, {
+    progress_callback: onProgress,
+  } as Parameters<typeof mod.pipeline>[2]);
   return pipe as unknown as PipelineFn;
 }
