@@ -12,6 +12,14 @@
 >
 > **Coming from upstream?** See [`docs/migration-from-upstream.md`](docs/migration-from-upstream.md) for the one-time switch.
 
+> **0.4.0 alpha — new architecture**
+>
+> The 0.4.0 line moves the MCP server **in-process inside Obsidian** over HTTP. No more native binary, no more Local REST API dependency. Claude Desktop reaches the server through the official `mcp-remote` bridge; HTTP-native clients (Claude Code, Cursor, Cline, Continue, VS Code) connect directly. Native semantic search via Transformers.js works without Smart Connections.
+>
+> Status: `0.4.0-alpha.4` is on BRAT now. Stable line on the community store remains the 0.3.x family until 0.4.0 graduates. See [`CHANGELOG.md`](CHANGELOG.md) for the full alpha history and migration notes — first-load detects 0.3.x state and offers an opt-in modal to rewrite `claude_desktop_config.json` and clean up the old binary.
+>
+> The sections below describe the **0.3.x architecture** and stay in place while 0.4.0 is in alpha. They will be rewritten when 0.4.0 stable cuts.
+
 MCP Connector enables AI applications like Claude Desktop, Claude Code, and Cline to securely access and work with your Obsidian vault through the Model Context Protocol (MCP). MCP is an open protocol that standardizes how AI applications can interact with external data sources and tools while maintaining security and user control. [^2]
 
 This plugin consists of two parts:

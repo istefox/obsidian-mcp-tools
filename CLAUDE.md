@@ -13,7 +13,7 @@ Two shipping components glued together by the Local REST API plugin:
 
 Why the detour through Local REST API instead of reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the server invoke other Obsidian plugins (Templater, Smart Connections, Dataview) through their APIs.
 
-Current versions (2026-04-25): **`main` ships 0.3.7** (stable, 20 MCP tools, stdio+binary architecture as described above), **`feat/http-embedded` ships 0.4.0-alpha.1** (in-process HTTP server inside the plugin, no binary; see § Branch protection policy below). License: MIT.
+Current versions (2026-04-26): **`main` ships 0.3.10** (stable, 20 MCP tools, stdio+binary architecture as described above), **`feat/http-embedded` ships 0.4.0-alpha.4** (in-process HTTP server inside the plugin, no binary; native semantic search via Transformers.js; see § Branch protection policy below). License: MIT.
 
 ### Fork status
 
@@ -21,20 +21,20 @@ Active work happens on the **`istefox/obsidian-mcp-connector`** fork. Upstream `
 
 ### Branch protection policy (2026-04-25, set by Stefano)
 
-**`main` is the production-ready, user-facing branch — currently 0.3.7. Treat it as protected.**
+**`main` is the production-ready, user-facing branch — currently 0.3.10. Treat it as protected.**
 
 Active branches as of 2026-04-25:
 
 | Branch | Version | Status | Use |
 |---|---|---|---|
-| `main` | **0.3.7** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
-| `feat/http-embedded` | **0.4.0-alpha.1** | Active development — Phase 1 ✅ done, Phase 2 22/24 done (T23 registration + T24 alpha.2 release pending) | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` and `docs/plans/0.4.0-phase-2-tool-migration.md` |
+| `main` | **0.3.10** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
+| `feat/http-embedded` | **0.4.0-alpha.4** | Active development — Phases 1+2+3 ✅ done, Phase 4 in progress (T1-T11 done; T12-T14 pending) | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` and `docs/plans/0.4.0-phase-{1,2,3,4}-*.md` |
 
 **Hard rules — apply unless Stefano explicitly authorizes the specific action:**
 
 1. **Never merge** `feat/http-embedded` (or any experimental branch) **into `main`**. The merge to 0.4.0 happens only when Stefano gives explicit go-ahead, after Phase 2-3-4 are complete and feature parity with 0.3.x is verified.
 2. **Never force-push, rebase, or `reset --hard`** on `main` under any circumstance.
-3. **Never delete or overwrite tags** on the 0.3.x line (0.3.0 through 0.3.7).
+3. **Never delete or overwrite tags** on the 0.3.x line (0.3.0 through 0.3.10).
 4. **Never delete the `0.3.x` GitHub releases** from the releases page.
 5. Bug fixes against 0.3.x are welcome — branch from `main`, PR, merge as 0.3.8 / 0.3.9 etc. This pattern preserves the stable line; it does not replace it.
 6. Merging `main` → `feat/http-embedded` (the inverse direction, to keep the dev branch aligned) is **safe and encouraged** — it does not touch `main`.
@@ -285,31 +285,32 @@ Active traps in the current tree. Historical bugs already fixed in the fork are 
 
 3. **`bun run check` at the repo root** (again) — shared-package changes cascade; both runtime packages must still type-check.
 
-## Project status (2026-04-25)
+## Project status (2026-04-26)
 
 Upstream `jacksteamdev/obsidian-mcp-tools` is **officially unmaintained** (declared by @jacksteamdev on issue #79 the 2026-04-24). Recommendation: migrate to MCP over HTTP. Conditional offer: link to any plugin that uses HTTP transport AND is published in the Obsidian community store.
 
 Current state of the fork:
 
-- `main` at **0.3.7**, stable, on BRAT, fully functional (all 20 MCP tools). Protected per the policy above.
-- `feat/http-embedded` at **0.4.0-alpha.1**, Phase 1 of the HTTP-embedded pivot complete: in-process HTTP server, Bearer auth, Origin validation, ToolRegistry ported, smoke tool `get_server_info`, settings UI for token rotation. **Not user-usable yet** — only the smoke tool is exposed; the 19 real tools land in Phase 2.
+- `main` at **0.3.10**, stable, on BRAT, fully functional (all 20 MCP tools). Protected per the policy above.
+- `feat/http-embedded` at **0.4.0-alpha.4**, Phases 1+2+3 complete + Phase 4 Block A (migration core) + Block B (client config UI) + Block C (modal + first-load wiring) + Block D (Node detection + mcp-remote pre-warm) + Block E.partial (CI on-PR workflow added; release.yml simplification deferred to T14). End-to-end semantic search via Transformers.js verified in vault TEST. Migration UX detects 0.3.x state and offers an opt-in modal at first load.
 - Community plugin store submission `obsidianmd/obsidian-releases#11919` open since 2026-04-13, automated lint cleared on 2026-04-18, awaiting human review.
 
 ## Pending work
 
 Items in flight, ordered by priority:
 
-1. **Phase 2 — Tool handler migration** (`feat/http-embedded`, when Phase 1 alpha validation is done): port the 19 vault/search/template/command tools from `packages/mcp-server/` to `packages/obsidian-plugin/src/features/mcp-tools/`. Plan to be written after Phase 1 manual smoke test is logged.
-2. **Phase 3 — Native semantic search** (`feat/http-embedded`): Transformers.js + MiniLM-L6-v2, indexer with live + low-power modes. See § Semantic search of the design doc.
-3. **Phase 4 — Migration UX, client config, polish, store submission update** (`feat/http-embedded`): migration modal for 0.3.x users, Node.js detection + `mcp-remote` pre-warm, three "Copy config" generators (Claude Desktop / Claude Code / Cursor-Cline-Continue), 0.4.0 stable cut.
-4. **Discord DM to @jacksteamdev**: only when the community store listing is live AND 0.4.0 ships HTTP. Carries a PR against `jacksteamdev/obsidian-mcp-tools` updating the README, per his stated conditions.
-5. **Weekly check on store PR #11919** automated via routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Mondays 07:00 UTC = 09:00 Rome CEST / 08:00 Rome CET). Notifies on real activity, silent on quiet weeks. Three older overlapping routines (`trig_01Lpi3a8jHiisxjDN22D5FSX` weekly duplicate, `trig_011d3JKRDd5v2mvm5wJgyAfB` and `trig_01HnQUut4yNKn3NNMArJSkWH` daily duplicates) disabled 2026-04-25. The hourly issue #79 watcher (`trig_01Dx8sZTD78yBj7buuVYP9KE`) remains active for orthogonal scope.
+1. **Phase 4 — closing tasks** (`feat/http-embedded`): T12 documentation pass (this commit covers the README "0.4.0 alpha" notice and CLAUDE.md status; full README rewrite + CHANGELOG collapse deferred to T13/T14), T13 0.4.0-beta.1 cut after manual E2E matrix, T14 0.4.0 stable + store PR #11919 update + upstream README PR + Discord DM to @jacksteamdev (per his stated conditions).
+2. **Discord DM to @jacksteamdev**: gated on T14 (0.4.0 stable + community store listing live).
+3. **Weekly check on store PR #11919** automated via routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Mondays 07:00 UTC = 09:00 Rome CEST / 08:00 Rome CET). Notifies on real activity, silent on quiet weeks. Three older overlapping routines (`trig_01Lpi3a8jHiisxjDN22D5FSX` weekly duplicate, `trig_011d3JKRDd5v2mvm5wJgyAfB` and `trig_01HnQUut4yNKn3NNMArJSkWH` daily duplicates) disabled 2026-04-25. The hourly issue #79 watcher (`trig_01Dx8sZTD78yBj7buuVYP9KE`) remains active for orthogonal scope.
 
 Items resolved and out of "pending":
 
 - ~~`#3` installer 404 — fixed in 0.3.5, validated by @Metal0gic.~~
 - ~~Maintainership stance — settled by jacksteamdev's 2026-04-24 declaration; we are the continuation maintainer.~~
 - ~~Binary content types for `get_vault_file` — landed in 0.3.4 (#59).~~
+- ~~Phase 1 — HTTP transport infrastructure — landed in 0.4.0-alpha.1.~~
+- ~~Phase 2 — Tool handler migration — landed in 0.4.0-alpha.2/alpha.3.~~
+- ~~Phase 3 — Native semantic search — landed in 0.4.0-alpha.3 / fixed in alpha.4 (`bun.config.ts` redirect onnxruntime-node→onnxruntime-web for Electron renderer).~~
 
 ## References
 
