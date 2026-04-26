@@ -1,4 +1,5 @@
 import { makeBinaryRequest, makeRequest, type ToolRegistry } from "$/shared";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { type } from "arktype";
 import { LocalRestAPI } from "shared";
 
@@ -325,6 +326,108 @@ export function applySimpleSearchLimit<T>(
   return limit !== undefined ? data.slice(0, limit) : data;
 }
 
+export interface FrontmatterPatchPrecheckArgs {
+  targetType: "heading" | "block" | "frontmatter";
+  operation: PatchOperation;
+  contentType?: "text/markdown" | "application/json";
+}
+
+/**
+ * Same family as the block-target silent EOF append issue (#71): the wrapper
+ * must not let a write reshape the targeted data without flagging the type
+ * change.
+ *
+ * When a caller targets an array-valued frontmatter field with `replace` and
+ * does NOT explicitly opt into JSON content (i.e. `contentType` is unset or
+ * `text/markdown`), the Local REST API silently coerces the field from array
+ * to scalar string. The PATCH returns 200 OK while the persisted file has
+ * lost its array structure. Reject the request with an actionable 400
+ * instead, so the caller has to either:
+ *
+ *   (a) restate intent as JSON (`contentType: "application/json"` and a
+ *       JSON-encoded value — `'["new"]'` for a single-element array,
+ *       `'null'` to clear), or
+ *   (b) opt explicitly into the destructive coercion via `application/json`
+ *       and a JSON scalar (which is at least an explicit signal, not a
+ *       silent footgun).
+ *
+ * Returns the error message string when the call should be rejected, or
+ * `null` when it is safe to proceed. Pure / synchronous so it can be unit
+ * tested without network. Fixes folotp's #12.
+ */
+export function detectFrontmatterReplaceArrayMismatch(
+  frontmatter: Record<string, unknown> | undefined | null,
+  args: FrontmatterPatchPrecheckArgs,
+  target: string,
+): string | null {
+  if (
+    args.targetType !== "frontmatter" ||
+    args.operation !== "replace" ||
+    args.contentType === "application/json"
+  ) {
+    return null;
+  }
+  if (!frontmatter) return null;
+  const value = frontmatter[target];
+  if (!Array.isArray(value)) return null;
+  return (
+    `Refusing to replace array-valued frontmatter field "${target}" ` +
+    `with text/markdown content: the Local REST API would silently ` +
+    `coerce the field from array to scalar string and corrupt the ` +
+    `existing structure. Pass contentType="application/json" and ` +
+    `content as a JSON-encoded value — for example ` +
+    `'["new"]' to set a single-element array, ` +
+    `'["a","b"]' for multiple elements, or ` +
+    `'null' to clear the field.`
+  );
+}
+
+/**
+ * Frontmatter `append`/`prepend` against an array-valued field requires the
+ * Local REST API to receive the new element wrapped in a JSON array. When the
+ * caller passes a JSON scalar (`'"new-tag"'` rather than `'["new-tag"]'`)
+ * the upstream parser raises and the request returns HTTP 500 with no
+ * actionable hint. The intent is unambiguous (append THIS element to the
+ * array), so wrap the scalar in a single-element array client-side rather
+ * than reject — DWIM where there is exactly one reasonable interpretation.
+ *
+ * Only triggers on `targetType === "frontmatter"` + `append`/`prepend` +
+ * `contentType === "application/json"` to keep the surface area minimal:
+ *
+ *   - heading/block targets are unaffected (their content is markdown text,
+ *     not JSON).
+ *   - `replace` is unaffected (caller may legitimately want to replace an
+ *     array with a scalar; that ambiguity is handled by
+ *     `detectFrontmatterReplaceArrayMismatch` above, not by auto-wrapping).
+ *   - non-JSON content types are unaffected.
+ *
+ * If the body is not parseable JSON we forward it untouched and let the REST
+ * API surface its own error — silently rewriting a malformed payload would
+ * just move the failure further down the stack.
+ *
+ * Pure / synchronous for unit testing. Fixes folotp's #13.
+ */
+export function coerceFrontmatterAppendArrayContent(
+  content: string,
+  args: FrontmatterPatchPrecheckArgs,
+): string {
+  if (
+    args.targetType !== "frontmatter" ||
+    (args.operation !== "append" && args.operation !== "prepend") ||
+    args.contentType !== "application/json"
+  ) {
+    return content;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  if (Array.isArray(parsed)) return content;
+  return JSON.stringify([parsed]);
+}
+
 export function registerLocalRestApiTools(tools: ToolRegistry) {
   // GET Status
   tools.register(
@@ -451,7 +554,51 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
         }
       }
 
-      const body = normalizeAppendBody(args.content, args.operation);
+      // Step 2 (issue #12): when a frontmatter `replace` lands on an
+      // array-valued field without an explicit JSON content type, the
+      // PATCH would silently destroy the array structure. Pre-fetch the
+      // parsed frontmatter and reject with an actionable 400 instead.
+      // Only one extra GET per frontmatter+replace+text-markdown call;
+      // all other patch shapes skip the precheck.
+      if (
+        args.targetType === "frontmatter" &&
+        args.operation === "replace" &&
+        args.contentType !== "application/json"
+      ) {
+        let frontmatter: Record<string, unknown> | undefined;
+        try {
+          const note = await makeRequest(LocalRestAPI.ApiNoteJson, "/active/", {
+            headers: { Accept: "application/vnd.olrapi.note+json" },
+          });
+          frontmatter = note.frontmatter;
+        } catch {
+          // Best-effort: if we cannot read the file (404, permission, etc.)
+          // skip the precheck and let the actual PATCH propagate the error.
+        }
+        const errorMessage = detectFrontmatterReplaceArrayMismatch(
+          frontmatter,
+          args,
+          args.target,
+        );
+        if (errorMessage) {
+          throw new McpError(ErrorCode.InvalidParams, errorMessage);
+        }
+      }
+
+      // Step 3 (issue #13): for frontmatter append/prepend with JSON
+      // content, auto-wrap a JSON scalar payload in a single-element
+      // array. The REST API returns 500 on scalar input — DWIM where
+      // there is one reasonable interpretation. Skip normalizeAppendBody
+      // in this branch so the trailing "\n\n" does not invalidate the
+      // JSON body we just normalized.
+      const isJsonFrontmatterAppendPrepend =
+        args.targetType === "frontmatter" &&
+        (args.operation === "append" || args.operation === "prepend") &&
+        args.contentType === "application/json";
+
+      const body = isJsonFrontmatterAppendPrepend
+        ? coerceFrontmatterAppendArrayContent(args.content, args)
+        : normalizeAppendBody(args.content, args.operation);
       const headers = buildPatchHeaders(args, resolvedTarget);
 
       const response = await makeRequest(
@@ -776,12 +923,13 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
       "Insert or modify content in a file relative to a heading, block reference, or frontmatter field.",
     ),
     async ({ arguments: args }) => {
-      // See patch_active_file above for the full rationale of these three
-      // steps. The only difference here is the endpoint from which we
-      // fetch file content for heading resolution — the named vault file
-      // instead of the currently active file.
+      // See patch_active_file above for the full rationale of every step.
+      // The only difference here is the endpoint from which we fetch file
+      // content (heading resolution + frontmatter precheck) — the named
+      // vault file instead of the currently active file.
       const targetDelimiter = args.targetDelimiter ?? "::";
       let resolvedTarget = args.target;
+      const fileEndpoint = `/vault/${encodeURIComponent(args.filename)}`;
 
       if (
         args.targetType === "heading" &&
@@ -789,7 +937,7 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
       ) {
         const fileContent = await makeRequest(
           LocalRestAPI.ApiContentResponse,
-          `/vault/${encodeURIComponent(args.filename)}`,
+          fileEndpoint,
           { headers: { Accept: "text/markdown" } },
         );
         const fullPath = resolveHeadingPath(
@@ -802,12 +950,49 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
         }
       }
 
-      const body = normalizeAppendBody(args.content, args.operation);
+      // Issue #12: reject silent array→scalar coercion on frontmatter
+      // replace. See patch_active_file for the full rationale.
+      if (
+        args.targetType === "frontmatter" &&
+        args.operation === "replace" &&
+        args.contentType !== "application/json"
+      ) {
+        let frontmatter: Record<string, unknown> | undefined;
+        try {
+          const note = await makeRequest(
+            LocalRestAPI.ApiNoteJson,
+            fileEndpoint,
+            { headers: { Accept: "application/vnd.olrapi.note+json" } },
+          );
+          frontmatter = note.frontmatter;
+        } catch {
+          // Best-effort: skip the precheck on read failure.
+        }
+        const errorMessage = detectFrontmatterReplaceArrayMismatch(
+          frontmatter,
+          args,
+          args.target,
+        );
+        if (errorMessage) {
+          throw new McpError(ErrorCode.InvalidParams, errorMessage);
+        }
+      }
+
+      // Issue #13: auto-wrap scalar JSON payload for frontmatter
+      // append/prepend. See patch_active_file for the full rationale.
+      const isJsonFrontmatterAppendPrepend =
+        args.targetType === "frontmatter" &&
+        (args.operation === "append" || args.operation === "prepend") &&
+        args.contentType === "application/json";
+
+      const body = isJsonFrontmatterAppendPrepend
+        ? coerceFrontmatterAppendArrayContent(args.content, args)
+        : normalizeAppendBody(args.content, args.operation);
       const headers = buildPatchHeaders(args, resolvedTarget);
 
       const response = await makeRequest(
         LocalRestAPI.ApiContentResponse,
-        `/vault/${encodeURIComponent(args.filename)}`,
+        fileEndpoint,
         {
           method: "PATCH",
           headers,

@@ -3,6 +3,63 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.8] — 2026-04-26
+
+### Fixed
+- **`search_vault_smart` returned HTTP 400 `must be a string (was an
+  object)` on every call** — the plugin-side `/search/smart` endpoint
+  validated `req.body` with `string.json.parse → searchRequest`, but
+  Express had already parsed the body via `bodyParser.json()` upstream.
+  ArkType saw an object, failed the `string` domain check, and the
+  handler 400'd before Smart Connections was ever invoked, making
+  semantic search fully unreachable from any MCP client (Claude
+  Desktop, Claude Code, Cline). Promoted `searchRequest` to a public
+  export and dropped the obsolete `jsonSearchRequest` alias; the
+  caller now binds against the parsed-object schema directly. Six
+  regression tests in `packages/shared/src/types/smart-search.test.ts`
+  pin the parsed-object contract (minimal `{query}`, populated
+  `filter`, empty `filter: {}`, missing/empty `query`, and an
+  explicit guard against the double-parse regressing). Closes #9;
+  contributed by @ezrahill (#10).
+- **`patch_vault_file` / `patch_active_file` silently destroyed
+  array-valued frontmatter fields on `replace` with text/markdown
+  content** — same family as the silent EOF append behaviour fixed
+  for `targetType: "block"` in #71 (0.3.7). The wrapper now
+  pre-fetches the parsed frontmatter (one extra GET, only when the
+  call shape is `frontmatter + replace + non-JSON content`) and
+  rejects with `McpError(InvalidParams, …)` when the target field is
+  an array. The error message points the caller at the JSON-content
+  escape hatch with concrete examples (`'["new"]'` for a
+  single-element array, `'null'` to clear). Pre-fetch is best-effort:
+  if the GET fails (404, permission), the precheck is skipped and the
+  original PATCH propagates its own error. The new helper
+  `detectFrontmatterReplaceArrayMismatch` is pure / synchronous and
+  unit-tested in isolation (10 cases). Closes #12; reported by
+  @folotp.
+- **`patch_vault_file` / `patch_active_file` returned HTTP 500 on
+  frontmatter `append` / `prepend` with a JSON scalar payload** — the
+  upstream Local REST API parser cannot handle a scalar value on the
+  array-form append/prepend op. The wrapper now auto-wraps a JSON
+  scalar in a single-element array client-side via
+  `JSON.stringify([parsed])` before forwarding the PATCH —
+  unambiguous DWIM since there is exactly one reasonable
+  interpretation (append THIS element to the array). Only triggers on
+  `targetType: "frontmatter" + (append|prepend) +
+  contentType: "application/json"` to keep the surface area minimal;
+  malformed JSON is forwarded untouched so the REST API surfaces its
+  own error. The `normalizeAppendBody` `\n\n` trailer is intentionally
+  skipped on the JSON branch so it does not invalidate the JSON body.
+  The new helper `coerceFrontmatterAppendArrayContent` is pure /
+  synchronous and unit-tested in isolation (10 cases covering
+  string/number/boolean/null/object scalars, array passthrough,
+  prepend symmetry, malformed JSON, and four pass-through paths).
+  Closes #13; reported by @folotp.
+
+### Changed
+- Added 20 regression tests in `packages/mcp-server/src/features/local-rest-api/patchVaultFile.test.ts`
+  (10 for #12 + 10 for #13) pinning the frontmatter precheck and
+  scalar auto-wrap behavior against accidental regression.
+
 ## [0.3.7] — 2026-04-24
 
 ### Fixed
