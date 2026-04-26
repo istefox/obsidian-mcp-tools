@@ -3,6 +3,42 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.9] — 2026-04-26
+
+### Fixed
+- **`patch_vault_file` / `patch_active_file` silently EOF-appended
+  content when targeting a root-orphan heading** (`targetType:
+  "heading"`, `operation: "replace"`/`"append"`/`"prepend"`, leaf
+  name pointing at a non-H1 heading at the root of the file with no
+  level-1 (`#`) parent). Same family as the silent EOF append
+  behaviour fixed for `block` targets in #71 (0.3.7). Root cause: the
+  Local REST API's `markdown-patch` indexer keys headings by their
+  full hierarchical path starting from H1, so a root-orphan H2/H3/…
+  cannot be addressed by leaf name. With the upstream-compat default
+  `Create-Target-If-Missing: true` for headings, the PATCH fell
+  through to the silent-create branch and returned HTTP 200 with the
+  caller's content appended at EOF, leaving a duplicate heading and
+  no in-place edit.
+
+  The wrapper now calls a new `detectOrphanRootHeading` helper
+  immediately after fetching the file content (which it already
+  needed for `resolveHeadingPath` — no extra GET roundtrip) and
+  throws `McpError(ErrorCode.InvalidParams, …)` with an actionable
+  message before the silent corruption can land. The error message
+  documents both workarounds: add a level-1 heading at the top of
+  the file, or pass `createTargetIfMissing=false` to make the
+  failure explicit.
+
+  Twelve regression tests in `patchVaultFile.test.ts` pin the
+  detection: @folotp's exact repro, the canonical valid cases (H1
+  root, H2 nested under H1, H3 under H1+H2), the orphan
+  generalization to H3 and H3-under-orphan-H2, the first-match-wins
+  ambiguity rule, and defensive cases (heading not found, empty
+  content, mid-paragraph fake-heading text, sticky H1 ancestor
+  flag). Closes the heading half of upstream
+  `jacksteamdev/obsidian-mcp-tools#71`; reported by @folotp on the
+  v0.3.7 follow-up.
+
 ## [0.3.8] — 2026-04-26
 
 ### Fixed

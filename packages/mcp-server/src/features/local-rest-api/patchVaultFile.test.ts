@@ -3,6 +3,7 @@ import {
   buildPatchHeaders,
   coerceFrontmatterAppendArrayContent,
   detectFrontmatterReplaceArrayMismatch,
+  detectOrphanRootHeading,
   normalizeAppendBody,
   resolveHeadingPath,
 } from "./index";
@@ -579,5 +580,107 @@ describe("coerceFrontmatterAppendArrayContent — issue #13 (500 on JSON scalar 
         contentType: "application/json",
       }),
     ).toBe('"foo"');
+  });
+});
+
+describe("detectOrphanRootHeading — issue #71 heading half (root-orphan H2+)", () => {
+  test("rejects a level-2 heading at root with no H1 parent (folotp's exact repro)", () => {
+    // The minimal fixture from folotp's v0.3.7 follow-up on upstream #71:
+    // a single root H2 with no H1, addressed by leaf name. Without the
+    // wrapper-side rejection, markdown-patch would fall through to
+    // Create-Target-If-Missing and silently EOF-append.
+    const content = `## Section finale\n\nMarker.`;
+    const result = detectOrphanRootHeading(content, "Section finale");
+    expect(result).not.toBeNull();
+    expect(result).toContain('"Section finale"');
+    expect(result).toContain("level-2");
+    expect(result).toContain("createTargetIfMissing=false");
+  });
+
+  test("accepts a level-2 heading nested under an H1", () => {
+    // The canonical valid case: H2 has an H1 parent earlier in the doc.
+    // markdown-patch can resolve the full path "Top::Section A".
+    const content = `# Top\n\n## Section A\n\nBody.`;
+    expect(detectOrphanRootHeading(content, "Section A")).toBeNull();
+  });
+
+  test("accepts an H1 heading at root", () => {
+    // H1 itself is the indexer's anchor — no orphan concern. Folotp's
+    // control test on the v0.3.7 thread confirms this case works.
+    const content = `# Top Level\n\nBody.`;
+    expect(detectOrphanRootHeading(content, "Top Level")).toBeNull();
+  });
+
+  test("rejects a level-3 heading at root with no H1 ancestor", () => {
+    // Same family as the H2 case: any non-H1 heading without an H1 ancestor
+    // earlier in the document is an orphan as far as the indexer is
+    // concerned. Generalize the check to all levels >1.
+    const content = `### Deep root\n\nContent.`;
+    const result = detectOrphanRootHeading(content, "Deep root");
+    expect(result).not.toBeNull();
+    expect(result).toContain("level-3");
+  });
+
+  test("rejects a level-3 heading nested under a root-orphan H2", () => {
+    // The H3 inherits the orphan status from its only ancestor. There is
+    // no H1 anywhere before the match, so the indexer cannot key it.
+    const content = `## H2 root\n\n### H3 child\n\nContent.`;
+    const result = detectOrphanRootHeading(content, "H3 child");
+    expect(result).not.toBeNull();
+    expect(result).toContain('"H3 child"');
+    expect(result).toContain("level-3");
+  });
+
+  test("accepts a level-3 heading nested under an H1 → H2 chain", () => {
+    // Once a real H1 anchor exists, every deeper heading after it is
+    // resolvable. Folotp's "control test" listed this as passing on v0.3.7.
+    const content = `# Top\n\n## Middle\n\n### Deep\n\nContent.`;
+    expect(detectOrphanRootHeading(content, "Deep")).toBeNull();
+  });
+
+  test("rejects a root-orphan H2 even if a same-named H2 nested under H1 exists later", () => {
+    // First-match-wins. If the first occurrence of the leaf is orphan, we
+    // reject — otherwise the caller would silently target the orphan and
+    // get the EOF-append bug. The ambiguity itself is a separate footgun
+    // (two headings same name) and a loud failure is preferable.
+    const content = `## Section\n\n# Real Top\n\n## Section\n\nBody.`;
+    const result = detectOrphanRootHeading(content, "Section");
+    expect(result).not.toBeNull();
+  });
+
+  test("accepts when the first match is a valid H1, even with later orphan H2 with same name", () => {
+    // Inverse of the previous test: first match is the H1 itself, which
+    // is always valid. We never reach the later orphan H2 in the walk.
+    const content = `# Section\n\n## Other\n\nBody.`;
+    expect(detectOrphanRootHeading(content, "Section")).toBeNull();
+  });
+
+  test("returns null when the heading is not found at all", () => {
+    // Defensive: if the leaf doesn't exist anywhere, this helper has no
+    // opinion — the downstream PATCH will hit Create-Target-If-Missing
+    // (or fail explicitly per the per-target-type defaults wired in
+    // 0.3.7) and that is the correct behavior, not our concern here.
+    const content = `# Top\n\n## Section A`;
+    expect(detectOrphanRootHeading(content, "Nowhere")).toBeNull();
+  });
+
+  test("returns null for empty content", () => {
+    // Trivially safe — there is no heading to be orphan.
+    expect(detectOrphanRootHeading("", "anything")).toBeNull();
+  });
+
+  test("ignores non-heading lines that look like headings inside paragraph text", () => {
+    // The regex anchors to start-of-line, so a "## fake" mid-paragraph is
+    // not a heading. Mirrors the same parse rules as resolveHeadingPath.
+    const content = `paragraph with ## fake heading text\n\n# Real Top\n\n## Section`;
+    expect(detectOrphanRootHeading(content, "Section")).toBeNull();
+  });
+
+  test("respects an H1 that appears earlier even with intermediate non-heading content", () => {
+    // The ancestor flag is sticky once an H1 has been seen — anything
+    // matched after that line is non-orphan, even with arbitrary body
+    // content in between.
+    const content = `# Anchor\n\nLong body.\n\nMore body.\n\n## Later H2\n\nFinal body.`;
+    expect(detectOrphanRootHeading(content, "Later H2")).toBeNull();
   });
 });
