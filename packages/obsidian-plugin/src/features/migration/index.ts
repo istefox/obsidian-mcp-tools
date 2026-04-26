@@ -15,3 +15,13 @@ export {
   type LegacyInstallState,
   type DetectLegacyInstallInput,
 } from "./services/detect";
+
+export {
+  executeSteps,
+  planMigration,
+  type MigrationContext,
+  type MigrationStep,
+  type MigrationStepId,
+  type MigrationStepResult,
+  type MutatePluginData,
+} from "./services/plan";
