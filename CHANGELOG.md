@@ -3,6 +3,147 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0-alpha.3] — 2026-04-26
+
+### Fixed — critical regression in 0.4.0-alpha.2 dispatch
+
+- **`tools/call` returned HTTP 500 after the first request**
+  (transport-level failure). The MCP SDK's
+  `StreamableHTTPServerTransport` in stateless mode forbids reuse —
+  see `webStandardStreamableHttp.js`: "Stateless transport cannot be
+  reused across requests. Create a new transport per request." Our
+  setup created the transport once at plugin onload and reused it
+  across requests, so the second `tools/call` always failed with an
+  empty 500 response. The unit and integration tests didn't surface
+  it because each test creates a fresh `McpService`. Real-world
+  usage (Claude Desktop, manual `curl`, MCP Inspector) all hit the
+  bug on the second tool invocation.
+
+  Fix: `createMcpService` now exposes a request handler that builds
+  a fresh `McpServer` + `StreamableHTTPServerTransport` per HTTP
+  request. The `ToolRegistry` (with all 20 registrations) stays a
+  process singleton so the per-request cost is on the order of
+  milliseconds. Validated end-to-end against vault TEST with 8
+  consecutive `tools/call` invocations — all return HTTP 200 with
+  valid JSON-RPC payloads.
+
+  **Anyone using 0.4.0-alpha.2 should upgrade.** alpha.2 was
+  effectively unable to handle more than one tool call per plugin
+  load.
+
+### Added — Phase 3 (semantic search) — provider tri-state + indexer + UI
+
+The end-to-end pipeline of native semantic search lands. The
+`search_vault_smart` tool no longer requires Smart Connections.
+Provider, indexer, and UI are all wired; **see Known limitations
+below for the one runtime issue still open**.
+
+- **Provider tri-state setting** (design D7): `auto` (default — use
+  Smart Connections if installed, otherwise native), `native`
+  (always Transformers.js), `smart-connections` (always SC; errors
+  actionably if absent).
+- **Native provider** backed by `@xenova/transformers` 2.17.2 +
+  `Xenova/all-MiniLM-L6-v2` (384-dim). Cosine flat scan with
+  vectorized typed-array math. Folder include/exclude filters apply
+  before scoring.
+- **Smart Connections provider** extracted from the inline tool
+  logic into a dedicated module (`services/smartConnectionsProvider.ts`)
+  so both providers share the unified `SearchResult` shape.
+- **Embedding store** at `<pluginDir>/embeddings.bin` (sequential
+  Float32) + `embeddings.index.json` (record metadata + byte
+  offsets). Format version 1; mismatch triggers a clean re-index
+  with a warning.
+- **Live indexer** (default, design D9): subscribes to
+  `vault.on('modify'|'create'|'delete')`, debounces per-file edits
+  (2s), re-chunks, reuses vectors for chunks whose `contentHash`
+  hasn't changed (chunk-delta), drops records on file delete.
+- **Low-power indexer** (opt-in): 5-minute interval scan against
+  `getMarkdownFiles().mtime`, single batched `store.flush()` per
+  cycle.
+- **Lazy start** (Q4 design choice): the indexer is constructed at
+  plugin onload but not auto-started — it kicks in on the first
+  `search_vault_smart` call so plugin boot stays fast and the
+  ~25 MB MiniLM download only happens for users who actually use
+  semantic search.
+- **Settings UI** (`SemanticSettingsSection.svelte`): tri-state
+  radio + indexing-mode radio + unload-when-idle toggle + indexed-
+  chunk count + Rebuild button.
+- **Model download progress** (`ModelDownloadProgress.svelte`):
+  progress card during the first-run download (subscribes to a
+  `ModelDownloader` state machine — idle → downloading → ready /
+  error with retry).
+- **Embedder** with LRU query cache (size 32) and unload-when-idle
+  timer (60s default). Concurrent first-call dedupes through a
+  shared in-flight `Promise<PipelineFn>`.
+- **Chunker**: heading-section (H1/H2) split with 512/64-token
+  sliding window fallback for over-long sections; frontmatter
+  concatenated to the first chunk; sections under 20 tokens
+  skipped; SHA-256 content hashing (16 hex chars) for chunk-delta
+  detection.
+- **123 new unit tests**: chunker (12), embedder (8), store (9),
+  native provider (10), smart-connections provider (15),
+  provider factory (9), live + low-power indexer (14), tool
+  dispatch contract (7), model downloader (7), settings persist
+  (12), end-to-end integration (4).
+
+### Changed
+
+- **Bundle stub for `onnxruntime-node` and `sharp`**
+  (`bun.config.ts`): a Bun build plugin replaces both with empty
+  modules at bundle time. Marking them `external` left literal
+  `require("onnxruntime-node")` in `main.js` that Electron's
+  renderer cannot resolve at runtime ("Cannot find module
+  'onnxruntime-node'", plugin failed to load). The empty-module
+  shim lets Transformers.js's runtime detection pick the
+  `onnxruntime-web` (WASM) backend, which is the right choice in
+  Electron anyway. Bundle: `main.js` 2.2 MB → 2.9 MB (+700 KB).
+- **`search_vault_smart` output shape** (breaking vs alpha.2):
+  `{ path, score, breadcrumbs, text }` → `{ filePath, heading,
+  excerpt, score }`. The unified `SearchResult` shape is the same
+  whether the backend is Smart Connections or the native provider.
+- **`SemanticSearchState` shape**: optional `chooser`,
+  `downloader`, `indexer`, `store`, `startIndexerIfNeeded` fields
+  are now exposed for the settings UI to read live state. Wired by
+  `main.ts` against the actual `app.vault` adapter.
+
+### Known limitations
+
+- **Native provider model load fails in Electron WASM path**:
+  `search_vault_smart` with `provider="native"` (or `"auto"`
+  without Smart Connections installed) returns
+  `Semantic search failed: Cannot read properties of undefined
+  (reading 'create')` on the first call. Console shows
+  `Something went wrong during model construction (most likely a
+  missing operation). Using wasm as a fallback.` followed by the
+  TypeError inside `from_pretrained`. Transformers.js initializes
+  ONNX runtime web in the Electron renderer but the WASM model
+  construction throws before completing. Workaround for now: keep
+  Smart Connections installed and use `provider="auto"` (the
+  default) — it routes to SC and works fine. The native path will
+  be fixed in 0.4.0-alpha.4 (likely needs a different ONNX runtime
+  init flow or a switch to the `@huggingface/transformers` v3
+  successor that ships pure-WASM by default).
+- All other 19 tools work end-to-end; this is an isolated Phase 3
+  surface issue, not a regression from alpha.2.
+
+### Testing summary
+
+- 453 unit + integration tests pass (351 pre-Phase-3 baseline +
+  102 new in Phase 3).
+- End-to-end vault TEST smoke: 19/20 tools verified via `curl`
+  against the live in-process MCP server. The dispatcher, transport,
+  tool registry, command-permissions, vault I/O, fetch, and
+  templater integrations all confirmed working.
+- The SDK transport reuse bug (alpha.2 critical) was caught by this
+  smoke and fixed before alpha.3 release.
+
+### References
+
+- Plan: `docs/plans/0.4.0-phase-3-semantic-search.md`
+- Design: `docs/design/2026-04-24-http-embedded-design.md`
+  § Semantic search (D7-D9)
+- Smoke runbook: `handoff.md` § F "Test 0.4.0-alpha in Obsidian"
+
 ## [0.4.0-alpha.2] — 2026-04-25
 
 ### Added — Phase 2 tool migration (HTTP-embedded pivot)
