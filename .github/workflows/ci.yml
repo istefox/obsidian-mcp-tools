@@ -1,0 +1,55 @@
+name: CI
+
+# On-PR validation: typecheck + tests across the workspace.
+# Runs on every push to main / feat/http-embedded and on every PR
+# targeting either branch. Release workflow stays separate (release.yml,
+# triggered on tag push) and is responsible for build + upload.
+#
+# CI does NOT exercise the manual smoke matrix (vault TEST + Claude
+# Code + Claude Desktop + Cursor/Cline) — that is reserved for
+# pre-release validation per the design § Testing strategy.
+
+on:
+  push:
+    branches:
+      - main
+      - feat/http-embedded
+  pull_request:
+    branches:
+      - main
+      - feat/http-embedded
+
+# Cancel an older in-flight run for the same ref when a new push lands.
+# A redundant test run on a stale commit is wasted CI time.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (workspace-wide)
+        run: bun run check
+
+      - name: Tests — shared
+        run: cd packages/shared && bun test
+
+      - name: Tests — mcp-server
+        run: cd packages/mcp-server && bun test
+
+      - name: Tests — obsidian-plugin
+        run: cd packages/obsidian-plugin && bun test
