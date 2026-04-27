@@ -10,6 +10,7 @@ import type McpToolsPlugin from "$/main";
 import { ToolRegistryClass } from "./toolRegistry";
 import type { ToolRegistry } from "./toolRegistry";
 import { registerTools } from "$/features/mcp-tools";
+import { applyDisabledToolsFilter } from "$/features/tool-toggle";
 
 export type McpServiceConfig = {
   app: App;
@@ -53,6 +54,12 @@ export async function createMcpService(
     plugin: config.plugin,
     pluginVersion: config.pluginVersion,
   });
+
+  // Apply the user's `toolToggle.disabled` filter (Phase 4 T12.c).
+  // Disabled tools stay registered but are flipped off the registry's
+  // enabled set, so they no longer appear in `tools/list` and any
+  // `tools/call` against them returns MethodNotFound. Idempotent.
+  await applyDisabledToolsFilter(registry, config.plugin);
 
   const handleRequest = async (
     req: IncomingMessage,

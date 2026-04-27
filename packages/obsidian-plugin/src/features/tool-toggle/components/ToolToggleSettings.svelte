@@ -2,115 +2,145 @@
   import type McpToolsPlugin from "$/main";
   import { Notice } from "obsidian";
   import { onMount } from "svelte";
-  import { updateClaudeConfig } from "../../mcp-server-install/services/config";
-  import { getInstallationStatus } from "../../mcp-server-install/services/status";
-  import {
-    KNOWN_MCP_TOOL_NAMES,
-    parseDisabledToolsCsv,
-    serializeDisabledToolsToEnv,
-  } from "../utils";
+  import { DESTRUCTIVE_TOOL_NAMES, KNOWN_MCP_TOOL_NAMES } from "../utils";
+
+  /**
+   * Disabled MCP tools settings UI.
+   *
+   * Replaces the legacy CSV textarea (0.3.x carry-over) with a
+   * checkbox grid bound to the live `toolToggle.disabled` array. Each
+   * checkbox toggles the persisted state immediately — no save button,
+   * no typing, no typos.
+   *
+   * The runtime filter lives in
+   * `mcp-tools/index.ts:registerTools`. It reads the same
+   * `toolToggle.disabled` slice once at registration time and skips
+   * `registry.register()` for matching names. Disabling a tool here
+   * therefore takes effect on the NEXT plugin reload (or transport
+   * restart, which fires automatically on token regenerate).
+   *
+   * Two presets are exposed:
+   *  - "Disable destructive operations" — adds every entry in
+   *    `DESTRUCTIVE_TOOL_NAMES` to the disabled set (read-only MCP).
+   *  - "Enable all" — clears the disabled set entirely.
+   */
 
   export let plugin: McpToolsPlugin;
 
-  // Raw textarea contents — always mirrors what the user sees typed.
-  // We normalize only on save (not on every keystroke) so typing
-  // whitespace or trailing commas feels natural.
-  let disabledRaw = "";
-  let saving = false;
+  let disabled: Set<string> = new Set();
+  let busy = false;
+  let mounted = false;
 
   onMount(async () => {
-    const data = await plugin.loadData();
+    const data = (await plugin.loadData()) as
+      | { toolToggle?: { disabled?: string[] } }
+      | null;
     const existing = data?.toolToggle?.disabled ?? [];
-    disabledRaw = existing.join(", ");
+    disabled = new Set(existing);
+    mounted = true;
   });
 
-  async function handleSave() {
-    saving = true;
+  /**
+   * Persist the current `disabled` set into `data.json`. When empty,
+   * remove the whole `toolToggle` slice rather than leaving an
+   * `{ disabled: [] }` behind — keeps the data file tidy and
+   * round-trips to "no key" on the next load.
+   */
+  async function persist(): Promise<void> {
+    if (busy) return;
+    busy = true;
     try {
-      const disabled = parseDisabledToolsCsv(disabledRaw);
-
-      // Persist to plugin settings first. This is the source of truth
-      // and must succeed even if the client config rewrite below fails.
-      // When the user clears the list, remove the whole toolToggle key
-      // rather than leaving an empty `{ disabled: [] }` behind — keeps
-      // data.json tidy and round-trips to "no key" on the next load.
-      const data = (await plugin.loadData()) ?? {};
-      if (disabled.length === 0) {
+      const data = ((await plugin.loadData()) as Record<string, unknown>) ?? {};
+      if (disabled.size === 0) {
         delete data.toolToggle;
       } else {
-        data.toolToggle = { disabled };
+        data.toolToggle = { disabled: [...disabled].sort() };
       }
       await plugin.saveData(data);
-
-      // If the server is already installed, immediately re-write the
-      // MCP client's config file so the new disabled list takes effect
-      // at the next client restart. If the server is not installed,
-      // the disabled list will be applied on the install flow instead.
-      const status = await getInstallationStatus(plugin);
-      if (status.state === "installed" && status.path) {
-        const apiKey = await plugin.getLocalRestApiKey();
-        if (!apiKey) {
-          throw new Error(
-            "Local REST API key not found — cannot update the MCP client config.",
-          );
-        }
-        const envOverrides: Record<string, string> = {};
-        const serialized = serializeDisabledToolsToEnv(disabled);
-        if (serialized) envOverrides.OBSIDIAN_DISABLED_TOOLS = serialized;
-        await updateClaudeConfig(
-          plugin,
-          status.path,
-          apiKey,
-          envOverrides,
-        );
-      }
-
-      new Notice("Disabled MCP tools saved.");
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to save disabled tools";
-      new Notice(message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice(`Failed to save disabled tools: ${message}`);
     } finally {
-      saving = false;
+      busy = false;
     }
+  }
+
+  function toggle(name: string): void {
+    if (disabled.has(name)) {
+      disabled.delete(name);
+    } else {
+      disabled.add(name);
+    }
+    // Trigger Svelte reactivity (Set mutations are not tracked).
+    disabled = disabled;
+    void persist();
+  }
+
+  function disableDestructive(): void {
+    for (const name of DESTRUCTIVE_TOOL_NAMES) disabled.add(name);
+    disabled = disabled;
+    void persist();
+    new Notice(
+      `${DESTRUCTIVE_TOOL_NAMES.length} destructive operations disabled. Restart your MCP client.`,
+    );
+  }
+
+  function enableAll(): void {
+    if (disabled.size === 0) return;
+    disabled = new Set();
+    void persist();
+    new Notice("All MCP tools enabled.");
   }
 </script>
 
 <div class="tool-toggle-settings">
   <h3>Disabled MCP tools</h3>
   <p class="description">
-    Comma-separated list of tool names that should be hidden from your
-    MCP client. Typos are logged as warnings by the server and do not
-    break startup. Changes apply the next time your MCP client
-    restarts.
+    Tick a tool to hide it from your MCP client. Disabled tools are not
+    even registered with the MCP server, so the client never sees them.
+    Changes apply on the next plugin reload (or after the next API key
+    rotation, which restarts the transport automatically).
   </p>
 
-  <textarea
-    bind:value={disabledRaw}
-    placeholder="patch_vault_file, delete_vault_file"
-    rows="3"
-    disabled={saving}
-    aria-label="Disabled MCP tools (comma-separated)"
-  ></textarea>
-
-  <div class="actions">
-    <button on:click={handleSave} disabled={saving}>
-      {saving ? "Saving..." : "Save"}
+  <div class="presets">
+    <button
+      type="button"
+      on:click={disableDestructive}
+      disabled={busy}
+      aria-label="Disable destructive operations"
+    >
+      Disable destructive operations ({DESTRUCTIVE_TOOL_NAMES.length})
+    </button>
+    <button
+      type="button"
+      on:click={enableAll}
+      disabled={busy || disabled.size === 0}
+      aria-label="Enable all MCP tools"
+    >
+      Enable all
     </button>
   </div>
 
-  <details>
-    <summary>
-      Show available tool names ({KNOWN_MCP_TOOL_NAMES.length})
-    </summary>
-    <ul>
+  {#if mounted}
+    <div class="grid">
       {#each KNOWN_MCP_TOOL_NAMES as name (name)}
-        <li><code>{name}</code></li>
+        <label class="row" class:disabled-row={disabled.has(name)}>
+          <input
+            type="checkbox"
+            checked={disabled.has(name)}
+            on:change={() => toggle(name)}
+            disabled={busy}
+            aria-label="Disable {name}"
+          />
+          <code>{name}</code>
+        </label>
       {/each}
-    </ul>
-  </details>
+    </div>
+  {/if}
+
+  <p class="counter">
+    {disabled.size} of {KNOWN_MCP_TOOL_NAMES.length} disabled
+  </p>
 </div>
 
 <style>
@@ -121,34 +151,47 @@
   .description {
     color: var(--text-muted);
     font-size: 0.9em;
-    margin-bottom: 0.5em;
+    margin: 0.5em 0 0.8em;
   }
 
-  textarea {
-    width: 100%;
+  .presets {
+    display: flex;
+    gap: 0.4em;
+    flex-wrap: wrap;
+    margin-bottom: 0.8em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25em 1.2em;
+    margin: 0.4em 0 0.8em;
+    padding: 0.6em 0.8em;
+    background: var(--background-secondary);
+    border-radius: 4px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    cursor: pointer;
+    padding: 0.15em 0;
+  }
+
+  .row code {
     font-family: var(--font-monospace);
     font-size: 0.9em;
-    resize: vertical;
   }
 
-  .actions {
-    margin-top: 0.5em;
-    margin-bottom: 1em;
-  }
-
-  details summary {
-    cursor: pointer;
+  .disabled-row code {
+    text-decoration: line-through;
     color: var(--text-muted);
-    font-size: 0.9em;
   }
 
-  details ul {
-    columns: 2;
-    margin-top: 0.5em;
-    padding-left: 1.5em;
-  }
-
-  details code {
+  .counter {
+    color: var(--text-muted);
     font-size: 0.85em;
+    margin: 0;
   }
 </style>

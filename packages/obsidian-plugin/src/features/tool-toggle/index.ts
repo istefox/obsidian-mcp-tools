@@ -4,7 +4,12 @@ import "./types";
 
 export { default as FeatureSettings } from "./components/ToolToggleSettings.svelte";
 export {
+  DESTRUCTIVE_TOOL_NAMES,
   KNOWN_MCP_TOOL_NAMES,
   parseDisabledToolsCsv,
   serializeDisabledToolsToEnv,
 } from "./utils";
+export {
+  applyDisabledToolsFilter,
+  type ApplyDisabledToolsFilterResult,
+} from "./services/applyFilter";

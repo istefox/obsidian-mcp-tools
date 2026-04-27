@@ -1,39 +1,59 @@
 /**
- * Canonical list of MCP tool names exposed by this server. Hardcoded
- * here to avoid a runtime discovery call from the settings UI (the
- * server does not expose a "list of tool names" endpoint via Local
- * REST API — only via the stdio MCP protocol it speaks to clients).
+ * Canonical list of MCP tool names exposed by the in-process server.
+ * Authoritative source for the settings UI checkbox grid; the runtime
+ * filter in `mcp-tools/index.ts:registerTools` reads
+ * `toolToggle.disabled` and skips matching `registry.register()`
+ * calls, so the client's `tools/list` only returns the enabled
+ * subset.
  *
- * If the server adds or removes a tool, update this list to keep the
- * "Show available tool names" disclosure in the settings UI in sync.
- * The server is authoritative at runtime: unknown names in
- * OBSIDIAN_DISABLED_TOOLS are logged as warnings by
- * `packages/mcp-server/src/features/core/index.ts` and do not abort
- * startup, so a stale list degrades gracefully.
+ * If the registry adds or removes a tool, update this list and the
+ * matching `ifEnabled(...)` block in `mcp-tools/index.ts`.
  */
 export const KNOWN_MCP_TOOL_NAMES: readonly string[] = [
-  // Vault file management (packages/mcp-server/src/features/local-rest-api)
+  // Health
   "get_server_info",
+  // Active-file ops (features/mcp-tools/tools/*ActiveFile.ts)
   "get_active_file",
   "update_active_file",
   "append_to_active_file",
   "patch_active_file",
   "delete_active_file",
   "show_file_in_obsidian",
+  // Vault-file ops (features/mcp-tools/tools/*VaultFile.ts)
   "list_vault_files",
   "get_vault_file",
   "create_vault_file",
   "append_to_vault_file",
   "patch_vault_file",
   "delete_vault_file",
+  // Search (features/mcp-tools/tools/searchVault*.ts)
   "search_vault",
   "search_vault_simple",
-  // Semantic search (packages/mcp-server/src/features/smart-connections)
   "search_vault_smart",
-  // Templater (packages/mcp-server/src/features/templates)
-  "execute_template",
-  // Web fetch (packages/mcp-server/src/features/fetch)
+  // Obsidian command execution (features/mcp-tools/tools/*ObsidianCommand.ts)
+  "list_obsidian_commands",
+  "execute_obsidian_command",
+  // Web fetch + Templater (features/mcp-tools/tools/{fetch,executeTemplate}.ts)
   "fetch",
+  "execute_template",
+] as const;
+
+/**
+ * Tools that mutate the vault or the host system. Surfaced in the
+ * settings UI as a one-click "Disable destructive operations" preset
+ * for users who want a read-only MCP surface.
+ */
+export const DESTRUCTIVE_TOOL_NAMES: readonly string[] = [
+  "delete_active_file",
+  "delete_vault_file",
+  "update_active_file",
+  "append_to_active_file",
+  "patch_active_file",
+  "create_vault_file",
+  "append_to_vault_file",
+  "patch_vault_file",
+  "execute_obsidian_command",
+  "execute_template",
 ] as const;
 
 /**
