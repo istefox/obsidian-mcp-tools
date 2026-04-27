@@ -3,6 +3,135 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0-beta.1] — 2026-04-27
+
+First beta of the 0.4.0 line. Closes Phase 4 of the
+HTTP-embedded pivot: migration UX from 0.3.x, three "Copy
+config" buttons for the supported MCP client families, opt-in
+auto-write of `claude_desktop_config.json`, Node.js detection
++ `mcp-remote` pre-warm, Homebrew-aware install affordances on
+macOS.
+
+End-to-end smoke validated in vault TEST + Claude Desktop:
+20/20 tools registered, native semantic search returns cosine
+matches in the low-ms range, `npx mcp-remote` bridge connects
+Claude Desktop to the in-process server (verified across
+`list_vault_files`, `search_vault_smart`, `get_vault_file`).
+
+### Added — Migration UX (Phase 4 Block A + C)
+
+- **First-load detector** (`features/migration/services/detect.ts`)
+  surfaces three independent signals: legacy
+  `installLocation` / `platformOverride` keys in `data.json`,
+  orphan `mcp-server` binary at `INSTALL_PATH[platform]`, and
+  `claude_desktop_config.json` entries pointing at the binary
+  (under either the new `mcp-tools-istefox` key or the legacy
+  upstream `obsidian-mcp-tools` key).
+- **Migration plan + executor** (`services/plan.ts`) builds the
+  list of opt-in steps for the modal: rewrite Claude Desktop
+  config, delete the legacy binary, prune the legacy keys.
+  Each step is independent — a failure in one does not skip
+  the others.
+- **Migration modal** (Svelte) shown at
+  `app.workspace.onLayoutReady` if any signal fires AND the
+  user has not previously dismissed it.
+  `migration.skippedAt` is persisted on dismiss / completion
+  so the modal does not re-open on every plugin load.
+- **`updateClaudeDesktopConfig`** rewrites the entry to the
+  0.4.0 shape (`{ command: "npx", args: ["-y", "mcp-remote",
+  ..., "--header", "Authorization: Bearer …"] }`), backs up
+  to `<configPath>.backup`, removes the legacy
+  `obsidian-mcp-tools` key, refuses to overwrite malformed
+  JSON.
+
+### Added — Client config UI (Phase 4 Block B)
+
+- **Three "Copy config" buttons** under "Quick setup for clients":
+  Claude Desktop (`npx mcp-remote` bridge), Claude Code
+  (`{ type: "http", … }`), and a generic streamable-http
+  payload for Cursor / Cline / Continue / Windsurf / VS Code.
+- **Auto-write Claude Desktop config** opt-in toggle (default
+  OFF). When ON, the plugin keeps
+  `claude_desktop_config.json` in sync on token rotation /
+  port change, with `.backup` written before each rewrite.
+- Bearer-token field with Show / Copy / Regenerate; rotation
+  invalidates the in-process transport and restarts it
+  immediately so the new token takes effect on the next request.
+
+### Added — Claude Desktop integration UX (Phase 4 Block D)
+
+- **Node.js detection** with launchctl-PATH fallback. macOS
+  Obsidian launched from Finder/Spotlight inherits a minimal
+  PATH that does not include `/opt/homebrew/bin` (Apple
+  silicon) or `/usr/local/bin` (Intel) — plain
+  `node --version` then ENOENTs even when Node IS installed.
+  The detector now scans canonical absolute paths in addition
+  to PATH-based lookup, on macOS, Linux, and Windows.
+- **Homebrew detection** + one-click "Install via Homebrew"
+  button (macOS) when Node is not on PATH but `brew` is
+  available. Streams `brew install node` progress lines into
+  the UI.
+- **`mcp-remote` pre-warm**: runs `npx -y mcp-remote@latest`
+  once via the absolute npx path derived from the detected
+  Node, with the Node bin dir prepended to the child env
+  PATH so npx's shebang `env node` lookup succeeds. Treats
+  `mcp-remote`'s own `ERR_INVALID_URL` error as success
+  (the package downloaded into `~/.npm/_npx/<hash>` — the
+  goal of the pre-warm).
+
+### Changed — Phase 4 cleanup
+
+- The 0.3.x install surface
+  (`mcp-server-install/components/McpServerInstallSettings.svelte`)
+  is no longer mounted in 0.4.0 settings. The module remains
+  in the tree for rollback safety; T14 (stable cut) retires
+  it for good.
+- Local REST API is now treated as **optional**: a missing
+  LRA logs at debug level instead of showing the misleading
+  "required" Notice. `search_vault` (DQL / JsonLogic) is the
+  only LRA-dependent tool; it returns an actionable error
+  to the MCP client when LRA is not installed. The other 19
+  tools work without LRA.
+- The three legacy LRA endpoint registrations
+  (`/search/smart`, `/templates/execute`,
+  `/mcp-tools/command-permission/`) are no longer mounted
+  — they were callbacks the 0.3.x binary used; in 0.4.0 the
+  in-process MCP server calls Obsidian APIs directly.
+
+### Continuous integration
+
+- New `.github/workflows/ci.yml` runs `bun run check` +
+  per-package `bun test` on every push to `main` and
+  `feat/http-embedded`, plus on every PR targeting either
+  branch. Cancels in-flight runs for the same ref when a new
+  push lands.
+- `release.yml` simplification (drop `mcp-server`
+  cross-platform binary jobs) deferred to 0.4.0 stable cut so
+  the protected 0.3.x hotfix line is not affected.
+
+### Known limitations carried into beta
+
+- `Disabled MCP tools` (toolToggle) UI persists the list but
+  does not gate the registry in 0.4.0 (the binary's
+  env-var-based filter is gone). Tools cannot be disabled
+  client-side yet; tracked as a follow-up post-stable.
+- README rewrite (drop 0.3.x sections, screenshot the
+  migration modal) and CHANGELOG collapse of the alpha entries
+  are deferred to 0.4.0 stable cut so the alpha → beta diff
+  stays reviewable.
+
+### Tests
+
+528+ unit + integration tests pass:
+- 87 across `features/migration/` and
+  `features/mcp-client-config/` (new in Phase 4).
+- 451 pre-Phase-4 baseline (feature parity with 0.4.0-alpha.4).
+
+### References
+
+- Plan: `docs/plans/0.4.0-phase-4-migration-and-store.md`
+- Design: `docs/design/2026-04-24-http-embedded-design.md`
+
 ## [0.4.0-alpha.4] — 2026-04-26
 
 ### Fixed — native semantic search provider works in Electron renderer
