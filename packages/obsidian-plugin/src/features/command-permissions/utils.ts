@@ -7,6 +7,25 @@
 import type { CommandAuditEntry } from "./types";
 
 /**
+ * Minimal shape of an Obsidian command descriptor as exposed via
+ * `app.commands.commands`. Kept here (and not imported from
+ * "obsidian") because these helpers are pure and must remain
+ * importable in tests that do not stub the Obsidian module.
+ */
+export interface CommandDescriptor {
+  id: string;
+  name: string;
+}
+
+/**
+ * Fallback bucket label for command ids that do not contain a `":"`.
+ * Obsidian convention is `<namespace>:<command>`, but plugins may ship
+ * legacy or malformed ids; we keep them visible under a single
+ * "other" group rather than dropping them silently.
+ */
+export const NAMESPACE_FALLBACK = "other";
+
+/**
  * Maximum number of audit log entries retained in the ring buffer.
  * The settings UI displays the last N invocations; the main goal is
  * to keep data.json bounded while still giving the user a window
@@ -276,4 +295,71 @@ export function decidePermission(
   }
 
   return { decision: "allow" };
+}
+
+/**
+ * Group a flat list of Obsidian commands by the namespace prefix
+ * (the segment before the first `":"`). Commands without a colon land
+ * in the `NAMESPACE_FALLBACK` bucket.
+ *
+ * The returned Map preserves insertion order: namespaces are sorted
+ * alphabetically, and within each bucket the commands are sorted by
+ * id. Stable order matters for the settings UI — the user sees the
+ * same layout each time they open the tab.
+ */
+export function groupCommandsByNamespace(
+  commands: readonly CommandDescriptor[],
+): Map<string, CommandDescriptor[]> {
+  const buckets = new Map<string, CommandDescriptor[]>();
+  for (const cmd of commands) {
+    const colonIdx = cmd.id.indexOf(":");
+    const ns = colonIdx > 0 ? cmd.id.slice(0, colonIdx) : NAMESPACE_FALLBACK;
+    const list = buckets.get(ns);
+    if (list) {
+      list.push(cmd);
+    } else {
+      buckets.set(ns, [cmd]);
+    }
+  }
+  // Re-build the map with sorted keys and sorted contents. Map iteration
+  // order is insertion order, so sorting requires a fresh map.
+  const sorted = new Map<string, CommandDescriptor[]>();
+  for (const ns of [...buckets.keys()].sort()) {
+    const list = buckets.get(ns)!;
+    list.sort((a, b) => a.id.localeCompare(b.id));
+    sorted.set(ns, list);
+  }
+  return sorted;
+}
+
+/**
+ * Partition an allowlist into ids that exist in the live command
+ * registry ("live") and ids that do not ("stale"). Stale ids are
+ * typically left over from a plugin that was uninstalled or from an
+ * allowlist imported between vaults. The settings UI surfaces them
+ * separately so the user can decide whether to clean them up — we
+ * NEVER auto-remove (would be silent data loss).
+ *
+ * If `registry` is undefined (e.g. test environments where
+ * `app.commands` is not wired up), every entry is treated as live —
+ * the alternative would mark every entry stale, which is more
+ * misleading than the conservative default.
+ *
+ * Order is preserved within each partition.
+ */
+export function splitAllowlistByRegistry(
+  allowlist: readonly string[],
+  registry: Record<string, CommandDescriptor> | undefined,
+): { live: string[]; stale: string[] } {
+  if (!registry) return { live: [...allowlist], stale: [] };
+  const live: string[] = [];
+  const stale: string[] = [];
+  for (const id of allowlist) {
+    if (registry[id]) {
+      live.push(id);
+    } else {
+      stale.push(id);
+    }
+  }
+  return { live, stale };
 }

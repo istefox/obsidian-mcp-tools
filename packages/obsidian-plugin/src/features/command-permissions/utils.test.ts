@@ -5,15 +5,19 @@ import {
   appendAuditEntry,
   auditLogCsvFilename,
   auditLogToCsv,
+  type CommandDescriptor,
   createRuntimeRateCounter,
   decidePermission,
   formatAllowlist,
+  groupCommandsByNamespace,
   isDestructiveCommand,
+  NAMESPACE_FALLBACK,
   normalizeSoftRateLimit,
   parseAllowlistCsv,
   SOFT_RATE_LIMIT_MAX,
   SOFT_RATE_LIMIT_MIN,
   SOFT_RATE_LIMIT_PER_MINUTE,
+  splitAllowlistByRegistry,
 } from "./utils";
 
 describe("parseAllowlistCsv", () => {
@@ -401,5 +405,131 @@ describe("auditLogCsvFilename", () => {
     expect(filename).toMatch(
       /^mcp-tools-audit-\d{4}-\d{2}-\d{2}\.csv$/,
     );
+  });
+});
+
+describe("groupCommandsByNamespace", () => {
+  const cmd = (id: string, name = id): CommandDescriptor => ({ id, name });
+
+  test("returns an empty map for an empty input", () => {
+    const result = groupCommandsByNamespace([]);
+    expect(result.size).toBe(0);
+  });
+
+  test("buckets commands by the segment before the first colon", () => {
+    const result = groupCommandsByNamespace([
+      cmd("editor:toggle-bold"),
+      cmd("editor:insert-link"),
+      cmd("graph:open"),
+    ]);
+    expect([...result.keys()]).toEqual(["editor", "graph"]);
+    expect(result.get("editor")?.map((c) => c.id)).toEqual([
+      "editor:insert-link",
+      "editor:toggle-bold",
+    ]);
+    expect(result.get("graph")?.map((c) => c.id)).toEqual(["graph:open"]);
+  });
+
+  test("uses only the FIRST colon when an id contains multiple", () => {
+    // Some plugins ship ids like "templater-obsidian:insert:date".
+    // We keep the leading namespace as the bucket key, so the user
+    // sees one entry per plugin, not one per sub-action.
+    const result = groupCommandsByNamespace([
+      cmd("templater-obsidian:insert:date"),
+      cmd("templater-obsidian:replace"),
+    ]);
+    expect([...result.keys()]).toEqual(["templater-obsidian"]);
+    expect(result.get("templater-obsidian")?.map((c) => c.id)).toEqual([
+      "templater-obsidian:insert:date",
+      "templater-obsidian:replace",
+    ]);
+  });
+
+  test("falls back to NAMESPACE_FALLBACK for ids without a colon", () => {
+    const result = groupCommandsByNamespace([
+      cmd("legacy-no-colon"),
+      cmd("editor:toggle-bold"),
+    ]);
+    // "editor" sorts before "other" alphabetically.
+    expect([...result.keys()]).toEqual(["editor", NAMESPACE_FALLBACK]);
+    expect(result.get(NAMESPACE_FALLBACK)?.map((c) => c.id)).toEqual([
+      "legacy-no-colon",
+    ]);
+  });
+
+  test("namespaces are sorted alphabetically; commands within sorted by id", () => {
+    const result = groupCommandsByNamespace([
+      cmd("workspace:close"),
+      cmd("app:go-back"),
+      cmd("editor:toggle-italic"),
+      cmd("editor:toggle-bold"),
+      cmd("app:go-forward"),
+    ]);
+    expect([...result.keys()]).toEqual(["app", "editor", "workspace"]);
+    expect(result.get("app")?.map((c) => c.id)).toEqual([
+      "app:go-back",
+      "app:go-forward",
+    ]);
+    expect(result.get("editor")?.map((c) => c.id)).toEqual([
+      "editor:toggle-bold",
+      "editor:toggle-italic",
+    ]);
+  });
+
+  test("treats a leading colon as fallback, not as an empty namespace", () => {
+    // ":foo" has colonIdx === 0, so the slice before would be the
+    // empty string. Empty namespace is meaningless to the user — push
+    // it to the fallback bucket instead.
+    const result = groupCommandsByNamespace([cmd(":weird")]);
+    expect(result.has("")).toBe(false);
+    expect(result.get(NAMESPACE_FALLBACK)?.map((c) => c.id)).toEqual([":weird"]);
+  });
+});
+
+describe("splitAllowlistByRegistry", () => {
+  const reg = (...ids: string[]): Record<string, CommandDescriptor> =>
+    Object.fromEntries(ids.map((id) => [id, { id, name: id }]));
+
+  test("returns every entry as live when the registry is undefined", () => {
+    // Conservative default: in environments where the registry is not
+    // wired up (e.g. some tests), assume entries are valid rather than
+    // misleadingly flagging the entire allowlist as stale.
+    const result = splitAllowlistByRegistry(["a", "b"], undefined);
+    expect(result.live).toEqual(["a", "b"]);
+    expect(result.stale).toEqual([]);
+  });
+
+  test("returns empty partitions for an empty allowlist", () => {
+    expect(splitAllowlistByRegistry([], reg("a", "b"))).toEqual({
+      live: [],
+      stale: [],
+    });
+  });
+
+  test("partitions ids based on registry membership", () => {
+    const result = splitAllowlistByRegistry(
+      ["editor:toggle-bold", "ghost:cmd", "graph:open", "stale:other"],
+      reg("editor:toggle-bold", "graph:open"),
+    );
+    expect(result.live).toEqual(["editor:toggle-bold", "graph:open"]);
+    expect(result.stale).toEqual(["ghost:cmd", "stale:other"]);
+  });
+
+  test("preserves input order within each partition", () => {
+    // Order matters because the UI renders the chip-list in the same
+    // order it was persisted; reshuffling on every render would feel
+    // unstable.
+    const result = splitAllowlistByRegistry(
+      ["c", "a", "b", "ghost"],
+      reg("a", "b", "c"),
+    );
+    expect(result.live).toEqual(["c", "a", "b"]);
+    expect(result.stale).toEqual(["ghost"]);
+  });
+
+  test("treats every entry as stale when the registry is empty", () => {
+    const result = splitAllowlistByRegistry(["a", "b"], reg());
+    expect(result.live).toEqual([]);
+    expect(result.stale).toEqual(["a", "b"]);
   });
 });
