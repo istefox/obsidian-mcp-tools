@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-25 pomeriggio (sessione T23+T24+CI Node 24 bump).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-04-27 sera (T12.d Command Permissions UX redesign chiuso).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
 
@@ -8,32 +8,31 @@
 
 ## 🚦 Quick Start — apertura sessione (Warp o qualsiasi terminale)
 
-**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-alpha.2** (rilasciata 2026-04-25 pomeriggio). Ultimo commit pushato: `eba555c`.
+**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-beta.1** (rilasciata 2026-04-27 mattina). Ultimo commit pushato: **`4cc8ae3`** (T12.d).
 
 **Stato dei due track:**
-- `main` = **0.3.7** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md).
-- `feat/http-embedded` = **0.4.0-alpha.2**, **Phase 1 + Phase 2 entrambe complete** — infrastruttura HTTP + tutti e 20 i tool registrati e funzionanti via `tools/list`+`tools/call` end-to-end. CI Actions tutte su Node 24 (validate con tag throwaway 2026-04-25).
+- `main` = **0.3.10** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md).
+- `feat/http-embedded` = **0.4.0-beta.1** + 2 commit di rifinitura UX post-tag (T12.c tool-toggle redesign + T12.d command-permissions redesign). **Phase 1+2+3 chiuse, Phase 4 chiusa eccetto T14**.
 
 **Prossimi passi concreti (in ordine):**
 
-1. **Smoke test manuale 0.4.0-alpha.2 in vault TEST** — vedi § "Test 0.4.0-alpha in Obsidian" in basso. Validare end-to-end con `bun run inspector` o con Claude Desktop+`mcp-remote` che i 20 tool risp ondono dal vault reale, non solo nel mock di test.
-2. **Phase 3 — semantic search nativo** (Transformers.js + MiniLM-L6-v2). Plan da scrivere in `docs/plans/0.4.0-phase-3-semantic-search.md`. Riferimento: § Semantic search del design `docs/design/2026-04-24-http-embedded-design.md`. Effetto: `search_vault_smart` smette di dipendere da Smart Connections plugin e diventa autosufficiente; SC rimane come fallback opzionale.
-3. **Phase 4 — migration UX + community store update**: migration modal per utenti 0.3.x, Node.js detection + `mcp-remote` pre-warm, "Copy config" generators, cut **0.4.0 stabile** quando smoke test + Phase 3 verificati.
+1. **Decision check 0.4.0 stable cut** — routine `trig_01UC96J5aCxLJwD4meBCDWtm` programmata per **2026-04-30 07:00 UTC** (~09:00 Rome). Verifica: PR Store #11919 attività, fork issue/PR nuovi dal 2026-04-27, CI verde su feat/http-embedded e main, star/fork count. Output: GO / WAIT / FIX.
+2. **T14 — 0.4.0 stable cut** (gated su decision check): version bump → tag `0.4.0` → release CI → update manifest sul PR Store #11919 (target 0.3.10 → 0.4.0) → outreach jacksteamdev (Discord DM + README PR upstream) **gated su community store acceptance**.
+3. **Soak window**: ~3 giorni residui di beta.1 in mano ai BRAT users della linea alpha.
 
-**Cosa è stato chiuso nella sessione 2026-04-25 pomeriggio (4 commit):**
-- `4cfda35` fix(mcp-tools): `string.url` → `string` in `tools/fetch.ts` — bug silente: `ArkType string.url` usa un predicato non convertibile in JSON Schema, `registry.list()` crashava, SDK MCP rispondeva `tools: []`. Trovato con un probe schema-by-schema.
-- `2712367` feat(mcp-tools): T23 registrazione di tutti e 20 i tool in `mcp-tools/index.ts` + 2 type tweak (`deleteActiveFile.ts` `Record<string,never>` → `object`, `getVaultFile.ts` semplificazione `extension`).
-- `27311e5` 0.4.0-alpha.2 (version bump 3 file + CHANGELOG entry, CI release.yml verde in 44s).
-- `eba555c` chore(ci): bump GitHub Actions a Node 24 — `actions/checkout@v6`, `softprops/action-gh-release@v3`, `actions/attest-build-provenance@v4`, `actions/github-script@v9`. Validato con tag throwaway `ci-validate-2026-04-25` (CI verde in 46s, tag/release cancellati).
+**Cosa è stato chiuso nella sessione 2026-04-27 (5 milestone in giornata):**
+- `2ff40a1` **0.4.0-beta.1** (mattina, ~05:23 UTC) — T13. Smoke E2E vault TEST + Claude Desktop reale via `npx mcp-remote` validato. CI release run `24978026319` verde.
+- Strategic competitor analysis + Store PR nudge (~16:50 UTC) — comment professionale postato su PR #11919 (`comment-4328854187`) dopo 8+ giorni di silenzio. Strategia 3-fasi (A get-into-store, B activate-jacksteamdev-funnel, C lead-through-quality) documentata in `project_fork_state.md`.
+- `808c052` **T12.c — Tool toggle UX redesign** (~20:30 UTC) — `applyDisabledToolsFilter` + checkbox grid clickable + 20 KNOWN_MCP_TOOL_NAMES (era 18). Smoke E2E validato.
+- `4cc8ae3` **T12.d — Command Permissions UX redesign** (~22:00 UTC) — chip-list "allowed-first" + search Enter fast-path + preset row inline + browse raggruppato per namespace + stale entries section + destructive nudge ⚠ + Refresh registry. 2 nuovi pure helper (`groupCommandsByNamespace`, `splitAllowlistByRegistry`) + 11 unit test. 100/100 test pass. Smoke validato in vault TEST.
 
 **Routine remote attive (cloud Anthropic, indipendenti dal terminale):**
+- `trig_01UC96J5aCxLJwD4meBCDWtm` — **2026-04-30 07:00 UTC one-shot**, decision check GO/WAIT/FIX per 0.4.0 stable cut
 - `trig_015yL8D3VNao7nhRKjBu95ZK` — Lun 07:00 UTC, monitor PR store #11919
 - `trig_01Dx8sZTD78yBj7buuVYP9KE` — orario, watch issue #79
 
-Tre routine duplicate disabilitate il 2026-04-25 (vedi `https://claude.ai/code/routines`).
-
 **Primo prompt suggerito alla nuova sessione:**
-> "Leggi `handoff.md` e `CLAUDE.md` in repo root. Stiamo entrando in Phase 3 della migrazione HTTP-embedded: semantic search nativo con Transformers.js + MiniLM. Apri `docs/design/2026-04-24-http-embedded-design.md` § Semantic search e `docs/plans/0.4.0-phase-3-semantic-search.md` (se esiste). Prima però conferma se lo smoke test 0.4.0-alpha.2 in vault TEST è stato eseguito — se no, propone di farlo prima."
+> "Leggi `handoff.md` e `CLAUDE.md` in repo root. Siamo a 0.4.0-beta.1 + T12.c/T12.d UX rifiniture pushate. Phase 4 chiusa eccetto T14 (cut stable). La routine di decision check `trig_01UC96J5aCxLJwD4meBCDWtm` gira il 2026-04-30 07:00 UTC; controlla se è già scattata e qual è stato l'output (GO/WAIT/FIX). Se GO: procediamo con T14 — bump 0.4.0, retarget manifest del PR Store #11919, outreach jacksteamdev (Discord DM + README PR) gated su store acceptance."
 
 ---
 
