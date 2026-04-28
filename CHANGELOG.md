@@ -3,6 +3,54 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.11] — 2026-04-28
+
+### Fixed
+- **`POST /templates/execute` dropped the caught error message from
+  the response body** (#19, reported by @folotp). The catch block in
+  `handleTemplateExecution` captured `error.message` for the logger
+  but the HTTP response always returned the generic
+  `{"error": "An error occurred while processing the prompt"}`.
+  Templates that throw on validation (a `tp.user.*` function
+  enforcing a controlled vocabulary, or `<%* throw new Error(...) %>`
+  inside a template) produced clean, actionable messages that were
+  invisible to anything reading the HTTP response — only the plugin's
+  developer-console logger had them. The 503 body now includes an
+  additive `message` field alongside the existing `error`. Backwards-
+  compatible: every current client keeps working; clients that opt
+  into `message` get richer diagnostics. `String(error)` fallback
+  handles `throw "string"` and `throw {custom}` without pattern
+  matching.
+- **`OBSIDIAN_HOST=http://...` produced a malformed BASE_URL with a
+  doubled protocol** (#21, originally upstream
+  `jacksteamdev/obsidian-mcp-tools#84`). The variable was read as a
+  raw hostname and concatenated under a fixed `https://` prefix, so a
+  user setting `OBSIDIAN_HOST=http://127.0.0.1:27123` (a full URL — a
+  common mistake given how the variable name reads) ended up with
+  `BASE_URL=https://http://127.0.0.1:27123:27124` and every request
+  failed. New `resolveHostOverride(raw)` helper detects the `://`
+  substring and parses the URL via the existing `parseApiUrl`. Bare
+  hostnames keep working unchanged. When a URL form is used, its port
+  and protocol parts feed PORT/USE_HTTP only where the more specific
+  variables (`OBSIDIAN_PORT`, `OBSIDIAN_USE_HTTP`) are unset. New
+  `logger.info("Obsidian REST API base URL", { url: BASE_URL })` at
+  module load surfaces this class of misconfiguration in the log file
+  without requiring a network round trip to discover. Six new tests
+  in `makeRequest.test.ts` (40 total, all green).
+
+### Added
+- **`POST /templates/execute` success response now includes `path`**
+  (#20, reported by @folotp). When `createFile: true` and `targetPath`
+  are both set, the success body adds `path: params.targetPath`
+  alongside the existing `message`/`content`. Collapses the two-call
+  create-and-locate dance some MCP wrappers were forced into. Field
+  added only in the `createFile: true` branch (the `false` branch does
+  not operate on a file). Field name `path` chosen to align with the
+  Local REST API convention (`GET /vault/{path}`) and to be forward-
+  compatible with a future refactor that would delegate to
+  `templater.create_new_note_from_template(...)` and read
+  `tp.config.target_file.path`.
+
 ## [0.3.10] — 2026-04-26
 
 ### Changed
