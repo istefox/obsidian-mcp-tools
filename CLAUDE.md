@@ -13,7 +13,7 @@ Two shipping components glued together by the Local REST API plugin:
 
 Why the detour through Local REST API instead of reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the server invoke other Obsidian plugins (Templater, Smart Connections, Dataview) through their APIs.
 
-Current version: **0.2.27** (see root `package.json`). License: MIT.
+Current version: **0.3.10** on `main` (latest stable, BRAT users install this); **0.4.0-beta.1** on `feat/http-embedded` (the HTTP-embedded pivot). See root `package.json`. License: MIT.
 
 ### Fork status
 
@@ -21,20 +21,20 @@ Active work happens on the **`istefox/obsidian-mcp-connector`** fork. Upstream `
 
 ### Branch protection policy (2026-04-25, set by Stefano)
 
-**`main` is the production-ready, user-facing branch — currently 0.3.7. Treat it as protected.**
+**`main` is the production-ready, user-facing branch — currently 0.3.10. Treat it as protected.**
 
-Active branches as of 2026-04-25:
+Active branches as of 2026-04-28:
 
 | Branch | Version | Status | Use |
 |---|---|---|---|
-| `main` | **0.3.7** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
-| `feat/http-embedded` | **0.4.0-alpha.1** | Active development — Phase 1 infrastructure | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` |
+| `main` | **0.3.10** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
+| `feat/http-embedded` | **0.4.0-beta.1** | Active development — Phase 1 infrastructure | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` |
 
 **Hard rules — apply unless Stefano explicitly authorizes the specific action:**
 
 1. **Never merge** `feat/http-embedded` (or any experimental branch) **into `main`**. The merge to 0.4.0 happens only when Stefano gives explicit go-ahead, after Phase 2-3-4 are complete and feature parity with 0.3.x is verified.
 2. **Never force-push, rebase, or `reset --hard`** on `main` under any circumstance.
-3. **Never delete or overwrite tags** on the 0.3.x line (0.3.0 through 0.3.7).
+3. **Never delete or overwrite tags** on the 0.3.x line (0.3.0 through 0.3.10).
 4. **Never delete the `0.3.x` GitHub releases** from the releases page.
 5. Bug fixes against 0.3.x are welcome — branch from `main`, PR, merge as 0.3.8 / 0.3.9 etc. This pattern preserves the stable line; it does not replace it.
 6. Merging `main` → `feat/http-embedded` (the inverse direction, to keep the dev branch aligned) is **safe and encouraged** — it does not touch `main`.

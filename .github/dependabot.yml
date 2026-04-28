@@ -1,0 +1,92 @@
+# Dependabot keeps direct dependencies and GitHub Actions current.
+# Bun workspaces use the npm registry under the hood, so the `npm`
+# ecosystem covers `package.json` files in every workspace package.
+# Schedule is monthly to avoid PR noise on a small-team fork.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      types:
+        patterns:
+          - "@types/*"
+      dev-tooling:
+        patterns:
+          - "prettier"
+          - "typescript"
+          - "tsc-watch"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/mcp-server"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "scope:mcp-server"
+    commit-message:
+      prefix: "chore(deps,mcp-server)"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/obsidian-plugin"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "scope:obsidian-plugin"
+    commit-message:
+      prefix: "chore(deps,plugin)"
+      include: "scope"
+    ignore:
+      # Patched at 5.16.0 — see patches/svelte@5.16.0.patch.
+      # Bumps must re-validate the patch under bun's bundler.
+      - dependency-name: "svelte"
+
+  - package-ecosystem: "npm"
+    directory: "/packages/shared"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "scope:shared"
+    commit-message:
+      prefix: "chore(deps,shared)"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "scope:ci"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
