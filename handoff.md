@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-28 (sessione: 0.3.12 release + Dependabot policy v4 + 0.4.0 beta outreach).** Documento di passaggio di consegne
+> **Aggiornato 2026-04-28 sera (sessione: 0.3.12 release + Dependabot policy v4 + 0.4.0 beta outreach + #58 fix + 6 stable-cut prep PRs).** Documento di passaggio di consegne
 > tra macchine. Self-contained: dal clone iniziale al primo prompt
 > da mandare a Claude Code sul nuovo Mac, qui c'è tutto.
 >
@@ -36,8 +36,8 @@
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git` (push allowed, dove ship le release)
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, per fetch + cherry-pick)
   - `main` tracks `origin/main`
-- **Ultimo commit (al momento di scrittura):** **`0233d62`** (`docs(plugin): pin /templates/execute path semantics for future refactor (#55)`) sopra `ba4110e` (tag `0.3.12`). Working tree clean. Branch allineato con `origin/main`.
-- **Branch attivo parallelo:** `feat/http-embedded` — HEAD `03331b0` (`port(0.4): forward #19 + #20 fixes from 0.3.12 + design note (#56)`), tag `0.4.0-beta.1` su `2ff40a1`. **PROTECTED** — non mergiarla in main senza go-ahead esplicito (vedi `CLAUDE.md` "Branch protection policy").
+- **Ultimo commit su `main` (al momento di scrittura):** **`544afdc`** (`docs(handoff): refresh to 2026-04-28 (#57)`) sopra `ba4110e` (tag `0.3.12`). Working tree clean. Branch allineato con `origin/main`.
+- **Branch attivo parallelo:** `feat/http-embedded` — HEAD **`6b461fc`** (`ci(test-site): dedup vite via package.json overrides (#65)`), tag `0.4.0-beta.1` su `2ff40a1`. **PROTECTED** — non mergiarla in main senza go-ahead esplicito (vedi `CLAUDE.md` "Branch protection policy"). **Stable-ready**: tutti i 6 work items deferred a stable cut sono completati (PR #56, #59, #60, #61, #62, #63, #64, #65). Il cut è 5 step manuali — vedi sezione 6 "A.bis — 0.4.0 stable cut" qui sotto.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
@@ -311,6 +311,8 @@ In ordine cronologico inverso, con commit SHA su `origin/main` (eccetto dove ind
 
 | Date approx | Lavoro | Commit/merge |
 |---|---|---|
+| 2026-04-28 tarda sera | **0.4.0 stable-cut prep (6 PR su `feat/http-embedded`)**: tutti i work items dichiarati come "deferred to stable cut" nel CHANGELOG di beta.1 sono ora chiusi. (1) **README rewrite** (PR #60, `fb70bd2`) — drop sezioni 0.3.x, lead con architettura HTTP-embedded, 3 Copy-config inline, MCP Inspector come verification path. (2) **CHANGELOG collapse** (PR #61, `d596318`) — 4 alpha + beta.1 entries (470 righe) collassate in unica `[0.4.0] — TBD` organizzata per phase. (3) **`release.yml` split** (PR #62, `c0261ae`) — release-line-aware: tag `0.3.*` → cross-platform mcp-server binary + SLSA attestation, altri tag → plugin-only. (4) **`toolToggle` UI nascosta** (PR #63, `9e38214`) — registry gating non wirato in 0.4.0; UI hidden, persistence intatta, follow-up post-stable. (5) **`McpServerInstallSettings.svelte` retired** (PR #64, `562c754`) — UI 654 righe deletata + `openFolder.ts`; services/constants/types kept perché `features/migration/` li usa per detection 0.3.x. (6) **Vite dedup via overrides** (PR #65, `6b461fc`) — `package.json` pinned `vite: 5.4.11`, fixa `svelte-check` type clash. **Stable cut ora richiede solo 5 step manuali** (vedi sezione 6 A.bis). | PR #60, #61, #62, #63, #64, #65 |
+| 2026-04-28 sera | **#58 fix (Folotp design proposal accepted)**: `createTargetIfMissing` default flippato a `false` per `targetType: "heading"` su `patch_active_file`/`patch_vault_file`, simmetrico a v0.3.7 #6 per `block`. Argomento agent-caller-dominance: HTTP 200 EOF-append è indistinguibile da in-place patch senza post-write read, quindi silent-create è data corruption nel use case dominante. Per-target-type defaults dopo flip: heading → false (changed), block → false (unchanged), frontmatter → true (unchanged). 7 regression test in `patchVaultFile.test.ts`. `detectOrphanRootHeading` (v0.3.9 #16) sopravvive come defence-in-depth sul opt-in path. Ship: 0.4.0 stable cut, no beta.2 (decision B). | PR #59 (`b1e82e2`) su `feat/http-embedded` |
 | 2026-04-28 sera | **Design note inline + port-forward 0.3.12 → 0.4.0**: comment block ancorato al sito `path: params.targetPath` in `handleTemplateExecution` che pinna la semantica @folotp's `tp.file.move()` seam (link diretto al suo commento). Stesso testo su `main` (PR #55, `0233d62`) e su `feat/http-embedded` (PR #56, `03331b0`) — quest'ultima include anche il port-forward di #19 (`message` field nel catch) e #20 (`path` field nel success) che mancavano sulla branch 0.4.0. @folotp ha verificato #19+#20 end-to-end con JSON repro post-merge. | `0233d62`, `03331b0` |
 | 2026-04-28 pom | **0.4.0-beta.1 outreach**: aperta issue #54 sul fork ("0.4.0 beta — looking for testers (BRAT)") con label `0.4.0-beta`. Comment combinato su upstream `jacksteamdev/obsidian-mcp-tools#79` (status update + ping @juicyjonny). Comment su fork #19 con CTA al beta test (@folotp). Edit del release body di 0.4.0-beta.1 con sezione "🧪 Testers wanted" + link a #54. Stable cut targeted ~3-7g post-soak. | (issue #54 + 3 commenti pubblici) |
 | 2026-04-28 pom | **0.3.12 release**: 3 fix shippati — #19 (PR #50: `message` field in 503), #20 (PR #50: `path` field in success), #21 (PR #51: `OBSIDIAN_HOST` accetta hostname o URL completa, originalmente upstream #84). Comment di chiusura issue su #19 e #20 a @folotp + comment su upstream #84 a @FiReCRaSHb (cross-link al fork). 0.3.11 release fallito su `bun install --frozen-lockfile`; 0.3.12 è la re-release con `bun.lock` allineato (PR #53). 7 asset cross-platform su 0.3.12. | `0bc87b2` (tag 0.3.11 broken), `ba4110e` (tag 0.3.12) |
@@ -365,16 +367,30 @@ In ordine di priorità potenziale per le prossime sessioni:
 - **Notifiche**: GitHub manda email su qualsiasi commento sulla PR
 - **Strategicamente**: il submission è per la 0.3.x (manifest 0.3.10 al momento dell'apertura PR). Se 0.4.0 stable atterra prima della review, valutare se aggiornare il submission a 0.4.0 (un solo cambio sostanziale) o aspettare la review su 0.3.x e bumpare dopo. Decidere caso per caso.
 
-### A.bis — 0.4.0 stable cut (NUOVO, target ~3-7g dopo beta.1 = ~2026-04-30 → 2026-05-04)
+### A.bis — 0.4.0 stable cut (target ~2026-04-30 → 2026-05-04, soak post-beta.1)
 - **Stato beta**: `0.4.0-beta.1` pubblicata 2026-04-27. Issue #54 raccoglie feedback BRAT testers. Outreach @folotp / @juicyjonny / @FiReCRaSHb fatto 2026-04-28.
-- **Lavoro deferred a stable cut** (esplicito nel CHANGELOG di beta.1):
-  - **README rewrite**: drop sezioni 0.3.x, screenshot del migration modal, indicazioni `npx mcp-remote` per Claude Desktop
-  - **CHANGELOG collapse**: collassare 4 alpha + beta in unica entry `[0.4.0]`
-  - **release.yml simplification**: drop dei job cross-platform mcp-server binary. Attenzione: deve essere release-line-aware perché la 0.3.x line continua a richiedere i binari per le hotfix. Soluzione probabile: workflow condizionale per branch o due workflow distinti (`release-0.3.yml` + `release-0.4.yml`).
-  - **Retire `mcp-server-install/components/McpServerInstallSettings.svelte`**: oggi è ancora nel tree per rollback safety; rimuoverlo per la stable
-- **Decisione aperta**: `toolToggle` UI (regressione vs 0.3.x). Opzioni: (a) implementare gating del registry, (b) nascondere/rimuovere la UI con CHANGELOG note, (c) documentarla come known limitation per 0.4.0 e fixare in 0.4.1
-- **Test pre-stable**: vault realistici (>1k note), proxy aziendali per `mcp-remote`, cold-start migration da 0.3.x reale, Windows/Linux smoke (oggi solo macOS è stato validato e2e)
-- **Branch protection**: per il merge `feat/http-embedded → main` serve go-ahead esplicito (per la rule "Never merge feat/http-embedded into main" in `CLAUDE.md`)
+- **6 work items deferred a stable cut: TUTTI COMPLETATI 2026-04-28 sera** sulla branch `feat/http-embedded`:
+  - ✅ **README rewrite** — PR #60, `fb70bd2`
+  - ✅ **CHANGELOG collapse** — PR #61, `d596318`
+  - ✅ **`release.yml` split** release-line-aware — PR #62, `c0261ae`
+  - ✅ **`toolToggle` UI nascosta** (decisione: B = hide UI, keep persistence) — PR #63, `9e38214`
+  - ✅ **`McpServerInstallSettings.svelte` retired** — PR #64, `562c754`
+  - ✅ **Vite type clash fix** (preesistente sul branch) — PR #65, `6b461fc`
+- **Decisione aperta nessuna**: `toolToggle` chiuso come hide UI (vedi PR #63), tutti gli altri work items chiusi.
+- **Test pre-stable consigliati** (non bloccanti — i 528+ test esistenti sono già verdi su `feat/http-embedded`):
+  - Vault realistici (>1k note) — soak naturale via beta-tester
+  - Proxy aziendali per `mcp-remote` — solo Claude Desktop path, dipende da Node setup utente
+  - Cold-start migration da 0.3.x reale — in TEST + Lab
+  - Windows/Linux smoke — oggi solo macOS è stato validato e2e
+- **Soak strategy**: B = no beta.2, soak della beta.1 per 3-7g, ship stable quando timer scade. Soak time conta sul tag pubblicato, non sull'HEAD del branch — mergere su `feat/http-embedded` non resetta il soak.
+- **Steps per il cut** (5 manuali, ~5min):
+  1. `git checkout feat/http-embedded && git pull`
+  2. CHANGELOG: spostare contenuto `[Unreleased]` (nota fix #58) dentro `[0.4.0]`, sostituire `TBD` con la data
+  3. Manual version bump (lo script `bun run version` non supporta switch out-of-prerelease semver): `package.json`, `manifest.json`, `versions.json` (aggiungere `"0.4.0": "1.7.7"`)
+  4. `git commit -am "0.4.0" && git tag 0.4.0`
+  5. `git push origin feat/http-embedded 0.4.0` — il workflow `release.yml` (PR #62) builda plugin-only, upload `manifest.json` + `main.js` + `obsidian-plugin-0.4.0.zip` come asset
+- **Branch protection**: per il merge `feat/http-embedded → main` serve go-ahead esplicito (rule "Never merge feat/http-embedded into main" in `CLAUDE.md`). Quando deciderai di cuttare la 0.4.0 è naturale anche fare il merge su main: dopo aver pushato il tag, fare PR `feat/http-embedded` → `main` con descrizione "0.4.0 stable cut", poi il main diventa la linea 0.4.x e una nuova branch `bugfix/0.3.x` (o equivalente) può ospitare future hotfix 0.3.13/etc.
+- **Community store**: una volta che 0.4.0 è in main + tag pubblico, basta un commento su `obsidianmd/obsidian-releases#11919` con "manifest updated to 0.4.0, please re-validate" per rilanciare il giro lint. Il submission shape (`mcp-tools-istefox`, "MCP Connector") è forward-compatible.
 
 ### B — ~~Fase 4 outreach — annuncia il fork sulle issue upstream risolte~~ ✅ COMPLETATO 2026-04-21
 
