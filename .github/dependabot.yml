@@ -55,6 +55,13 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Runtime validator at every external boundary; rc → stable
+      # (and even minor bumps in the early 2.x line) can drift in
+      # subtle ways. Bump only with a planned upgrade and targeted
+      # tests. Workspace-aware: Dependabot detects arktype from the
+      # workspace packages even though the root package.json does
+      # not declare it directly.
+      - dependency-name: "arktype"
 
   - package-ecosystem: "npm"
     directory: "/packages/mcp-server"
@@ -76,6 +83,8 @@ updates:
         update-types: ["version-update:semver-major"]
       # Pinned (and a fork in our case) — bump only when intentional.
       - dependency-name: "@modelcontextprotocol/sdk"
+      # See root config — runtime validator, planned upgrades only.
+      - dependency-name: "arktype"
 
   - package-ecosystem: "npm"
     directory: "/packages/obsidian-plugin"
@@ -101,6 +110,8 @@ updates:
       # Type-only npm package; runtime is injected by Obsidian itself.
       # Bump alongside an Obsidian compat audit, not on auto-PR.
       - dependency-name: "obsidian"
+      # See root config — runtime validator, planned upgrades only.
+      - dependency-name: "arktype"
 
   - package-ecosystem: "npm"
     directory: "/packages/shared"
@@ -121,6 +132,8 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "obsidian"
+      # See root config — runtime validator, planned upgrades only.
+      - dependency-name: "arktype"
 
   - package-ecosystem: "github-actions"
     directory: "/"
