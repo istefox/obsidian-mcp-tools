@@ -542,12 +542,31 @@ export default class McpToolsPlugin extends Plugin {
       // Restore original functions generator
       templater.functions_generator.generate_object = oldGenerateObject;
 
-      // Create new file if requested
+      // Create new file if requested.
+      //
+      // `path` in the response reflects what THIS handler operated on
+      // (`params.targetPath`), not where Templater may have moved the
+      // file via `tp.file.move()` in the template's prelude — that's a
+      // side effect of the rendering pass and produces a separate file
+      // at the move target. `app.vault.create` here is the only
+      // operation that creates the file the caller asked for, so the
+      // returned `path` correctly tracks that operation.
+      //
+      // If a future refactor delegates to
+      // `templater.create_new_note_from_template(...)`, the same field
+      // would naturally carry the post-move destination by reading
+      // `tp.config.target_file.path`. The contract stays "the path
+      // this handler operated on", semantically forward-compatible.
+      //
+      // Design rationale + worked example (folotp's note on the
+      // `tp.file.move()` semantics seam):
+      //   https://github.com/istefox/obsidian-mcp-connector/issues/20#issuecomment-4335497942
       if (params.createFile && params.targetPath) {
         await this.app.vault.create(params.targetPath, processedContent);
         res.json({
           message: "Prompt executed and file created successfully",
           content: processedContent,
+          path: params.targetPath,
         });
         return;
       }
@@ -557,12 +576,14 @@ export default class McpToolsPlugin extends Plugin {
         content: processedContent,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error("Prompt execution error:", {
-        error: error instanceof Error ? error.message : error,
+        error: message,
         body: req.body,
       });
       res.status(503).json({
         error: "An error occurred while processing the prompt",
+        message,
       });
       return;
     }
