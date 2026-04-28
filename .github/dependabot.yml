@@ -1,7 +1,20 @@
 # Dependabot keeps direct dependencies and GitHub Actions current.
 # Bun workspaces use the npm registry under the hood, so the `npm`
 # ecosystem covers `package.json` files in every workspace package.
-# Schedule is monthly to avoid PR noise on a small-team fork.
+#
+# Policy notes (set 2026-04-28 after the welcome-wave triage):
+# - Schedule monthly to avoid PR noise on a small-team fork.
+# - `versioning-strategy: increase-if-necessary` keeps PRs minimal
+#   (only bump constraints when a security fix or peer dep requires
+#   it). Combined with `ignore` blocks below, version-update PRs are
+#   limited to truly safe minor/patch bumps.
+# - Major bumps on load-bearing packages are explicitly ignored —
+#   they require coordinated work, not auto-PRs. Listed per-config
+#   below with the reason inline.
+# - `open-pull-requests-limit` is kept low (3 npm root, 2 per
+#   workspace package, 2 github-actions). Security-update PRs are
+#   counted separately by Dependabot, so this is a hard cap on
+#   *version* updates only.
 version: 2
 updates:
   - package-ecosystem: "npm"
@@ -11,7 +24,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Rome"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    versioning-strategy: "increase-if-necessary"
     labels:
       - "dependencies"
     commit-message:
@@ -21,11 +35,25 @@ updates:
       types:
         patterns:
           - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
       dev-tooling:
         patterns:
           - "prettier"
-          - "typescript"
           - "tsc-watch"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # TypeScript major bumps reveal strict-mode regressions across
+      # all three workspace packages — coordinate manually.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # @types/node tracks the Node LTS we ship against — bump
+      # alongside a Node upgrade, not standalone.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/packages/mcp-server"
@@ -34,13 +62,30 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Rome"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
+    versioning-strategy: "increase-if-necessary"
     labels:
       - "dependencies"
       - "scope:mcp-server"
     commit-message:
       prefix: "chore(deps,mcp-server)"
       include: "scope"
+    ignore:
+      # ArkType is the runtime validator at every external boundary —
+      # major bumps (incl. rc → stable) need an audit pass.
+      - dependency-name: "arktype"
+        update-types: ["version-update:semver-major"]
+      # MCP SDK is pinned (and is a fork in our case) — bump only
+      # when intentional, never via auto-PR.
+      - dependency-name: "@modelcontextprotocol/sdk"
+      # Turndown semantics for HTML → markdown can change between
+      # majors — coordinate with /fetch tool snapshot tests.
+      - dependency-name: "turndown"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/packages/obsidian-plugin"
@@ -49,7 +94,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Rome"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
+    versioning-strategy: "increase-if-necessary"
     labels:
       - "dependencies"
       - "scope:obsidian-plugin"
@@ -58,8 +104,28 @@ updates:
       include: "scope"
     ignore:
       # Patched at 5.16.0 — see patches/svelte@5.16.0.patch.
-      # Bumps must re-validate the patch under bun's bundler.
+      # Any bump must re-validate the patch under bun's bundler.
       - dependency-name: "svelte"
+      # Express 5 is a major rewrite (middleware/error semantics
+      # changed); the plugin's REST endpoints — /templates/execute,
+      # /search/smart, /mcp-tools/command-permission — need
+      # coordinated work. Stay on 4.x line.
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+      # Obsidian npm package is .d.ts only and tracks Obsidian
+      # releases; bump alongside an Obsidian compat audit.
+      - dependency-name: "obsidian"
+      # ESLint v9 flat-config migration is a breaking redesign —
+      # block major bumps on the parser/plugin pair until the migration
+      # is intentional.
+      - dependency-name: "@typescript-eslint/parser"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@typescript-eslint/eslint-plugin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/packages/shared"
@@ -68,13 +134,22 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Rome"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
+    versioning-strategy: "increase-if-necessary"
     labels:
       - "dependencies"
       - "scope:shared"
     commit-message:
       prefix: "chore(deps,shared)"
       include: "scope"
+    ignore:
+      - dependency-name: "arktype"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "obsidian"
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -83,7 +158,7 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Rome"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
       - "scope:ci"
