@@ -115,7 +115,7 @@ This entry consolidates the four alpha pre-releases and the beta. The full per-t
 
 ### Known limitations
 
-- **`Disabled MCP tools` (toolToggle) UI persists the list but does not gate the registry in 0.4.0** (the binary's env-var-based filter is gone). Tools cannot be disabled client-side yet; tracked as a follow-up post-stable.
+- **`Disabled MCP tools` (toolToggle) UI hidden in 0.4.0.** On 0.3.x the toggle wrote `OBSIDIAN_DISABLED_TOOLS` into the binary's env and the binary read it at startup to filter the registered tools. The 0.4.0 in-process registry has no equivalent gating path yet, so showing the UI would be misleading — the user could "disable" a tool that would still be reachable on the next call. The persisted `toolToggle.disabled` slice in `data.json` is left intact, so future installs can read it back without losing data; a 0.4.x follow-up will wire registry gating and re-mount the UI.
 
 ### References
 
