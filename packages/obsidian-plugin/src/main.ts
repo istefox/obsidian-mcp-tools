@@ -159,6 +159,7 @@ export default class McpToolsPlugin extends Plugin {
         res.json({
           message: "Prompt executed and file created successfully",
           content: processedContent,
+          path: params.targetPath,
         });
         return;
       }
@@ -168,12 +169,14 @@ export default class McpToolsPlugin extends Plugin {
         content: processedContent,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error("Prompt execution error:", {
-        error: error instanceof Error ? error.message : error,
+        error: message,
         body: req.body,
       });
       res.status(503).json({
         error: "An error occurred while processing the prompt",
+        message,
       });
       return;
     }
