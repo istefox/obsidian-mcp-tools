@@ -4,196 +4,157 @@
 [![Build status](https://img.shields.io/github/actions/workflow/status/istefox/obsidian-mcp-connector/release.yml)](https://github.com/istefox/obsidian-mcp-connector/actions)
 [![License](https://img.shields.io/github/license/istefox/obsidian-mcp-connector)](LICENSE)
 
-[Features](#features) | [Installation](#installation) | [Configuration](#configuration) | [Other MCP clients](#using-with-other-mcp-clients) | [Prompts](#using-prompts) | [Command execution](#command-execution) | [Troubleshooting](#troubleshooting) | [Security](#security) | [Development](#development) | [Support](#support)
+[Features](#features) | [Installation](#installation) | [Quick setup for clients](#quick-setup-for-clients) | [Migration from 0.3.x](#migration-from-03x) | [Prompts](#using-prompts) | [Command execution](#command-execution) | [Troubleshooting](#troubleshooting) | [Security](#security) | [Development](#development) | [Support](#support)
 
 > **About this fork**
 >
-> MCP Connector is the **community continuation** of [`jacksteamdev/obsidian-mcp-tools`](https://github.com/jacksteamdev/obsidian-mcp-tools), which has been dormant since July 2025 with the maintainer call closing without a successor. This fork is maintained by [Stefano Ferri (istefox)](https://github.com/istefox) and ships with bug-fix coverage for 21 of the 24 currently-open upstream issues, plus the full Issue #29 command-execution flow (allowlist + confirmation modal + audit log + presets).
+> MCP Connector is the **community continuation** of [`jacksteamdev/obsidian-mcp-tools`](https://github.com/jacksteamdev/obsidian-mcp-tools), which the upstream maintainer officially declared **unmaintained** on 2026-04-24. This fork is maintained by [Stefano Ferri (istefox)](https://github.com/istefox) and is the active line for both bug fixes and the architectural pivot to in-process HTTP transport.
 >
-> **Coming from upstream?** See [`docs/migration-from-upstream.md`](docs/migration-from-upstream.md) for the one-time switch.
-
-> **0.4.0 alpha — new architecture**
+> **Coming from upstream's `mcp-tools` plugin?** See [`docs/migration-from-upstream.md`](docs/migration-from-upstream.md) for the one-time switch.
 >
-> The 0.4.0 line moves the MCP server **in-process inside Obsidian** over HTTP. No more native binary, no more Local REST API dependency. Claude Desktop reaches the server through the official `mcp-remote` bridge; HTTP-native clients (Claude Code, Cursor, Cline, Continue, VS Code) connect directly. Native semantic search via Transformers.js works without Smart Connections.
->
-> Status: `0.4.0-alpha.4` is on BRAT now. Stable line on the community store remains the 0.3.x family until 0.4.0 graduates. See [`CHANGELOG.md`](CHANGELOG.md) for the full alpha history and migration notes — first-load detects 0.3.x state and offers an opt-in modal to rewrite `claude_desktop_config.json` and clean up the old binary.
->
-> The sections below describe the **0.3.x architecture** and stay in place while 0.4.0 is in alpha. They will be rewritten when 0.4.0 stable cuts.
+> **Coming from this fork's 0.3.x line?** First plugin load on 0.4.0 detects your existing setup and offers an opt-in migration modal — see [Migration from 0.3.x](#migration-from-03x) below.
 
-MCP Connector enables AI applications like Claude Desktop, Claude Code, and Cline to securely access and work with your Obsidian vault through the Model Context Protocol (MCP). MCP is an open protocol that standardizes how AI applications can interact with external data sources and tools while maintaining security and user control. [^2]
+MCP Connector lets AI applications like Claude Desktop, Claude Code, Cursor, Cline, Continue, Windsurf, and VS Code securely access and work with your Obsidian vault through the [Model Context Protocol](https://modelcontextprotocol.io). [^2]
 
-This plugin consists of two parts:
-1. An Obsidian plugin that adds MCP capabilities to your vault
-2. A local MCP server that handles communication with AI applications
+## Architecture
 
-When you install this plugin, it will help you set up both components. The MCP server acts as a secure bridge between your vault and AI applications like Claude Desktop. This means AI assistants can read your notes, execute templates, and perform semantic searches - but only when you allow it and only through the server's secure API. The server never gives AI applications direct access to your vault files. [^3]
+Starting with **0.4.0**, the plugin hosts the MCP server **in-process inside Obsidian** and exposes Streamable HTTP on `127.0.0.1:27200`. There is **no native binary shipped from this repository** — eliminating the supply-chain risk that comes with downloading and executing a platform-specific executable from GitHub Releases.
 
-> **Privacy Note**: When using Claude Desktop with this plugin, your conversations with Claude are not used to train Anthropic's models by default. [^1]
+- **HTTP-native MCP clients** (Claude Code, Cursor, Cline, Continue, Windsurf, VS Code) connect directly to the local HTTP endpoint.
+- **Claude Desktop** (which speaks only stdio MCP) connects through the official `npx mcp-remote` bridge — a two-line config the plugin generates for you.
+- **Native semantic search** runs entirely on-device via Transformers.js + `Xenova/all-MiniLM-L6-v2` (~25 MB, downloaded once and cached). No cloud, no Smart Connections requirement.
+- **Local REST API is now optional**: only the `search_vault` tool (Dataview DQL / JsonLogic queries) needs it, and that tool returns an actionable error if it isn't installed. The other 19 tools work without it. [^4]
 
 ## Features
 
-When connected to an MCP client like Claude Desktop, this plugin enables:
+When connected to an MCP-compatible client, this plugin enables:
 
-- **Vault Access**: Allows AI assistants to read and reference your notes while maintaining your vault's security [^4]
-- **Semantic Search**: AI assistants can search your vault based on meaning and context, not just keywords [^5]
-- **Template Integration**: Execute Obsidian templates through AI interactions, with dynamic parameters and content generation [^6]
-- **Prompt Library**: Author MCP prompts as markdown files in your vault's `Prompts/` folder, with parameters defined inline via Templater syntax. Your prompt library lives alongside your notes. See [Using prompts](#using-prompts) below.
-- **Command Execution** (opt-in): Authorize the agent to run specific Obsidian commands (e.g. `editor:toggle-bold`, `graph:open`) from a per-vault allowlist. Disabled by default; every invocation is audited. See [Command execution](#command-execution) below.
+- **Vault access** — read, write, and patch notes through 14 typed tools (`get_vault_file`, `create_vault_file`, `patch_vault_file`, `list_vault_files`, …) with native binary content for images and audio.
+- **Native semantic search** — `search_vault_smart` over an on-device MiniLM index, with optional fallback to Smart Connections if it is installed. Provider tri-state setting (`auto` / `native` / `smart-connections`) under the plugin settings.
+- **Plain-text + structured search** — `search_vault_simple` (text + context windows) and `search_vault` (DQL / JsonLogic via Local REST API).
+- **Template execution** — invoke Templater templates as MCP tool calls with dynamic parameters.
+- **Prompt library** — author MCP prompts as markdown files in your vault's `Prompts/` folder, with parameters defined inline via Templater syntax. See [Using prompts](#using-prompts) below.
+- **Command execution** (opt-in) — authorize the agent to run specific Obsidian commands (e.g. `editor:toggle-bold`, `graph:open`) from a per-vault allowlist. Disabled by default; every invocation is audited. See [Command execution](#command-execution) below.
+- **Web fetch** — `fetch` tool retrieves arbitrary URLs and returns Markdown via Turndown, with pagination for long pages.
 
-All features require an MCP-compatible client like Claude Desktop, as this plugin provides the server component that enables these integrations. The plugin does not modify Obsidian's functionality directly - instead, it creates a secure bridge that allows AI applications to work with your vault in powerful ways.
+20 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
 
 ## Prerequisites
 
 ### Required
 
-- [Obsidian](https://obsidian.md/) v1.7.7 or higher
-- [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin installed and configured with an API key
-- An MCP-compatible client. [Claude Desktop](https://claude.ai/download) is the only client the plugin auto-configures — if you use a different client (Claude Code, Cline, Continue, Zed, or any custom MCP client), see [Using with other MCP clients](#using-with-other-mcp-clients) below for manual setup.
+- [Obsidian](https://obsidian.md/) v1.7.7 or higher.
+- An MCP-compatible client. Examples: [Claude Desktop](https://claude.ai/download), [Claude Code](https://docs.anthropic.com/claude/docs/claude-code), [Cursor](https://cursor.com), [Cline](https://github.com/cline/cline), [Continue](https://continue.dev), [Windsurf](https://codeium.com/windsurf), [VS Code](https://code.visualstudio.com).
+- For **Claude Desktop only**: [Node.js](https://nodejs.org) (any LTS version) — required to run the `npx mcp-remote` bridge. The plugin auto-detects your Node install (including Homebrew on macOS) and offers a one-click install if missing.
 
-### Recommended
+### Optional
 
-- [Templater](https://silentvoid13.github.io/Templater/) plugin for enhanced template functionality
-- [Smart Connections](https://smartconnections.app/) plugin for semantic search capabilities
+- [Templater](https://silentvoid13.github.io/Templater/) — needed for the Prompt library and `execute_template` tool.
+- [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) — needed only for the `search_vault` tool (DQL / JsonLogic queries). All other tools work without it. [^4]
+- [Smart Connections](https://smartconnections.app/) — alternative semantic-search backend. The native MiniLM provider works just as well; Smart Connections is only useful if you are already invested in its ecosystem.
 
 ## Installation
 
-> [!Important]
-> This plugin requires a secure server component that runs locally on your computer. The server is distributed as a signed executable, with its complete source code available in `packages/mcp-server/`. For details about our security measures and code signing process, see the [Security](#security) section.
-
-There are two install paths depending on whether MCP Connector has finished community-store review yet:
+There are two install paths depending on whether MCP Connector has finished community-store review.
 
 ### Option A — Community plugin store (once approved)
 
-1. **Settings → Community plugins → Browse**, search **"MCP Connector"** by Stefano Ferri
-2. Install + Enable
-3. Open the plugin settings
-4. Click **"Install Server"** to download the MCP server binary and configure your client
+1. **Settings → Community plugins → Browse**, search **"MCP Connector"** by Stefano Ferri.
+2. Install + Enable.
+3. The first-load migration modal opens if you have a 0.3.x install — confirm or skip the steps it proposes (see [Migration from 0.3.x](#migration-from-03x) below).
+4. Open the plugin settings and use the **Quick setup for clients** section to wire up your MCP client.
 
 ### Option B — BRAT (available immediately)
 
-If the plugin isn't in the community store yet, install it via [BRAT](https://github.com/TfTHacker/obsidian42-brat):
+While the community-store entry is in review, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat):
 
-1. Install and enable the **Obsidian42 — BRAT** plugin from the community store
-2. **Settings → BRAT → Add Beta plugin**, paste `istefox/obsidian-mcp-connector`
-3. BRAT installs the latest GitHub release; enable **MCP Connector** in Community plugins
-4. Open the plugin settings → click **"Install Server"**
+1. Install and enable the **Obsidian42 — BRAT** plugin from the community store.
+2. **Settings → BRAT → Add Beta plugin**, paste `istefox/obsidian-mcp-connector`.
+3. BRAT installs the latest GitHub release; enable **MCP Connector** in Community plugins.
+4. The first-load migration modal opens if applicable; otherwise jump straight to **Quick setup for clients** in the plugin settings.
 
-### What "Install Server" does
+That's it. **No binary to install, no separate download.** The MCP server starts as soon as you enable the plugin.
 
-- Downloads the appropriate MCP server binary for your platform
-- Configures Claude Desktop to use the server (writes `claude_desktop_config.json` with the API key from your active vault's Local REST API plugin)
-- Sets up necessary permissions and paths
+## Quick setup for clients
 
-### Installation Locations
+The plugin settings expose three **Copy config** buttons — one per supported client family. Each button copies a ready-to-paste JSON snippet to the clipboard.
 
-- **Plugin folder (in vault)**: `{vault}/.obsidian/plugins/mcp-tools-istefox/`
-- **Server Binary** (default — outside vault, see [Installation location](#installation-location) below):
-  - macOS: `~/Library/Application Support/obsidian-mcp-tools/bin/`
-  - Linux: `~/.local/share/obsidian-mcp-tools/bin/`
-  - Windows: `%APPDATA%\obsidian-mcp-tools\bin\`
-- **Log Files**:
-  - macOS: `~/Library/Logs/obsidian-mcp-tools`
-  - Windows: `%APPDATA%\obsidian-mcp-tools\logs`
-  - Linux: `~/.local/share/obsidian-mcp-tools/logs`
+### Claude Desktop
 
-The binary install paths intentionally use the original `obsidian-mcp-tools` namespace (rather than `mcp-tools-istefox`) so the on-disk layout stays compatible with the upstream plugin. Migrating users keep their existing binary; fresh installers follow the same convention.
+Claude Desktop only speaks stdio MCP, so it reaches the in-process server through the official [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge (Anthropic-maintained, no third-party code in the auth path).
 
-## Configuration
+1. Click **Copy config for Claude Desktop**. The snippet looks like:
+   ```json
+   {
+     "mcpServers": {
+       "obsidian-mcp-connector": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-remote",
+           "http://127.0.0.1:27200/mcp",
+           "--header",
+           "Authorization: Bearer YOUR_TOKEN"
+         ]
+       }
+     }
+   }
+   ```
+2. Paste it into your `claude_desktop_config.json` (Claude Desktop → Settings → Developer → Edit Config).
+3. Restart Claude Desktop.
 
-After clicking the "Install Server" button in the plugin settings, the plugin will automatically:
+Or tick **Auto-write Claude Desktop config** in the plugin settings — the plugin keeps the file in sync on token rotation, with a `.backup` written before each rewrite.
 
-1. Download the appropriate MCP server binary
-2. Use your Local REST API plugin's API key
-3. Configure Claude Desktop to use the MCP server
-4. Set up appropriate paths and permissions
+### Claude Code
 
-While the configuration process is automated, it requires your explicit permission to install the server binary and modify the Claude Desktop configuration. No additional manual configuration is required beyond this initial setup step.
-
-### Installation location
-
-By default the server binary is installed **outside your vault** in a platform-standard system directory:
-
-- **macOS**: `~/Library/Application Support/obsidian-mcp-tools/bin/`
-- **Linux**: `~/.local/share/obsidian-mcp-tools/bin/`
-- **Windows**: `%APPDATA%\obsidian-mcp-tools\bin\`
-
-This keeps the ~15 MB binary out of your vault sync (iCloud, Git, Dropbox, Syncthing). If you prefer the legacy behavior — installing the binary inside the vault at `{vault}/.obsidian/plugins/obsidian-mcp-tools/bin/` — you can switch to it under **Installation location → Inside vault (legacy)** in the plugin settings.
-
-If you are upgrading from an earlier version that installed the binary inside your vault, the plugin will detect the legacy location on first load and offer a one-click migration with a confirmation dialog. The migration downloads a fresh copy of the binary to the new location, updates your MCP client config, and deletes the old binary from your vault.
-
-## Using with other MCP clients
-
-The Obsidian plugin only auto-configures Claude Desktop, but the MCP server itself is a standalone binary that speaks MCP over stdio — so it works with any MCP-compatible client, including **Claude Code** (the Anthropic CLI), **Cline**, **Continue**, **Zed**, and custom clients built against the MCP SDK.
-
-### Finding the server binary
-
-After you click "Install Server" from the plugin settings, the binary is downloaded to:
-
-- **macOS / Linux**: `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` (or `~/.local/share/obsidian-mcp-tools/bin/mcp-server` on Linux)
-- **Windows**: `%APPDATA%\obsidian-mcp-tools\bin\mcp-server.exe`
-
-If you switched to the legacy "inside vault" install location, the binary lives at `{vault}/.obsidian/plugins/mcp-tools-istefox/bin/mcp-server` instead.
-
-Replace `{vault}` with the absolute path to your vault directory. You will need this absolute path when configuring a non-Claude-Desktop client, because clients launch the server as an external process.
-
-### Environment variables
-
-The server is configured entirely through environment variables passed by the client at launch time.
-
-| Variable | Required | Default | Purpose |
-|---|---|---|---|
-| `OBSIDIAN_API_KEY` | yes | — | Local REST API key. Copy it from the Local REST API plugin settings in Obsidian. |
-| `OBSIDIAN_HOST` | no | `127.0.0.1` | Hostname where Local REST API is listening. |
-| `OBSIDIAN_PORT` | no | `27124` (HTTPS) / `27123` (HTTP) | Port where Local REST API is listening. |
-| `OBSIDIAN_USE_HTTP` | no | `false` | Set to `true` to connect over HTTP instead of HTTPS. |
-| `OBSIDIAN_DISABLED_TOOLS` | no | — | Comma-separated list of tool names to disable (e.g. `patch_vault_file, delete_vault_file`). Unknown names are logged as warnings and do not abort startup. |
-| `OBSIDIAN_SERVER_PLATFORM` | no | auto-detect | Force the installer to download a specific server binary. Accepts `linux`, `macos`, or `windows`. Useful when running Obsidian under WSL, Bottles, wine, or another translation layer where `os.platform()` gives the wrong answer. Invalid values silently fall through to auto-detect. |
-| `OBSIDIAN_SERVER_ARCH` | no | auto-detect | Force the installer to download a specific architecture. Accepts `x64` or `arm64`. Only affects the macOS download URL (Linux and Windows ship a single binary each). |
-
-The server also accepts a `--port <number>` CLI flag as an alternative to `OBSIDIAN_PORT`. When both are set, the CLI flag wins.
-
-> The plugin also exposes a **Server binary platform** override in the settings UI (under _Advanced_ in the MCP Connector settings tab). It writes the same preference as `OBSIDIAN_SERVER_PLATFORM` / `OBSIDIAN_SERVER_ARCH` into the plugin's own data file. The setting UI takes precedence over the env vars when both are set.
-
-### Example configuration
-
-Most MCP clients expect a JSON config with a `command`, optional `args`, and an `env` block. Here is a generic template that maps onto every client's config shape:
+Claude Code speaks HTTP transport natively. Click **Copy config for Claude Code** and paste into `~/.claude.json` (project scope) or `~/.claude/settings.json` (global scope):
 
 ```json
 {
   "mcpServers": {
-    "obsidian-mcp-tools": {
-      "command": "/absolute/path/to/obsidian-mcp-tools/bin/mcp-server",
-      "args": [],
-      "env": {
-        "OBSIDIAN_API_KEY": "your-api-key-here"
+    "obsidian-mcp-connector": {
+      "type": "http",
+      "url": "http://127.0.0.1:27200/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
       }
     }
   }
 }
 ```
 
-The `command` path above is the default "outside vault" install location — `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` on macOS, `~/.local/share/obsidian-mcp-tools/bin/mcp-server` on Linux, `%APPDATA%\obsidian-mcp-tools\bin\mcp-server.exe` on Windows. If you switched to "inside vault" mode, replace it with `{vault}/.obsidian/plugins/mcp-tools-istefox/bin/mcp-server` instead.
+Or use `claude mcp add` from the CLI with the same fields.
 
-The `mcpServers` key (`"obsidian-mcp-tools"` in the example) is just an arbitrary identifier the client uses to label this server in its UI — name it whatever you like. The plugin's "Install Server" button writes it as `obsidian-mcp-tools` for backward compatibility with users migrating from upstream.
+### Cursor / Cline / Continue / Windsurf / VS Code
 
-The exact config file location and the wrapping object shape vary by client:
-
-- **Claude Code** (Anthropic CLI): add via `claude mcp add`, or edit `~/.claude.json` (project scope) / `~/.claude/settings.json` (global scope).
-- **Cline**: open the *MCP Servers* panel in the Cline sidebar and add it via the UI.
-- **Continue**: configure under `mcpServers` in the Continue config file (see the Continue docs for the current path).
-- **Zed**: configure via the assistant settings panel.
-
-Consult your client's own documentation for the current config file path and any client-specific wrapping keys.
+Click **Copy config for streamable-http clients**. The snippet uses the generic streamable-http payload shape these clients accept; consult each client's own docs for the exact config-file location and any wrapping keys.
 
 ### Verifying the setup
 
-Once configured, your client should expose 18 MCP tools from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
+Once configured, your client should expose **20 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
 
-To verify the connection works end-to-end, ask the agent to call `get_server_info`. A successful response confirms that the client can launch the binary, the binary can reach Local REST API, and the environment variables are being passed through correctly. If the call fails with an authentication error, double-check `OBSIDIAN_API_KEY`. If it fails with a connection error, check `OBSIDIAN_HOST` / `OBSIDIAN_PORT` and make sure the Local REST API plugin is enabled and Obsidian is running.
+To verify the connection works end-to-end, ask the agent to call `get_server_info`. A successful response confirms the client can reach the in-process server and the bearer token is correct. For deeper inspection (request/response logs, tool schema inspection without an LLM in the loop), use [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector):
+
+```bash
+npx -y @modelcontextprotocol/inspector
+# point it at http://127.0.0.1:27200/mcp with your bearer token
+```
+
+## Migration from 0.3.x
+
+If you are upgrading from `0.3.x` (the binary-shipping line), the first plugin load on 0.4.0 detects your existing state and opens a **migration modal** with up to three opt-in steps:
+
+1. **Rewrite Claude Desktop config** — replaces the old binary entry in `claude_desktop_config.json` with the `mcp-remote` bridge config. A `.backup` file is written before the rewrite. The legacy `obsidian-mcp-tools` config key (if present from upstream) is removed at the same time.
+2. **Delete the legacy binary** — the orphan `mcp-server` binary at the previous install location (`~/Library/Application Support/obsidian-mcp-tools/bin/`, `~/.local/share/obsidian-mcp-tools/bin/`, or `%APPDATA%\obsidian-mcp-tools\bin\`).
+3. **Prune legacy plugin keys** — `installLocation` and `platformOverride` keys in the plugin's `data.json` are no longer used in 0.4.0.
+
+Each step is independent — a failure in one does not skip the others. The modal can be dismissed without action, and `migration.skippedAt` is persisted so it does not re-open on every plugin load.
+
+If you skip the migration, the plugin still works — but you'll have an orphan binary on disk and a stale Claude Desktop config entry pointing at it.
 
 ## Using prompts
 
-The plugin lets you author **MCP prompts** as plain markdown files in your vault. Your prompt library lives alongside your notes, in a folder called `Prompts/` at the root of the vault. Every MCP-compatible client (Claude Desktop, Claude Code, Cline, Continue, Zed, …) will surface these prompts in its own UI — typically as slash commands or attachments.
+The plugin lets you author **MCP prompts** as plain markdown files in your vault. Your prompt library lives alongside your notes, in a folder called `Prompts/` at the root of the vault. Every MCP-compatible client (Claude Desktop, Claude Code, Cursor, Cline, Continue, …) will surface these prompts in its own UI — typically as slash commands or attachments.
 
 ### Requirements
 
@@ -274,7 +235,7 @@ If the command id or its human name contains a word commonly associated with dat
 
 ### Advanced settings
 
-Under the **Advanced** disclosure you can override the **soft rate-limit warning threshold** (default: 30 calls/minute). When the agent exceeds this rate, the confirmation modal surfaces a red banner so you can spot a runaway loop. The threshold is informational only — the MCP server's hard limit of 100/minute is compiled into the binary and is not configurable from the UI.
+Under the **Advanced** disclosure you can override the **soft rate-limit warning threshold** (default: 30 calls/minute). When the agent exceeds this rate, the confirmation modal surfaces a red banner so you can spot a runaway loop. The threshold is informational only — the in-process MCP server's hard limit of 100/minute is enforced server-side and is not configurable from the UI.
 
 ### What gets logged
 
@@ -295,137 +256,111 @@ For the full threat model and the rationale behind these decisions, see **[`docs
 
 If you encounter issues:
 
-1. Check the plugin settings to verify:
-   - All required plugins are installed
-   - The server is properly installed
-   - Claude Desktop is configured
-2. Review the logs:
-   - Open plugin settings
-   - Click "Open Logs" under Resources
-   - Look for any error messages or warnings
-3. Common Issues:
-   - **Server won't start**: Ensure Claude Desktop is running
-   - **Connection errors**: Verify Local REST API plugin is configured
-   - **Permission errors**: Try reinstalling the server
+### Claude Desktop can't reach the server
+
+- **Symptom**: Claude Desktop logs show `Failed to connect`, `ENOENT`, or `command not found`.
+- **Check**: open the plugin settings → **Quick setup for clients** → the **Node.js detection** panel reports whether `node` and `npx` are reachable on the path Obsidian inherits when launched from Finder/Spotlight (a common gap on macOS for users who installed Node via Homebrew).
+- **Fix**: if the panel shows "Not found", click **Install via Homebrew** (macOS) or follow the platform-specific link to install Node manually. Restart Obsidian after installing.
+
+### `tool/call` returns HTTP 401
+
+- The bearer token in your client config does not match the plugin's current token. Open the plugin settings → **Bearer token** → click **Show** to reveal the current token and **Copy** to copy it. Update your client config and restart the client.
+
+### Native semantic search downloads slowly on first call
+
+- Expected. The first `search_vault_smart` call (when `provider="native"`, or `"auto"` without Smart Connections) downloads ~25 MB from HuggingFace. The model is cached in the browser Cache API; subsequent reloads are instant.
+- A non-fatal warning `Unable to determine content-length from response headers` may appear in DevTools console during the first download — `onnxruntime-web` recovers via an expandable buffer; search results are unaffected.
+
+### Migration modal didn't run
+
+- The modal only opens if the first-load detector finds at least one of: legacy `installLocation` / `platformOverride` keys in `data.json`, an orphan `mcp-server` binary at the previous install location, or a Claude Desktop config entry pointing at the binary.
+- If you dismissed it accidentally, you can re-open it from the plugin settings → **Migration from 0.3.x** → **Re-run migration check**.
+
+### General logs
+
+Open the plugin settings → **Open Logs** under Resources, or look at Obsidian's developer console (`Cmd+Opt+I` / `Ctrl+Shift+I`).
 
 ## Security
 
-### Binary Distribution
+### No binary shipped
 
-- All releases are built using GitHub Actions with reproducible builds
-- Binaries are signed and attested using SLSA provenance
-- Release workflows are fully auditable in the repository
+Starting with 0.4.0, this plugin **does not ship a platform-specific binary**. The MCP server runs in-process inside Obsidian's Electron renderer. Eliminating the binary closes the supply-chain attack surface that comes with auto-downloading and executing a signed-but-pre-built executable from GitHub Releases — the rationale upstream cited when declaring the project unmaintained.
 
-### Runtime Security
+### Local-only HTTP
 
-- The MCP server runs with minimal required permissions
-- All communication is encrypted
-- API keys are stored securely using platform-specific credential storage
+The MCP server listens on `127.0.0.1:27200`. The bind address is hardcoded to loopback; no external network exposure. Bearer-token authentication is required on every request; the token is generated per install and can be rotated from the plugin settings.
 
-### Binary Verification
+### Bearer token
 
-The MCP server binaries are published with [SLSA Provenance attestations](https://slsa.dev/provenance/v1), which provide cryptographic proof of where and how the binaries were built. This helps ensure the integrity and provenance of the binaries you download.
+- Generated locally on first plugin load, stored in the plugin's `data.json` (per-vault).
+- Visible in the plugin settings → **Bearer token** → **Show** (hidden by default).
+- **Rotate** invalidates the in-process transport and restarts it immediately, so the new token takes effect on the next request. Update your client configs after rotating.
 
-To verify a binary using the GitHub CLI:
+### Plugin runtime
 
-1. Install GitHub CLI:
-
-   ```bash
-   # macOS (Homebrew)
-   brew install gh
-
-   # Windows (Scoop)
-   scoop install gh
-
-   # Linux
-   sudo apt install gh  # Debian/Ubuntu
-   ```
-
-2. Verify the binary:
-   ```bash
-   gh attestation verify --owner istefox <binary path or URL>
-   ```
-
-   (For binaries downloaded from the upstream `jacksteamdev` releases — e.g. before you switched to this fork — substitute `--owner jacksteamdev` instead.)
-
-The verification will show:
-
-- The binary's SHA256 hash
-- Confirmation that it was built by this repository's GitHub Actions workflows
-- The specific workflow file and version tag that created it
-- Compliance with SLSA Level 3 build requirements
-
-This verification ensures the binary hasn't been tampered with and was built directly from this repository's source code.
+- All vault access goes through Obsidian's `app.vault` and `app.workspace` APIs (Obsidian's permission model applies).
+- Local REST API is no longer required for most tools — see [Architecture](#architecture).
+- Command execution is opt-in with a per-vault allowlist; see [Command execution](#command-execution).
 
 ### Reporting Security Issues
 
-Please report security vulnerabilities via our [security policy](SECURITY.md).
-Do not report security vulnerabilities in public issues.
+Please report security vulnerabilities via our [security policy](SECURITY.md). Do not report security vulnerabilities in public issues.
 
 ## Development
 
-This project uses a monorepo structure with feature-based architecture. For detailed project architecture documentation, see [.clinerules](.clinerules).
-
-### Using Cline
-
-Some code in this project was implemented using the AI coding agent [Cline](https://cline.bot). Cline uses `cline_docs/` and the `.clinerules` file to understand project architecture and patterns when implementing new features.
+This project uses a Bun monorepo with a feature-based architecture. For the full architecture contract see [`.clinerules`](.clinerules) and [`docs/project-architecture.md`](docs/project-architecture.md).
 
 ### Workspace
 
-This project uses a [Bun](https://bun.sh/) workspace structure:
-
 ```
 packages/
-├── mcp-server/        # Server implementation
-├── obsidian-plugin/   # Obsidian plugin
-└── shared/           # Shared utilities and types
+├── mcp-server/        # In-process MCP server (registered tools, ToolRegistry)
+├── obsidian-plugin/   # Obsidian plugin (settings UI, migration modal, transport)
+├── shared/            # Shared ArkType schemas and types
+└── test-site/         # SvelteKit harness (dev-only, not shipped)
 ```
 
 ### Building
 
-1. Install dependencies:
-   ```bash
-   bun install
-   ```
-2. Build all packages:
-   ```bash
-   bun run build
-   ```
-3. For development:
-   ```bash
-   bun run dev
-   ```
+```bash
+bun install                    # Install workspace dependencies
+bun run check                  # Type-check every package
+bun run dev                    # Watch all packages
+bun run build                  # Production build
+```
+
+The plugin's `main.js` is written at the package root (`packages/obsidian-plugin/main.js`); Obsidian expects that path. Do not move it.
 
 ### Requirements
 
-- [bun](https://bun.sh/) v1.1.42 or higher
-- TypeScript 5.0+
+- [Bun](https://bun.sh/) latest (pinned via `mise.toml`)
+- TypeScript 5+
 
-## Contributing
+### Contributing
 
 **Before contributing, please read our [Contributing Guidelines](CONTRIBUTING.md) including our community standards and behavioral expectations.**
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
+1. Fork the repository.
+2. Create a feature branch from `main` (bug fix on the 0.3.x line) or `feat/http-embedded` (0.4.x work).
+3. Make your changes; keep PRs scoped.
 4. Run tests:
    ```bash
    bun test
    ```
-5. Submit a pull request
+5. Submit a pull request.
 
 We welcome genuine contributions but maintain strict community standards. Be respectful and constructive in all interactions.
 
 ## Support
 
-- [Open an issue on this fork](https://github.com/istefox/obsidian-mcp-connector/issues) for bug reports and feature requests
-- The original upstream Discord is at https://discord.gg/q59pTrN9AA — note that the upstream maintainer has been inactive since July 2025; for help with **this fork specifically**, GitHub issues are the right channel
+- [Open an issue on this fork](https://github.com/istefox/obsidian-mcp-connector/issues) for bug reports and feature requests.
+- The original upstream Discord at https://discord.gg/q59pTrN9AA is no longer staffed for this fork — the upstream maintainer declared the project unmaintained on 2026-04-24. For help with **MCP Connector specifically**, GitHub issues are the right channel.
 
 **Please read our [Contributing Guidelines](CONTRIBUTING.md) before posting.** We maintain high community standards and have zero tolerance for toxic behavior.
 
 ## Changelog
 
-See [GitHub Releases on this fork](https://github.com/istefox/obsidian-mcp-connector/releases) for detailed changelog information.
+See [GitHub Releases on this fork](https://github.com/istefox/obsidian-mcp-connector/releases) and [`CHANGELOG.md`](CHANGELOG.md) for the detailed changelog.
 
 ## License
 
@@ -433,9 +368,7 @@ See [GitHub Releases on this fork](https://github.com/istefox/obsidian-mcp-conne
 
 ## Footnotes
 
-[^1]: For information about Claude data privacy and security, see [Claude AI's data usage policy](https://support.anthropic.com/en/articles/8325621-i-would-like-to-input-sensitive-data-into-free-claude-ai-or-claude-pro-who-can-view-my-conversations)
-[^2]: For more information about the Model Context Protocol, see [MCP Introduction](https://modelcontextprotocol.io/introduction)
-[^3]: For a list of available MCP Clients, see [MCP Example Clients](https://modelcontextprotocol.io/clients)
-[^4]: Requires Obsidian plugin Local REST API
-[^5]: Requires Obsidian plugin Smart Connections
-[^6]: Requires Obsidian plugin Templater
+[^1]: For information about Claude data privacy and security, see [Claude AI's data usage policy](https://support.anthropic.com/en/articles/8325621-i-would-like-to-input-sensitive-data-into-free-claude-ai-or-claude-pro-who-can-view-my-conversations).
+[^2]: For more information about the Model Context Protocol, see [MCP Introduction](https://modelcontextprotocol.io/introduction).
+[^3]: For a list of available MCP Clients, see [MCP Example Clients](https://modelcontextprotocol.io/clients).
+[^4]: Local REST API was a hard requirement on the 0.3.x line. In 0.4.0 it is optional and only enables the `search_vault` tool (DQL / JsonLogic queries). The other 19 tools work without it; `search_vault` returns an actionable error if it isn't installed.
