@@ -159,6 +159,7 @@ export default class McpToolsPlugin extends Plugin {
         res.json({
           message: "Prompt executed and file created successfully",
           content: processedContent,
+          path: params.targetPath,
         });
         return;
       }
