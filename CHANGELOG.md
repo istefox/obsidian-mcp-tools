@@ -3,6 +3,23 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.12] — 2026-04-28
+
+### Fixed
+- **Re-release of 0.3.11 with `bun.lock` aligned to the workspace
+  `package.json` files.** The 0.3.11 tag's release workflow failed at
+  `bun install --frozen-lockfile` because the lockfile shipped on the
+  tag had ~100 lines of drift introduced during the rapid back-to-
+  back Dependabot merges (most likely the vite v5→v8 rebase). No
+  release artifacts were produced for 0.3.11 — the GitHub release
+  exists as metadata only, with zero attached binaries — so BRAT users
+  on `main` were unable to download it. This release contains the
+  same code as 0.3.11 plus a regenerated lockfile, and re-runs the
+  release workflow cleanly.
+
+  Per the branch protection policy, tags on the 0.3.x line are not
+  re-pointed; the corrective release ships as 0.3.12.
+
 ## [0.3.11] — 2026-04-28
 
 ### Fixed
