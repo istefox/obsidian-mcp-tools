@@ -44,7 +44,7 @@ jobs:
         run: bun run zip
 
       - name: Generate artifact attestation for MCP server binaries
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "packages/mcp-server/dist/*"
 
