@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-21 (sessione serale — chiusura #59 + smoke test harness).** Documento di passaggio di consegne
+> **Aggiornato 2026-04-28 (sessione: 0.3.12 release + Dependabot policy v4 + 0.4.0 beta outreach).** Documento di passaggio di consegne
 > tra macchine. Self-contained: dal clone iniziale al primo prompt
 > da mandare a Claude Code sul nuovo Mac, qui c'è tutto.
 >
@@ -36,17 +36,34 @@
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git` (push allowed, dove ship le release)
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, per fetch + cherry-pick)
   - `main` tracks `origin/main`
-- **Ultimo commit (al momento di scrittura):** **`18dc5ff`** (`chore(scripts): add smoke test harness for binary get_vault_file`). Working tree clean. Branch allineato con `origin/main`.
+- **Ultimo commit (al momento di scrittura):** **`0233d62`** (`docs(plugin): pin /templates/execute path semantics for future refactor (#55)`) sopra `ba4110e` (tag `0.3.12`). Working tree clean. Branch allineato con `origin/main`.
+- **Branch attivo parallelo:** `feat/http-embedded` — HEAD `03331b0` (`port(0.4): forward #19 + #20 fixes from 0.3.12 + design note (#56)`), tag `0.4.0-beta.1` su `2ff40a1`. **PROTECTED** — non mergiarla in main senza go-ahead esplicito (vedi `CLAUDE.md` "Branch protection policy").
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
 | Versione | Data | Note |
 |---|---|---|
-| **`0.3.4`** | 2026-04-21 sera | LATEST — native MCP image/audio content blocks in `get_vault_file` (issue #59 full implementation via PR #2). Smoke test harness aggiunto (`scripts/smoke-test-binary.sh` + `scripts/smoke-verify-binary.py`), 5/5 cases PASS. |
+| **`0.3.12`** | 2026-04-28 | LATEST sulla 0.3.x line. Re-release di 0.3.11 (workflow failed su `bun install --frozen-lockfile` per drift introdotto dai merge Dependabot back-to-back) + i 3 fix originali: #19 (`message` field nel 503 di `/templates/execute`), #20 (`path` field nel success body), #21 (`OBSIDIAN_HOST` accetta sia hostname che URL completa, era upstream `jacksteamdev/obsidian-mcp-tools#84`). 7 asset, tutti i binari cross-platform. @folotp ha verificato #19 e #20 end-to-end. |
+| `0.3.11` | 2026-04-28 | **Release rotta** — tag esiste, GitHub Release esiste, MA **0 asset**: workflow failed su `bun install --frozen-lockfile`. Lasciata pubblicata per coerenza con la branch protection policy (no re-pointing tags 0.3.x). 0.3.12 è la corretta. |
+| `0.3.10` | 2026-04-26 | Diagnostic logging in `updateClaudeConfig` (motivato dal symptom #11 di @folotp); 8 nuovi regression test in `config.test.ts`. |
+| `0.3.9` | 2026-04-26 | Fix EOF-append silente per `patch_vault_file` su root-orphan headings (heading half di #71). Throw `McpError(InvalidParams, ...)` con guidance sui due workaround. 12 regression test. |
+| `0.3.8` | 2026-04-26 | Fix `search_vault_smart` HTTP 400 ("must be a string was an object") — `searchRequest` migrato da `string.json.parse` a parsed-object. Promosso a public export di `shared`. |
+| `0.3.7` | 2026-04-24 | Fix block half di #71 (block targets default `createTargetIfMissing=false` → silent EOF-append fixed). |
+| `0.3.6` | 2026-04-24 | Fix #81 (@folotp): `ApiNoteJson` schema accetta frontmatter array-valued (aliases, tags, up). |
+| `0.3.5` | 2026-04-22 | Refresh `bun.lock` per `@types/bun 1.3.13`. Fix installer `GITHUB_DOWNLOAD_URL` (rispetta env var CI invece che hardcoded upstream). |
+| `0.3.4` | 2026-04-21 sera | Native MCP image/audio content blocks in `get_vault_file` (issue #59 full implementation via PR #2). Smoke test harness aggiunto (`scripts/smoke-test-binary.sh` + `scripts/smoke-verify-binary.py`), 5/5 cases PASS. |
 | `0.3.3` | 2026-04-21 pomeriggio | Fix upstream #66 (`OBSIDIAN_API_URL` ignorato), #63 (`additionalProperties: {}` rompe Letta), #37 (trailing slash → 500). |
 | `0.3.2` | 2026-04-17 | Refactor interni: `McpServer` high-level API migration, extract `applySimpleSearchLimit`/`buildPatchHeaders`/`normalizeAppendBody`, regression pin per #62/#68/#41/#39. |
 | `0.3.1` | 2026-04-13 notte | Manifest description corretta per community-store rules (drop "Obsidian", drop maintainer-attribution suffix). Rebuild dopo feedback reviewer-bot. |
 | `0.3.0` | 2026-04-13 notte | First public release. Brand "MCP Connector". Tag eliminato e re-emesso dopo un mishap del version script che aveva prodotto 0.2.28. |
+
+**Linea 0.4.0 (pre-release):**
+| Versione | Data | Note |
+|---|---|---|
+| `0.4.0-beta.1` | 2026-04-27 | First beta. Closes Phase 4 dell'HTTP-embedded pivot (in-process MCP server su `127.0.0.1:27200`, no binary, native semantic search via MiniLM-L6-v2 ~25 MB, migration UX modal first-load, 3 "Copy config" Claude Desktop/Code/streamable-http, Node detection + Homebrew install + `mcp-remote` pre-warm). 528+ test verdi. End-to-end smoke validato in vault TEST. |
+| `0.4.0-alpha.4` | 2026-04-26 | Fix Electron-WASM: `onnxruntime-node` redirected a `onnxruntime-web` per Transformers.js 2.17.2 nel renderer Electron. `search_vault_smart` con `provider="native"` ora funziona end-to-end. |
+| `0.4.0-alpha.3` | 2026-04-26 | Fix critico stateless transport: `StreamableHTTPServerTransport` non riusabile, ora una nuova istanza per HTTP request (registry stays singleton). +123 test Phase 3. |
+| `0.4.0-alpha.2` / `.1` | 2026-04-25 → 2026-04-26 | Phase 3 semantic search incrementale. |
 
 URL release: https://github.com/istefox/obsidian-mcp-connector/releases
 
@@ -288,12 +305,23 @@ esplicitamente:)
 
 ---
 
-## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-21)
+## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-28)
 
-In ordine cronologico inverso, con commit SHA su `origin/main`:
+In ordine cronologico inverso, con commit SHA su `origin/main` (eccetto dove indicato `feat/http-embedded`):
 
 | Date approx | Lavoro | Commit/merge |
 |---|---|---|
+| 2026-04-28 sera | **Design note inline + port-forward 0.3.12 → 0.4.0**: comment block ancorato al sito `path: params.targetPath` in `handleTemplateExecution` che pinna la semantica @folotp's `tp.file.move()` seam (link diretto al suo commento). Stesso testo su `main` (PR #55, `0233d62`) e su `feat/http-embedded` (PR #56, `03331b0`) — quest'ultima include anche il port-forward di #19 (`message` field nel catch) e #20 (`path` field nel success) che mancavano sulla branch 0.4.0. @folotp ha verificato #19+#20 end-to-end con JSON repro post-merge. | `0233d62`, `03331b0` |
+| 2026-04-28 pom | **0.4.0-beta.1 outreach**: aperta issue #54 sul fork ("0.4.0 beta — looking for testers (BRAT)") con label `0.4.0-beta`. Comment combinato su upstream `jacksteamdev/obsidian-mcp-tools#79` (status update + ping @juicyjonny). Comment su fork #19 con CTA al beta test (@folotp). Edit del release body di 0.4.0-beta.1 con sezione "🧪 Testers wanted" + link a #54. Stable cut targeted ~3-7g post-soak. | (issue #54 + 3 commenti pubblici) |
+| 2026-04-28 pom | **0.3.12 release**: 3 fix shippati — #19 (PR #50: `message` field in 503), #20 (PR #50: `path` field in success), #21 (PR #51: `OBSIDIAN_HOST` accetta hostname o URL completa, originalmente upstream #84). Comment di chiusura issue su #19 e #20 a @folotp + comment su upstream #84 a @FiReCRaSHb (cross-link al fork). 0.3.11 release fallito su `bun install --frozen-lockfile`; 0.3.12 è la re-release con `bun.lock` allineato (PR #53). 7 asset cross-platform su 0.3.12. | `0bc87b2` (tag 0.3.11 broken), `ba4110e` (tag 0.3.12) |
+| 2026-04-28 mat | **Dependabot setup, 4 iterazioni**: abilitato Dependency graph + Dependabot alerts/security/grouped/version updates dalla UI. Welcome-wave produsse 13 PR + 6 PR post-policy-v2; tutte chiuse con comment esplicativo + branch cancellate. **Policy v4** (`f845802` → `01dd8f4`): blanket `ignore [version-update:semver-major]` per tutti gli ecosystem + total-ignore per arktype/svelte/obsidian/`@modelcontextprotocol/sdk` (load-bearing pin reasons). 4 PR Dependabot legitime mergeate dopo policy v4: #44 (`@typescript-eslint/eslint-plugin` 5.29→5.62), #45 (`parser` 5.29→5.62), #48 (`prettier-plugin-tailwindcss` 0.6→0.8), #49 (vite 5.4→8.0 in `test-site`, security fix). Refresh `CLAUDE.md` versione (PR #22). | PR #22, #36, #43, #47, #44, #45, #48, #49, #53, #50, #51, #52, #55 |
+| 2026-04-26 | **0.3.10**: diagnostic logging in `updateClaudeConfig` motivato dal symptom #11 (@folotp `mcpServers: {}` dopo Install) + 8 regression test (PR #17, #18). | `8804e56` |
+| 2026-04-26 | **0.3.9**: fix root-orphan H2+ heading silent EOF-append in `patch_vault_file` (heading half di #71). 12 regression test (PR #16). | `3e6780f` |
+| 2026-04-26 | **0.3.8**: fix `search_vault_smart` HTTP 400 — `searchRequest` parsed-object (PR #14). | `70a70d5` |
+| 2026-04-26 → 2026-04-27 | **Linea 0.4.0 alpha → beta**: Phase 3 semantic search (provider tri-state, native MiniLM, embedder + chunker + store + indexer live/low-power, settings UI con tri-state, model download progress); fix critico transport stateless (alpha.3); fix Electron-WASM via `onnxruntime-web` redirect (alpha.4); Phase 4 migration UX modal + 3 "Copy config" + auto-write Claude Desktop config + Node detection + Homebrew install + `mcp-remote` pre-warm (beta.1). 528+ test. End-to-end smoke validato in vault TEST + Claude Desktop. | (su `feat/http-embedded`, vedi `git log feat/http-embedded`) |
+| 2026-04-24 | **0.3.7**: block targets default `createTargetIfMissing=false` (block half di #71). | `6377302` |
+| 2026-04-24 | **0.3.6**: `ApiNoteJson` accetta frontmatter array-valued (#81 @folotp). | `7523844` |
+| 2026-04-22 | **0.3.5**: refresh `bun.lock` + fix installer rispetta `GITHUB_DOWNLOAD_URL`. | `5311075` |
 | 2026-04-21 sera | **Smoke test harness per il binary path**: `scripts/smoke-test-binary.sh` (fixture generator + vault uploader via Local REST API) + `scripts/smoke-verify-binary.py` (client MCP automatico che spawna `bun src/index.ts`, fa handshake JSON-RPC via stdio, asserta la struttura per 5 casi: PNG/M4A inline, MP4/PDF unsupported_type, oversize PNG too_large). Auto-discovery della API key dal data.json del vault su macOS. **5/5 cases PASS**. | `18dc5ff` |
 | 2026-04-21 pomeriggio | **#59 completato + release 0.3.4**: PR #2 `feat/issue-59-native-binary-content` — native MCP image/audio content blocks in `get_vault_file` (SDK 1.29.0). Sostituisce lo short-circuit testuale di 0.3.0 con response inline per PNG/JPEG/GIF/WebP/SVG/BMP/MP3/WAV/OGG/M4A/FLAC/AAC/WebM audio (cap 10 MiB). Fallback text-metadata per video/PDF/Office/archivi + oversize. Include `makeBinaryRequest` in `shared/makeRequest.ts`, widening dello schema `ToolRegistry` per audio, 14 nuovi unit test. | `6110b89`, merge `d037ed9`, tag `0.3.4` (`287e0fe`) |
 | 2026-04-21 pomeriggio | **0.3.3**: fix upstream #66 (`OBSIDIAN_API_URL` ignored), #63 (`additionalProperties: {}` rompe Letta), #37 (trailing slash → 500). | `75fe2a3`, merge `1f3fd48`, tag `0.3.3` |
@@ -327,7 +355,7 @@ In ordine di priorità potenziale per le prossime sessioni:
 
 ### A — Monitoraggio review PR community store
 - **PR**: https://github.com/obsidianmd/obsidian-releases/pull/11919
-- **Stato attuale**: "Ready for review", validation passed
+- **Stato attuale**: "Ready for review", validation passed (~2 settimane di attesa al 2026-04-28)
 - **Tempistica review umana**: 2-8 settimane tipiche
 - **Cosa fare**: aspettare. Se ObsidianReviewBot o un maintainer chiede modifiche, rispondere con le iterazioni necessarie. Possibili request:
   - Modifiche al README
@@ -335,6 +363,18 @@ In ordine di priorità potenziale per le prossime sessioni:
   - Code review issues
   - Supplementary docs
 - **Notifiche**: GitHub manda email su qualsiasi commento sulla PR
+- **Strategicamente**: il submission è per la 0.3.x (manifest 0.3.10 al momento dell'apertura PR). Se 0.4.0 stable atterra prima della review, valutare se aggiornare il submission a 0.4.0 (un solo cambio sostanziale) o aspettare la review su 0.3.x e bumpare dopo. Decidere caso per caso.
+
+### A.bis — 0.4.0 stable cut (NUOVO, target ~3-7g dopo beta.1 = ~2026-04-30 → 2026-05-04)
+- **Stato beta**: `0.4.0-beta.1` pubblicata 2026-04-27. Issue #54 raccoglie feedback BRAT testers. Outreach @folotp / @juicyjonny / @FiReCRaSHb fatto 2026-04-28.
+- **Lavoro deferred a stable cut** (esplicito nel CHANGELOG di beta.1):
+  - **README rewrite**: drop sezioni 0.3.x, screenshot del migration modal, indicazioni `npx mcp-remote` per Claude Desktop
+  - **CHANGELOG collapse**: collassare 4 alpha + beta in unica entry `[0.4.0]`
+  - **release.yml simplification**: drop dei job cross-platform mcp-server binary. Attenzione: deve essere release-line-aware perché la 0.3.x line continua a richiedere i binari per le hotfix. Soluzione probabile: workflow condizionale per branch o due workflow distinti (`release-0.3.yml` + `release-0.4.yml`).
+  - **Retire `mcp-server-install/components/McpServerInstallSettings.svelte`**: oggi è ancora nel tree per rollback safety; rimuoverlo per la stable
+- **Decisione aperta**: `toolToggle` UI (regressione vs 0.3.x). Opzioni: (a) implementare gating del registry, (b) nascondere/rimuovere la UI con CHANGELOG note, (c) documentarla come known limitation per 0.4.0 e fixare in 0.4.1
+- **Test pre-stable**: vault realistici (>1k note), proxy aziendali per `mcp-remote`, cold-start migration da 0.3.x reale, Windows/Linux smoke (oggi solo macOS è stato validato e2e)
+- **Branch protection**: per il merge `feat/http-embedded → main` serve go-ahead esplicito (per la rule "Never merge feat/http-embedded into main" in `CLAUDE.md`)
 
 ### B — ~~Fase 4 outreach — annuncia il fork sulle issue upstream risolte~~ ✅ COMPLETATO 2026-04-21
 
@@ -349,7 +389,9 @@ In ordine di priorità potenziale per le prossime sessioni:
 
 ### C — Sync periodico con upstream
 - **Effort**: 5 min per il check, ore se ci sono cose da cherry-pick
-- **Scope**: `git fetch upstream && git log upstream/main --oneline -20` periodicamente. Storico: upstream è dormant, ma se il maintainer torna è bene saperlo.
+- **Scope**: `git fetch upstream && git log upstream/main --oneline -20` periodicamente.
+- **Stato 2026-04-28**: upstream è **ufficialmente unmaintained** dal 2026-04-24 (issue #79, commit `8bbca65` aggiunge la nota "unmaintained"; release `0.2.28-0.2.31` shipano solo quella nota + un single `import type` shared-package fix che il fork ha già). jack ha esplicitamente offerto link nel README upstream a qualsiasi successor plugin che (a) usi MCP-over-HTTP e (b) sia nel community store. Roadmap conseguente per il fork: 0.4.0 stable + community-store merge → claim del README link.
+- **Sync effective**: scendi a "monitoring only" — non aspettarti commit nuovi upstream. Se appare attività rilevante (es. una sec advisory che riguarda anche il fork), gestire caso per caso.
 
 ### D — Pulizia operativa
 - ✅ `*.bun-build` gitignored
