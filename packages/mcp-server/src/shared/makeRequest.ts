@@ -78,27 +78,66 @@ export function parseApiUrl(raw: string | undefined): ApiUrlParts | undefined {
   }
 }
 
+/**
+ * Resolve `OBSIDIAN_HOST` into structured parts.
+ *
+ * Most users set this to a bare hostname (`10.0.0.1`, `obsidian.lan`),
+ * which is the documented usage. Some set it to a full URL
+ * (`http://10.0.0.1:27123`) — an easy mistake given how the variable
+ * name reads. Before this helper, the URL form was concatenated under
+ * a fixed `https://` prefix, producing malformed BASE_URLs like
+ * `https://http://10.0.0.1:27123:27124` (issue #21, originally upstream
+ * jacksteamdev/obsidian-mcp-tools#84).
+ *
+ * Behaviour:
+ * - empty / undefined input → `undefined` (caller falls back to other sources)
+ * - input contains `://` → parsed as a URL via `parseApiUrl`; if parsing
+ *   fails (malformed, non-http(s) protocol) returns `undefined` so the
+ *   caller can fall back rather than silently using bad input
+ * - otherwise → treated as a bare hostname (current behaviour preserved)
+ *
+ * Exported for unit testing.
+ */
+export function resolveHostOverride(
+  raw: string | undefined,
+): ApiUrlParts | undefined {
+  if (!raw) return undefined;
+  if (raw.includes("://")) return parseApiUrl(raw);
+  return { host: raw };
+}
+
 // Resolution precedence (most specific wins):
-// - Port:     --port CLI flag > OBSIDIAN_PORT > OBSIDIAN_API_URL port > default
+// - Port:     --port CLI flag > OBSIDIAN_PORT > OBSIDIAN_HOST URL port > OBSIDIAN_API_URL port > default
 // - Host:     OBSIDIAN_HOST > OBSIDIAN_API_URL host > 127.0.0.1
-// - Protocol: OBSIDIAN_USE_HTTP (if set) > OBSIDIAN_API_URL protocol > https
+// - Protocol: OBSIDIAN_USE_HTTP (if set) > OBSIDIAN_HOST URL protocol > OBSIDIAN_API_URL protocol > https
 // OBSIDIAN_API_URL is a convenience alias: it only fills slots that
 // the more specific variables leave empty. This keeps drop-in
 // compatibility with upstream v0.2.x configurations (issue #66) without
 // breaking anyone who already uses the granular env vars.
+// OBSIDIAN_HOST accepts either a bare hostname (the documented form)
+// or a full URL (a common mistake — see issue #21). When a URL form is
+// used, its port and protocol parts feed PORT/USE_HTTP only where the
+// more specific variables (OBSIDIAN_PORT, OBSIDIAN_USE_HTTP) are unset.
+const HOST_OVERRIDE = resolveHostOverride(process.env.OBSIDIAN_HOST);
 const API_URL_PARTS = parseApiUrl(process.env.OBSIDIAN_API_URL);
 const USE_HTTP_ENV = process.env.OBSIDIAN_USE_HTTP;
 const USE_HTTP =
   USE_HTTP_ENV != null && USE_HTTP_ENV !== ""
     ? USE_HTTP_ENV === "true"
-    : (API_URL_PARTS?.useHttp ?? false);
+    : (HOST_OVERRIDE?.useHttp ?? API_URL_PARTS?.useHttp ?? false);
 const PROTOCOL = USE_HTTP ? "http" : "https";
 const DEFAULT_PORT = USE_HTTP ? 27123 : 27124;
 const ARG_PORT = resolvePortFromArgs(process.argv);
 const ENV_PORT = parsePort(process.env.OBSIDIAN_PORT);
-const PORT = ARG_PORT ?? ENV_PORT ?? API_URL_PARTS?.port ?? DEFAULT_PORT;
-const HOST = process.env.OBSIDIAN_HOST || API_URL_PARTS?.host || "127.0.0.1";
+const PORT =
+  ARG_PORT ??
+  ENV_PORT ??
+  HOST_OVERRIDE?.port ??
+  API_URL_PARTS?.port ??
+  DEFAULT_PORT;
+const HOST = HOST_OVERRIDE?.host ?? API_URL_PARTS?.host ?? "127.0.0.1";
 export const BASE_URL = `${PROTOCOL}://${HOST}:${PORT}`;
+logger.info("Obsidian REST API base URL", { url: BASE_URL });
 
 // Disable TLS certificate validation for local self-signed certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";

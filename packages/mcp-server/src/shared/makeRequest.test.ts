@@ -3,6 +3,7 @@ import {
   normalizePath,
   parseApiUrl,
   parsePort,
+  resolveHostOverride,
   resolvePortFromArgs,
 } from "./makeRequest";
 
@@ -156,6 +157,58 @@ describe("parseApiUrl", () => {
     // the catch path returns undefined. Either way the caller gets a
     // safe fallback to the default port.
     expect(parseApiUrl("https://host:70000")).toBeUndefined();
+  });
+});
+
+describe("resolveHostOverride — issue #21", () => {
+  test("returns undefined for missing input", () => {
+    expect(resolveHostOverride(undefined)).toBeUndefined();
+    expect(resolveHostOverride("")).toBeUndefined();
+  });
+
+  test("treats a bare hostname as host-only (current behaviour)", () => {
+    expect(resolveHostOverride("10.0.0.1")).toEqual({ host: "10.0.0.1" });
+    expect(resolveHostOverride("obsidian.lan")).toEqual({
+      host: "obsidian.lan",
+    });
+  });
+
+  test("parses a full https URL", () => {
+    // The bug: setting OBSIDIAN_HOST=https://10.0.0.1:27124 used to be
+    // concatenated under a fixed https:// prefix and produced a
+    // malformed BASE_URL. Now the URL form is recognised and parsed.
+    expect(resolveHostOverride("https://10.0.0.1:27124")).toEqual({
+      host: "10.0.0.1",
+      port: 27124,
+      useHttp: false,
+    });
+  });
+
+  test("parses a full http URL with explicit port", () => {
+    // The reproduction case from issue #21.
+    expect(resolveHostOverride("http://127.0.0.1:27123")).toEqual({
+      host: "127.0.0.1",
+      port: 27123,
+      useHttp: true,
+    });
+  });
+
+  test("returns undefined for malformed URL forms", () => {
+    // Anything containing :// must parse cleanly via parseApiUrl, or
+    // we return undefined and let the caller fall back. We do NOT
+    // treat a malformed URL as a "bare hostname" — concatenating
+    // garbage under https:// is what we are fixing.
+    expect(resolveHostOverride("not://a-url")).toBeUndefined();
+    expect(resolveHostOverride("ftp://10.0.0.1")).toBeUndefined();
+  });
+
+  test("preserves bare hostnames that happen to contain a colon (IPv6 host literal not supported)", () => {
+    // Today we only special-case the `://` substring. A raw IPv6
+    // literal like `[::1]` is not on the supported-input table for
+    // OBSIDIAN_HOST today, but if a user passes one without `://` we
+    // pass it through verbatim — the URL constructor in BASE_URL will
+    // reject it downstream, which is the expected failure mode.
+    expect(resolveHostOverride("[::1]")).toEqual({ host: "[::1]" });
   });
 });
 
