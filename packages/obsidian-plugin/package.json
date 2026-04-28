@@ -21,7 +21,7 @@
 	"dependencies": {
 		"@types/fs-extra": "^11.0.4",
 		"arktype": "^2.0.0-rc.30",
-		"express": "^4.21.2",
+		"express": "^5.2.1",
 		"fs-extra": "^11.2.0",
 		"obsidian-local-rest-api": "^2.5.4",
 		"radash": "^12.1.0",
