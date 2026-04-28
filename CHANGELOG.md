@@ -46,476 +46,83 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   surrounding fixes have been progressively closing — this flip is
   the final closure on the heading axis.
 
-## [0.4.0-beta.1] — 2026-04-27
+## [0.4.0] — TBD
 
-First beta of the 0.4.0 line. Closes Phase 4 of the
-HTTP-embedded pivot: migration UX from 0.3.x, three "Copy
-config" buttons for the supported MCP client families, opt-in
-auto-write of `claude_desktop_config.json`, Node.js detection
-+ `mcp-remote` pre-warm, Homebrew-aware install affordances on
-macOS.
+The HTTP-embedded pivot. The plugin now hosts the MCP server in-process inside Obsidian and exposes Streamable HTTP on `127.0.0.1:27200`. **No native binary shipped from this repository** — closes the supply-chain attack surface that prompted upstream's official unmaintained declaration on 2026-04-24.
 
-End-to-end smoke validated in vault TEST + Claude Desktop:
-20/20 tools registered, native semantic search returns cosine
-matches in the low-ms range, `npx mcp-remote` bridge connects
-Claude Desktop to the in-process server (verified across
-`list_vault_files`, `search_vault_smart`, `get_vault_file`).
+End-to-end smoke validated in vault TEST + Claude Desktop: 20/20 tools registered, native semantic search (MiniLM-L6-v2) returns cosine matches in the low-ms range, `npx mcp-remote` bridge connects Claude Desktop to the in-process server.
 
-### Added — Migration UX (Phase 4 Block A + C)
+This entry consolidates the four alpha pre-releases and the beta. The full per-tag detail (with the running iteration of test counts and known-limitation deltas) is preserved on the GitHub Releases page; the alpha and beta tags themselves are kept in the repository.
 
-- **First-load detector** (`features/migration/services/detect.ts`)
-  surfaces three independent signals: legacy
-  `installLocation` / `platformOverride` keys in `data.json`,
-  orphan `mcp-server` binary at `INSTALL_PATH[platform]`, and
-  `claude_desktop_config.json` entries pointing at the binary
-  (under either the new `mcp-tools-istefox` key or the legacy
-  upstream `obsidian-mcp-tools` key).
-- **Migration plan + executor** (`services/plan.ts`) builds the
-  list of opt-in steps for the modal: rewrite Claude Desktop
-  config, delete the legacy binary, prune the legacy keys.
-  Each step is independent — a failure in one does not skip
-  the others.
-- **Migration modal** (Svelte) shown at
-  `app.workspace.onLayoutReady` if any signal fires AND the
-  user has not previously dismissed it.
-  `migration.skippedAt` is persisted on dismiss / completion
-  so the modal does not re-open on every plugin load.
-- **`updateClaudeDesktopConfig`** rewrites the entry to the
-  0.4.0 shape (`{ command: "npx", args: ["-y", "mcp-remote",
-  ..., "--header", "Authorization: Bearer …"] }`), backs up
-  to `<configPath>.backup`, removes the legacy
-  `obsidian-mcp-tools` key, refuses to overwrite malformed
-  JSON.
+### Added — HTTP transport (Phase 1)
 
-### Added — Client config UI (Phase 4 Block B)
+- **Streamable HTTP transport** (MCP spec 2025-06-18) on `127.0.0.1:27200` (fallback 27201-27205). Bind is loopback only; no external network exposure.
+- **Middleware chain**: method/path allow-list (POST/GET on `/mcp` and `/mcp/*`), Origin validation against loopback regex (anti-DNS-rebinding per spec), Bearer token auth with `crypto.timingSafeEqual` (UTF-8 byte-length safe).
+- **Bearer token** generated at first load, persisted in `data.json` at `mcpTransport.bearerToken`. Rotatable from Settings → MCP Connector → Access Control.
+- **`ToolRegistry` ported in-process** from `packages/mcp-server` to the plugin, with the same ArkType-based registration and error formatting.
+- **Plugin lifecycle integration**: `onload` starts the HTTP server and MCP service; `onunload` tears down cleanly. Start failure surfaces as an Obsidian Notice and logs via the shared logger; the rest of the plugin loads anyway.
 
-- **Three "Copy config" buttons** under "Quick setup for clients":
-  Claude Desktop (`npx mcp-remote` bridge), Claude Code
-  (`{ type: "http", … }`), and a generic streamable-http
-  payload for Cursor / Cline / Continue / Windsurf / VS Code.
-- **Auto-write Claude Desktop config** opt-in toggle (default
-  OFF). When ON, the plugin keeps
-  `claude_desktop_config.json` in sync on token rotation /
-  port change, with `.backup` written before each rewrite.
-- Bearer-token field with Show / Copy / Regenerate; rotation
-  invalidates the in-process transport and restarts it
-  immediately so the new token takes effect on the next request.
+### Added — Tool surface (Phase 2)
 
-### Added — Claude Desktop integration UX (Phase 4 Block D)
+- **All 19 0.3.x tools migrated** to the in-process server (vault read/write/patch/delete/list, search variants, template execution, web fetch, command list/execute). Plus `get_server_info` for health checks. **20 tools total.**
+- **Per-request transport**: `StreamableHTTPServerTransport` is built fresh per HTTP request (stateless mode forbids reuse across requests; the MCP SDK enforces this in `webStandardStreamableHttp.js`). The `ToolRegistry` stays a singleton so per-request cost is on the order of milliseconds.
 
-- **Node.js detection** with launchctl-PATH fallback. macOS
-  Obsidian launched from Finder/Spotlight inherits a minimal
-  PATH that does not include `/opt/homebrew/bin` (Apple
-  silicon) or `/usr/local/bin` (Intel) — plain
-  `node --version` then ENOENTs even when Node IS installed.
-  The detector now scans canonical absolute paths in addition
-  to PATH-based lookup, on macOS, Linux, and Windows.
-- **Homebrew detection** + one-click "Install via Homebrew"
-  button (macOS) when Node is not on PATH but `brew` is
-  available. Streams `brew install node` progress lines into
-  the UI.
-- **`mcp-remote` pre-warm**: runs `npx -y mcp-remote@latest`
-  once via the absolute npx path derived from the detected
-  Node, with the Node bin dir prepended to the child env
-  PATH so npx's shebang `env node` lookup succeeds. Treats
-  `mcp-remote`'s own `ERR_INVALID_URL` error as success
-  (the package downloaded into `~/.npm/_npx/<hash>` — the
-  goal of the pre-warm).
+### Added — Native semantic search (Phase 3)
 
-### Changed — Phase 4 cleanup
+- **`search_vault_smart` no longer requires Smart Connections.** A new native provider runs entirely on-device via `@xenova/transformers` 2.17.2 + `Xenova/all-MiniLM-L6-v2` (384-dim embeddings, ~25 MB). Cosine flat scan with vectorized typed-array math. Folder include/exclude filters apply before scoring.
+- **Provider tri-state setting**: `auto` (default — Smart Connections if installed, otherwise native), `native` (always Transformers.js), `smart-connections` (always SC; errors actionably if absent).
+- **Live indexer** (default): subscribes to `vault.on('modify'|'create'|'delete')`, debounces per-file edits (2s), re-chunks, reuses vectors for unchanged chunks (chunk-delta), drops records on file delete.
+- **Low-power indexer** (opt-in): 5-minute interval scan against `getMarkdownFiles().mtime`, single batched `store.flush()` per cycle.
+- **Embedding store** at `<pluginDir>/embeddings.bin` (sequential Float32) + `embeddings.index.json`. Format version 1; mismatch triggers a clean re-index with a warning.
+- **Lazy start**: the indexer is constructed at plugin onload but not auto-started — it kicks in on the first `search_vault_smart` call so plugin boot stays fast and the ~25 MB MiniLM download only happens for users who actually use semantic search.
+- **Settings UI** (`SemanticSettingsSection.svelte`): tri-state radio + indexing-mode radio + unload-when-idle toggle + indexed-chunk count + Rebuild button.
+- **Model download progress** (`ModelDownloadProgress.svelte`): progress card during the first-run download (subscribes to a `ModelDownloader` state machine — idle → downloading → ready / error with retry).
+- **Embedder optimizations**: LRU query cache (size 32), unload-when-idle timer (60s default), shared in-flight `Promise<PipelineFn>` dedupes concurrent first-call.
+- **Chunker**: heading-section (H1/H2) split with 512/64-token sliding window fallback for over-long sections; frontmatter concatenated to the first chunk; sections under 20 tokens skipped; SHA-256 content hashing (16 hex chars) for chunk-delta detection.
+- **Electron-WASM compatibility**: `bun.config.ts` redirects `onnxruntime-node` resolves to a shim that re-exports `onnxruntime-web` (the WASM backend Electron renderer inherits as `process?.release?.name === 'node'`); `embedder.ts` configures `onnxruntime-web` env on first call (`wasmPaths` pointed at jsdelivr CDN for `onnxruntime-web@1.14.0` to work around Bun CJS losing `import.meta.url` for `.wasm` siblings; `numThreads = 1` because the renderer lacks COOP/COEP for SharedArrayBuffer; `allowLocalModels = false`; `useBrowserCache = true`).
 
-- The 0.3.x install surface
-  (`mcp-server-install/components/McpServerInstallSettings.svelte`)
-  is no longer mounted in 0.4.0 settings. The module remains
-  in the tree for rollback safety; T14 (stable cut) retires
-  it for good.
-- Local REST API is now treated as **optional**: a missing
-  LRA logs at debug level instead of showing the misleading
-  "required" Notice. `search_vault` (DQL / JsonLogic) is the
-  only LRA-dependent tool; it returns an actionable error
-  to the MCP client when LRA is not installed. The other 19
-  tools work without LRA.
-- The three legacy LRA endpoint registrations
-  (`/search/smart`, `/templates/execute`,
-  `/mcp-tools/command-permission/`) are no longer mounted
-  — they were callbacks the 0.3.x binary used; in 0.4.0 the
-  in-process MCP server calls Obsidian APIs directly.
+### Added — Migration UX + client config (Phase 4)
+
+- **First-load migration modal** (Svelte) shown at `app.workspace.onLayoutReady` when the detector finds at least one of: legacy `installLocation` / `platformOverride` keys in `data.json`, an orphan `mcp-server` binary at the previous install location (`INSTALL_PATH[platform]`), or a Claude Desktop config entry pointing at the binary (under either the new `mcp-tools-istefox` key or the legacy upstream `obsidian-mcp-tools` key). Three opt-in steps: rewrite Claude Desktop config (with `.backup`), delete the legacy binary, prune legacy keys. Each step independent; failure in one does not skip the others. `migration.skippedAt` persisted on dismiss / completion so the modal does not re-open on every plugin load.
+- **`updateClaudeDesktopConfig`** rewrites the entry to the 0.4.0 shape (`{ command: "npx", args: ["-y", "mcp-remote", ..., "--header", "Authorization: Bearer …"] }`), backs up to `<configPath>.backup`, removes the legacy `obsidian-mcp-tools` key, refuses to overwrite malformed JSON.
+- **Three "Copy config" buttons** under "Quick setup for clients": Claude Desktop (`npx mcp-remote` bridge), Claude Code (`{ type: "http", … }`), and a generic streamable-http payload for Cursor / Cline / Continue / Windsurf / VS Code.
+- **Auto-write Claude Desktop config** opt-in toggle (default OFF). When ON, the plugin keeps `claude_desktop_config.json` in sync on token rotation / port change, with `.backup` written before each rewrite.
+- **Bearer-token field** with Show / Copy / Regenerate; rotation invalidates the in-process transport and restarts it immediately so the new token takes effect on the next request.
+- **Node.js detection** with launchctl-PATH fallback. macOS Obsidian launched from Finder/Spotlight inherits a minimal PATH that does not include `/opt/homebrew/bin` (Apple silicon) or `/usr/local/bin` (Intel) — plain `node --version` then ENOENTs even when Node IS installed. The detector now scans canonical absolute paths in addition to PATH-based lookup, on macOS, Linux, and Windows.
+- **Homebrew detection** + one-click "Install via Homebrew" button (macOS) when Node is not on PATH but `brew` is available. Streams `brew install node` progress lines into the UI.
+- **`mcp-remote` pre-warm**: runs `npx -y mcp-remote@latest` once via the absolute npx path derived from the detected Node, with the Node bin dir prepended to the child env PATH so npx's shebang `env node` lookup succeeds. Treats `mcp-remote`'s own `ERR_INVALID_URL` error as success (the package downloaded into `~/.npm/_npx/<hash>` — the goal of the pre-warm).
+
+### Changed
+
+- **Local REST API is now optional.** A missing LRA logs at debug level instead of showing the misleading "required" Notice. Only the `search_vault` tool (DQL / JsonLogic queries) needs it; it returns an actionable error to the MCP client when LRA is not installed. The other 19 tools work without it. The three legacy LRA endpoint registrations (`/search/smart`, `/templates/execute`, `/mcp-tools/command-permission/`) are no longer mounted — they were callbacks the 0.3.x binary used; in 0.4.0 the in-process MCP server calls Obsidian APIs directly.
+- **`search_vault_smart` output shape** unified across providers: `{ filePath, heading, excerpt, score }`. Same shape whether the backend is Smart Connections or the native provider. Breaking vs the alpha.2 shape (which used `{ path, score, breadcrumbs, text }`).
+- **`POST /templates/execute` response shape** (carried forward from 0.3.12): 503 body now includes `message` (#19) and success body now includes `path` (#20) — both contributed by @folotp, with the `tp.file.move()` semantic seam anchored as an inline design note in `handleTemplateExecution`.
+- **`OBSIDIAN_HOST` accepts URL forms** (carried forward from 0.3.12): bare hostname (the documented form) and full URL with protocol+port both work; the wrapper detects `://` and parses via `parseApiUrl` (#21, originally upstream `jacksteamdev/obsidian-mcp-tools#84`).
+- **0.3.x install surface retired** in 0.4.0 settings (`mcp-server-install/components/McpServerInstallSettings.svelte` no longer mounted; kept in tree for rollback safety; full removal in a follow-up).
 
 ### Continuous integration
 
-- New `.github/workflows/ci.yml` runs `bun run check` +
-  per-package `bun test` on every push to `main` and
-  `feat/http-embedded`, plus on every PR targeting either
-  branch. Cancels in-flight runs for the same ref when a new
-  push lands.
-- `release.yml` simplification (drop `mcp-server`
-  cross-platform binary jobs) deferred to 0.4.0 stable cut so
-  the protected 0.3.x hotfix line is not affected.
-
-### Known limitations carried into beta
-
-- `Disabled MCP tools` (toolToggle) UI persists the list but
-  does not gate the registry in 0.4.0 (the binary's
-  env-var-based filter is gone). Tools cannot be disabled
-  client-side yet; tracked as a follow-up post-stable.
-- README rewrite (drop 0.3.x sections, screenshot the
-  migration modal) and CHANGELOG collapse of the alpha entries
-  are deferred to 0.4.0 stable cut so the alpha → beta diff
-  stays reviewable.
+- New `.github/workflows/ci.yml` runs `bun run check` + per-package `bun test` on every push to `main` and `feat/http-embedded`, plus on every PR targeting either branch. Cancels in-flight runs for the same ref when a new push lands.
 
 ### Tests
 
-528+ unit + integration tests pass:
-- 87 across `features/migration/` and
-  `features/mcp-client-config/` (new in Phase 4).
-- 451 pre-Phase-4 baseline (feature parity with 0.4.0-alpha.4).
+528+ unit + integration tests pass across the four phases:
 
-### References
-
-- Plan: `docs/plans/0.4.0-phase-4-migration-and-store.md`
-- Design: `docs/design/2026-04-24-http-embedded-design.md`
-
-## [0.4.0-alpha.4] — 2026-04-26
-
-### Fixed — native semantic search provider works in Electron renderer
-
-- **`search_vault_smart` with `provider="native"` no longer fails with
-  `Cannot read properties of undefined (reading 'create')`.** Closes the
-  known limitation documented in 0.4.0-alpha.3.
-
-  Root cause: Transformers.js v2.17.2's `backends/onnx.js` selects
-  `onnxruntime-node` whenever `process?.release?.name === 'node'`. In
-  Electron the renderer process **inherits** `process.release` from the
-  main Node process, so this check is **true** even though we're in a
-  browser-like environment. The previous bundle stubbed
-  `onnxruntime-node` to an empty module, leaving `ONNX.InferenceSession`
-  undefined; `from_pretrained` then threw at the first `.create()` call.
-
-  Fix:
-  - `bun.config.ts` now **redirects** `onnxruntime-node` resolves to a
-    shim that re-exports `onnxruntime-web` (the WASM backend) instead of
-    stubbing it empty. Sharp stays stubbed since image pipelines are
-    unreachable in our text-only path.
-  - `embedder.ts` configures `onnxruntime-web` env on first
-    `realPipelineFactory` call: `wasmPaths` pointed at jsdelivr CDN for
-    `onnxruntime-web@1.14.0` (works around Bun CJS not preserving
-    `import.meta.url` for `.wasm` sibling resolution); `numThreads = 1`
-    (Electron renderer lacks COOP/COEP, so SharedArrayBuffer is
-    restricted and the worker spin-up path is unsafe);
-    `allowLocalModels = false`; `useBrowserCache = true`.
-
-  Verified end-to-end in vault TEST: `search_vault_smart` with
-  `provider="native"` returns 11 semantic matches (cosine score
-  0.39-0.47) in 15 ms after first cold load. Model is cached in the
-  browser Cache API so subsequent reloads skip the download.
-
-### Cosmetic — ONNX runtime warning at first cold load
-
-- A non-fatal `Unable to determine content-length from response headers.
-  Will expand buffer when needed.` warning may appear in DevTools
-  console on the first model download. It comes from `onnxruntime-web`'s
-  internal XHR loader: HuggingFace serves the model via a 302 redirect
-  to a CAS bridge (`cas-bridge.xethub.hf.co`) that does not always
-  include `Content-Length` for chunked responses. The loader recovers
-  by using an expandable buffer — search results are unaffected. Only
-  visible at first cold load; subsequent loads hit the cache.
-
-### Notes for upgrades from 0.4.0-alpha.3
-
-- No data migration. The native model is downloaded the first time
-  `provider="native"` (or `"auto"` without Smart Connections) is
-  invoked; ~25 MB MiniLM-L6-v2 + tokenizer, cached in the browser
-  Cache API.
-- If you stayed on `provider="auto"` with Smart Connections installed,
-  nothing changes for you — the auto-router still prefers SC.
-
-### References
-
-- Fix commit: `f9c8e49` (`fix(semantic-search): redirect
-  onnxruntime-node to onnxruntime-web in Electron`)
-- Plan: `docs/plans/0.4.0-phase-3-semantic-search.md`
-
-## [0.4.0-alpha.3] — 2026-04-26
-
-### Fixed — critical regression in 0.4.0-alpha.2 dispatch
-
-- **`tools/call` returned HTTP 500 after the first request**
-  (transport-level failure). The MCP SDK's
-  `StreamableHTTPServerTransport` in stateless mode forbids reuse —
-  see `webStandardStreamableHttp.js`: "Stateless transport cannot be
-  reused across requests. Create a new transport per request." Our
-  setup created the transport once at plugin onload and reused it
-  across requests, so the second `tools/call` always failed with an
-  empty 500 response. The unit and integration tests didn't surface
-  it because each test creates a fresh `McpService`. Real-world
-  usage (Claude Desktop, manual `curl`, MCP Inspector) all hit the
-  bug on the second tool invocation.
-
-  Fix: `createMcpService` now exposes a request handler that builds
-  a fresh `McpServer` + `StreamableHTTPServerTransport` per HTTP
-  request. The `ToolRegistry` (with all 20 registrations) stays a
-  process singleton so the per-request cost is on the order of
-  milliseconds. Validated end-to-end against vault TEST with 8
-  consecutive `tools/call` invocations — all return HTTP 200 with
-  valid JSON-RPC payloads.
-
-  **Anyone using 0.4.0-alpha.2 should upgrade.** alpha.2 was
-  effectively unable to handle more than one tool call per plugin
-  load.
-
-### Added — Phase 3 (semantic search) — provider tri-state + indexer + UI
-
-The end-to-end pipeline of native semantic search lands. The
-`search_vault_smart` tool no longer requires Smart Connections.
-Provider, indexer, and UI are all wired; **see Known limitations
-below for the one runtime issue still open**.
-
-- **Provider tri-state setting** (design D7): `auto` (default — use
-  Smart Connections if installed, otherwise native), `native`
-  (always Transformers.js), `smart-connections` (always SC; errors
-  actionably if absent).
-- **Native provider** backed by `@xenova/transformers` 2.17.2 +
-  `Xenova/all-MiniLM-L6-v2` (384-dim). Cosine flat scan with
-  vectorized typed-array math. Folder include/exclude filters apply
-  before scoring.
-- **Smart Connections provider** extracted from the inline tool
-  logic into a dedicated module (`services/smartConnectionsProvider.ts`)
-  so both providers share the unified `SearchResult` shape.
-- **Embedding store** at `<pluginDir>/embeddings.bin` (sequential
-  Float32) + `embeddings.index.json` (record metadata + byte
-  offsets). Format version 1; mismatch triggers a clean re-index
-  with a warning.
-- **Live indexer** (default, design D9): subscribes to
-  `vault.on('modify'|'create'|'delete')`, debounces per-file edits
-  (2s), re-chunks, reuses vectors for chunks whose `contentHash`
-  hasn't changed (chunk-delta), drops records on file delete.
-- **Low-power indexer** (opt-in): 5-minute interval scan against
-  `getMarkdownFiles().mtime`, single batched `store.flush()` per
-  cycle.
-- **Lazy start** (Q4 design choice): the indexer is constructed at
-  plugin onload but not auto-started — it kicks in on the first
-  `search_vault_smart` call so plugin boot stays fast and the
-  ~25 MB MiniLM download only happens for users who actually use
-  semantic search.
-- **Settings UI** (`SemanticSettingsSection.svelte`): tri-state
-  radio + indexing-mode radio + unload-when-idle toggle + indexed-
-  chunk count + Rebuild button.
-- **Model download progress** (`ModelDownloadProgress.svelte`):
-  progress card during the first-run download (subscribes to a
-  `ModelDownloader` state machine — idle → downloading → ready /
-  error with retry).
-- **Embedder** with LRU query cache (size 32) and unload-when-idle
-  timer (60s default). Concurrent first-call dedupes through a
-  shared in-flight `Promise<PipelineFn>`.
-- **Chunker**: heading-section (H1/H2) split with 512/64-token
-  sliding window fallback for over-long sections; frontmatter
-  concatenated to the first chunk; sections under 20 tokens
-  skipped; SHA-256 content hashing (16 hex chars) for chunk-delta
-  detection.
-- **123 new unit tests**: chunker (12), embedder (8), store (9),
-  native provider (10), smart-connections provider (15),
-  provider factory (9), live + low-power indexer (14), tool
-  dispatch contract (7), model downloader (7), settings persist
-  (12), end-to-end integration (4).
-
-### Changed
-
-- **Bundle stub for `onnxruntime-node` and `sharp`**
-  (`bun.config.ts`): a Bun build plugin replaces both with empty
-  modules at bundle time. Marking them `external` left literal
-  `require("onnxruntime-node")` in `main.js` that Electron's
-  renderer cannot resolve at runtime ("Cannot find module
-  'onnxruntime-node'", plugin failed to load). The empty-module
-  shim lets Transformers.js's runtime detection pick the
-  `onnxruntime-web` (WASM) backend, which is the right choice in
-  Electron anyway. Bundle: `main.js` 2.2 MB → 2.9 MB (+700 KB).
-- **`search_vault_smart` output shape** (breaking vs alpha.2):
-  `{ path, score, breadcrumbs, text }` → `{ filePath, heading,
-  excerpt, score }`. The unified `SearchResult` shape is the same
-  whether the backend is Smart Connections or the native provider.
-- **`SemanticSearchState` shape**: optional `chooser`,
-  `downloader`, `indexer`, `store`, `startIndexerIfNeeded` fields
-  are now exposed for the settings UI to read live state. Wired by
-  `main.ts` against the actual `app.vault` adapter.
+- 87 across `features/migration/` and `features/mcp-client-config/` (Phase 4).
+- 123 across `features/semantic-search/` (Phase 3).
+- 244 across `features/mcp-transport/`, `features/core/`, `features/access-control/`, settings (Phase 1).
+- The remaining baseline carried forward from 0.3.x: tool registry, command-permissions, mcp-server-install, plus the patch / smart-search / templates regression suites.
 
 ### Known limitations
 
-- **Native provider model load fails in Electron WASM path**:
-  `search_vault_smart` with `provider="native"` (or `"auto"`
-  without Smart Connections installed) returns
-  `Semantic search failed: Cannot read properties of undefined
-  (reading 'create')` on the first call. Console shows
-  `Something went wrong during model construction (most likely a
-  missing operation). Using wasm as a fallback.` followed by the
-  TypeError inside `from_pretrained`. Transformers.js initializes
-  ONNX runtime web in the Electron renderer but the WASM model
-  construction throws before completing. Workaround for now: keep
-  Smart Connections installed and use `provider="auto"` (the
-  default) — it routes to SC and works fine. The native path will
-  be fixed in 0.4.0-alpha.4 (likely needs a different ONNX runtime
-  init flow or a switch to the `@huggingface/transformers` v3
-  successor that ships pure-WASM by default).
-- All other 19 tools work end-to-end; this is an isolated Phase 3
-  surface issue, not a regression from alpha.2.
-
-### Testing summary
-
-- 453 unit + integration tests pass (351 pre-Phase-3 baseline +
-  102 new in Phase 3).
-- End-to-end vault TEST smoke: 19/20 tools verified via `curl`
-  against the live in-process MCP server. The dispatcher, transport,
-  tool registry, command-permissions, vault I/O, fetch, and
-  templater integrations all confirmed working.
-- The SDK transport reuse bug (alpha.2 critical) was caught by this
-  smoke and fixed before alpha.3 release.
+- **`Disabled MCP tools` (toolToggle) UI persists the list but does not gate the registry in 0.4.0** (the binary's env-var-based filter is gone). Tools cannot be disabled client-side yet; tracked as a follow-up post-stable.
 
 ### References
 
-- Plan: `docs/plans/0.4.0-phase-3-semantic-search.md`
-- Design: `docs/design/2026-04-24-http-embedded-design.md`
-  § Semantic search (D7-D9)
-- Smoke runbook: `handoff.md` § F "Test 0.4.0-alpha in Obsidian"
-
-## [0.4.0-alpha.2] — 2026-04-25
-
-### Added — Phase 2 tool migration (HTTP-embedded pivot)
-
-Feature parity with `0.3.7` is reached: all 20 tools now run inside the
-Obsidian plugin process and respond over the Streamable HTTP transport
-introduced in `0.4.0-alpha.1`. No external binary, no Local REST API
-required for the core path.
-
-- **14 vault tools** (`get_active_file`, `update_active_file`,
-  `append_to_active_file`, `patch_active_file`, `delete_active_file`,
-  `show_file_in_obsidian`, `list_vault_files`, `get_vault_file`,
-  `create_vault_file`, `append_to_vault_file`, `patch_vault_file`,
-  `delete_vault_file`, `search_vault_simple`, plus `search_vault`
-  which gracefully degrades to Local REST API when installed)
-  migrated to native Obsidian API calls (`app.vault.*`,
-  `app.workspace.*`, `app.metadataCache.*`, `app.fileManager.*`).
-- **2 command tools** (`list_obsidian_commands`,
-  `execute_obsidian_command`) migrated; the existing
-  `command-permissions` policy module (deny-by-default, two-phase
-  mutex, soft rate limit, presets) is preserved intact.
-- **1 web tool** (`fetch`) migrated to use Obsidian's `requestUrl`
-  instead of Node `fetch` — the community-plugin ESLint rule that
-  previously required a `/skip` exemption is now satisfied.
-- **1 template tool** (`execute_template`) bypasses Local REST API
-  and calls Templater's API directly via the plugin's existing
-  `loadTemplaterAPI` reactive loader.
-- **1 semantic tool** (`search_vault_smart`) bypasses Local REST API
-  and calls Smart Connections directly via the plugin's existing
-  `loadSmartSearchAPI` reactive loader. v2 (`window.SmartSearch`)
-  and v3+ (`smartEnv.smart_sources`) backends both supported.
-
-### Fixed
-- **`fetch` schema crashed `tools/list`** — the `url` field used
-  ArkType's `string.url` shorthand, which is implemented as a
-  `predicate: isParsableUrl`. Predicates are not convertible to
-  JSON Schema, so `registry.list()` threw on the per-tool
-  `.toJsonSchema()` call and the MCP SDK swallowed the error,
-  responding with `tools: []`. Schema relaxed to `"string"`; URL
-  validity is enforced at runtime by `requestUrl()` and the
-  existing handler try/catch. Same pattern as the 0.3.x
-  `mcp-server` schema.
-
-### Changed
-- `RegisterToolsContext` carries `app: App` and
-  `plugin: McpToolsPlugin` references so handlers receive the
-  context they need without globals.
-- Mock runtime (`src/test-setup.ts`) extended with in-memory
-  vault, workspace, metadata, file manager, commands, and
-  `requestUrl` plumbing — `mockApp()`, `mockPlugin()`,
-  `setMockFile()`, `setMockMetadata()`, `setMockCommands()`,
-  `setMockRequestUrl()`, `getExecutedCommands()`,
-  `resetMockVault()`.
-- `services/patchHelpers.ts` extracted as a shared module for
-  `patch_active_file` and `patch_vault_file` — heading path
-  resolution, append-body normalization, block lookup against
-  `metadataCache.blocks`.
-
-### Known limitations remaining
-- No native semantic search yet — Phase 3 will add MiniLM
-  embeddings with a tri-state setting (native / Smart Connections
-  / auto).
-- No migration UX for 0.3.x users yet (Phase 4).
-- No per-client "Copy config" generators yet (Phase 4).
-- Local REST API still required for `search_vault` (DQL/JsonLogic);
-  the dependency becomes optional only when Phase 3 lands the
-  native semantic search.
-- Manual smoke test in a real vault not yet logged for this alpha.
-
-### Testing summary
-
-351 unit + integration tests pass across the plugin (up from 244 in
-`alpha.1`). End-to-end `mcpServer.test.ts` confirms `tools/list`
-exposes `get_server_info` plus the 19 ported tools, and `tools/call`
-dispatches to each registered handler.
-
-### References
-
-- Plan: `docs/plans/0.4.0-phase-2-tool-migration.md`
-- Design: `docs/design/2026-04-24-http-embedded-design.md`
-- Manual smoke runbook: `handoff.md` § F "Test 0.4.0-alpha in
-  Obsidian"
-
-## [0.4.0-alpha.1] — 2026-04-24
-
-### Added — Phase 1 infrastructure foundation (HTTP-embedded pivot)
-
-First alpha of the 0.4.0 architecture: the plugin now hosts an
-in-process HTTP MCP server. No external binary. Not yet a drop-in
-replacement for 0.3.x — only one tool (`get_server_info`) is
-registered. Tool migration lands in 0.4.0-alpha.2 (Phase 2).
-
-- **Streamable HTTP transport** (MCP spec 2025-06-18) on
-  `127.0.0.1:27200` (fallback 27201-27205). Bind is loopback only.
-- **Middleware chain**: method/path allow-list (POST/GET on `/mcp`
-  and `/mcp/*`), Origin validation against loopback regex
-  (anti-DNS-rebinding per spec), Bearer token auth with
-  `crypto.timingSafeEqual` (UTF-8 byte-length safe).
-- **Bearer token** generated at first load, persisted in
-  `data.json` at `mcpTransport.bearerToken`. Rotatable from
-  Settings → MCP Connector → Access Control.
-- **`ToolRegistry` ported** from `packages/mcp-server` to
-  `packages/obsidian-plugin/src/features/mcp-transport/services/`.
-  Same ArkType-based registration, same error formatting. 17
-  existing tests migrated 1:1.
-- **Smoke tool `get_server_info`** returns plugin version +
-  transport identifier. Useful to verify the chain end-to-end with
-  `bun run inspector` or `curl`.
-- **Plugin lifecycle integration**: `onload` starts the HTTP
-  server and MCP service; `onunload` tears down cleanly. Start
-  failure surfaces as an Obsidian Notice and logs via the shared
-  logger; the rest of the plugin loads anyway.
-- **Settings UI — Access Control section**: password-style token
-  field with Show/Hide/Copy/Regenerate. Regenerate prompts for
-  confirm, rotates the token, restarts the transport.
-
-### Known limitations
-
-- Only `get_server_info` is reachable via MCP. The 19 vault tools
-  land in 0.4.0-alpha.2.
-- No per-client "Copy config" helpers yet (Phase 4).
-- No semantic search yet (Phase 3).
-- Migration modal for 0.3.x users lands in Phase 4.
-- No automated UI tests; the settings component is smoke-tested
-  manually via `bun run link` into a test vault.
-
-### Testing summary
-
-244 unit + integration tests pass across the plugin. Middleware
-chain, auth primitives, origin validation, port fallback, HTTP
-server lifecycle, and MCP tool registration all covered. Manual
-end-to-end with MCP Inspector / Claude Code pending as the first
-community smoke test on this alpha.
-
-### References
-
-- Design: `docs/design/2026-04-24-http-embedded-design.md`
-- Phase 1 plan: `docs/plans/0.4.0-phase-1-infrastructure.md`
-- Upstream context: jacksteamdev/obsidian-mcp-tools#79
-- Installer regression fixed in the same cycle: #3
+- Design: [`docs/design/2026-04-24-http-embedded-design.md`](docs/design/2026-04-24-http-embedded-design.md)
+- Phase plans: `docs/plans/0.4.0-phase-{1,2,3,4}-*.md`
+- Upstream context: [`jacksteamdev/obsidian-mcp-tools#79`](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/79) (official unmaintained, 2026-04-24)
+- Pre-release tags: `0.4.0-alpha.1`, `0.4.0-alpha.2`, `0.4.0-alpha.3`, `0.4.0-alpha.4`, `0.4.0-beta.1` — see [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases) for the full per-tag detail.
 
 ## [0.3.7] — 2026-04-24
 
