@@ -50,7 +50,7 @@ jobs:
 
       - name: Get existing release body
         id: get_release_body
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           result-encoding: string # This tells the action to return a raw string
           script: |
