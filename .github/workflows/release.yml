@@ -1,5 +1,21 @@
 name: Release
 
+# Release-line-aware workflow:
+#
+# - Plugin artifacts (manifest.json, main.js, obsidian-plugin-*.zip)
+#   are built and uploaded for EVERY tag, on both the 0.3.x and 0.4.x
+#   release lines.
+#
+# - mcp-server cross-platform binaries are built and uploaded ONLY for
+#   tags on the 0.3.x line. The 0.4.x line ships an in-process MCP
+#   server inside the plugin (no platform binary). Discrimination is
+#   by tag name prefix — `0.3.` matches the bug-fix line, anything
+#   else (`0.4.`, `0.4.0-*`, `0.5.`, …) is plugin-only.
+#
+# This keeps the protected 0.3.x hotfix line shipping its full asset
+# set (the BRAT users on `main` rely on it) while letting the 0.4.0
+# stable cut and beyond ship cleanly with no binary in the release.
+
 on:
   push:
     tags:
@@ -23,6 +39,17 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Determine release line
+        id: release_line
+        run: |
+          if [[ "${{ github.ref_name }}" == 0.3.* ]]; then
+            echo "ships_binary=true" >> "$GITHUB_OUTPUT"
+            echo "Release line: 0.3.x — will build mcp-server cross-platform binaries"
+          else
+            echo "ships_binary=false" >> "$GITHUB_OUTPUT"
+            echo "Release line: 0.4.x+ — plugin-only, no mcp-server binary"
+          fi
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v3
@@ -34,16 +61,23 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run Release Script
+      - name: Build plugin (always)
         env:
+          # The 0.3.x plugin reads GITHUB_DOWNLOAD_URL at bundle time to
+          # know where to fetch the mcp-server binary from. The 0.4.x
+          # plugin no longer downloads a binary, but we keep these env
+          # vars wired so the same workflow handles both lines without
+          # branching.
           GITHUB_DOWNLOAD_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: bun run release
+        run: bun --filter '@obsidian-mcp-tools/obsidian-plugin' release
 
-      - name: Zip Release Artifacts
-        run: bun run zip
+      - name: Build mcp-server binaries (0.3.x line only)
+        if: steps.release_line.outputs.ships_binary == 'true'
+        run: bun --filter '@obsidian-mcp-tools/mcp-server' release
 
-      - name: Generate artifact attestation for MCP server binaries
+      - name: Generate artifact attestation for MCP server binaries (0.3.x line only)
+        if: steps.release_line.outputs.ships_binary == 'true'
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: "packages/mcp-server/dist/*"
@@ -61,7 +95,7 @@ jobs:
             });
             return release.data.body || '';
 
-      - name: Upload Release Artifacts
+      - name: Upload plugin artifacts (always)
         env:
           GH_WORKFLOW_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         uses: ncipollo/release-action@v1
@@ -73,10 +107,20 @@ jobs:
           # component CSS into main.js, no separate stylesheet is
           # emitted by this build. ncipollo/release-action errors out
           # if a literal (non-glob) artifact is missing.
-          artifacts: "packages/obsidian-plugin/releases/obsidian-plugin-*.zip,main.js,manifest.json,packages/mcp-server/dist/mcp-server-*"
+          artifacts: "packages/obsidian-plugin/releases/obsidian-plugin-*.zip,main.js,manifest.json"
           body: |
             ${{ steps.get_release_body.outputs.result }}
 
             ---
-            ✨ This release includes attested build artifacts.
-            📝 View attestation details in the [workflow run](${{ env.GH_WORKFLOW_URL }})
+            ${{ steps.release_line.outputs.ships_binary == 'true' && '✨ This release includes attested build artifacts.' || '' }}
+            ${{ steps.release_line.outputs.ships_binary == 'true' && format('📝 View attestation details in the [workflow run]({0})', env.GH_WORKFLOW_URL) || '' }}
+
+      - name: Upload mcp-server binaries (0.3.x line only)
+        if: steps.release_line.outputs.ships_binary == 'true'
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          omitName: true
+          omitBody: true
+          tag: ${{ github.ref_name }}
+          artifacts: "packages/mcp-server/dist/mcp-server-*"
