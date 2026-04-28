@@ -27,19 +27,33 @@ export function buildPatchHeaders(
   resolvedTarget: string,
 ): Record<string, string> {
   // Default behavior of Create-Target-If-Missing per target type:
-  //   heading     → true  (upstream 0.2.x compatibility; most callers expect
-  //                        a missing heading to be silently appended at EOF)
-  //   frontmatter → true  (same upstream default; frontmatter keys rarely
-  //                        produce silent-corruption footguns)
+  //   heading     → false (issue #58, 0.4.0). Mirrors the block flip in
+  //                        v0.3.7 (#6). An unresolvable heading target
+  //                        (typo on the leaf, missing parent, stale
+  //                        reference) used to fall through to silent
+  //                        EOF append; in the dominant agent-caller use
+  //                        case the HTTP 200 is indistinguishable from
+  //                        a successful in-place patch without a post-
+  //                        write read, so silent-create is data
+  //                        corruption. `detectOrphanRootHeading` from
+  //                        v0.3.9 (#16) stays as defence-in-depth on the
+  //                        explicit opt-in path.
   //   block       → false (safer: when a block `^id` cannot be located —
   //                        especially when the id lives inside a markdown
   //                        table cell, where markdown-patch's block indexer
   //                        does not search — permissive silent EOF append
   //                        corrupts callers expecting atomic patch-or-fail.
-  //                        Callers can explicitly opt back in with
-  //                        createTargetIfMissing: true. Fixes upstream
-  //                        issue #71's block-in-table gap.)
-  const defaultCreateTargetIfMissing = args.targetType !== "block";
+  //                        Unchanged from v0.3.7 (#6).)
+  //   frontmatter → true  (frontmatter keys rarely produce silent-
+  //                        corruption footguns; missing keys can be
+  //                        legitimately created — that's the intent for
+  //                        many Templater-backed flows. Unchanged.)
+  //
+  // Callers that genuinely want the permissive create-on-missing path
+  // for heading/block (e.g. a migration script that creates section
+  // markers on first run) opt in explicitly with
+  // createTargetIfMissing: true. Explicit is better than implicit.
+  const defaultCreateTargetIfMissing = args.targetType === "frontmatter";
   const headers: Record<string, string> = {
     Operation: args.operation,
     "Target-Type": args.targetType,
@@ -424,11 +438,13 @@ export function registerLocalRestApiTools(tools: ToolRegistry) {
       // Step 1: resolve partial heading names to full hierarchical paths.
       // Local REST API's markdown-patch indexer keys headings by their full
       // ancestor path (e.g. "Top Level::Section A"). When the caller supplies
-      // just a leaf name ("Section A"), the lookup fails and — because
-      // Create-Target-If-Missing is on by default — a new heading is silently
-      // appended at EOF instead of patching the intended one. To prevent this,
-      // fetch the file once, parse its heading tree, and expand the partial
-      // name to a full path before issuing the PATCH.
+      // just a leaf name ("Section A"), the lookup fails. Under the v0.4.0
+      // default (`createTargetIfMissing: false` for heading targets, #58),
+      // the LRA returns a 404 and the caller learns immediately. Under the
+      // explicit opt-in path (`createTargetIfMissing: true`), a new heading
+      // would be silently appended at EOF instead of patching the intended
+      // one — so we still expand the partial name first to make the in-place
+      // path the dominant outcome regardless of the create-on-missing flag.
       const targetDelimiter = args.targetDelimiter ?? "::";
       let resolvedTarget = args.target;
 

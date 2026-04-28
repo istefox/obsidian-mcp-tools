@@ -3,6 +3,49 @@
 All notable changes to **MCP Connector** (formerly `obsidian-mcp-tools`) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Default `createTargetIfMissing: false` for `targetType: "heading"`**
+  on `patch_active_file` / `patch_vault_file` (#58, reported by
+  @folotp). Mirrors the v0.3.7 (#6) flip for `block` targets.
+
+  Rationale: an unresolvable heading target (typo on the leaf,
+  missing parent H1, stale heading reference) used to fall through
+  to silent EOF append. In the dominant agent-caller use case the
+  HTTP 200 is indistinguishable from a successful in-place patch
+  without a post-write read, so silent-create is data corruption.
+  The flip closes the residual silent-corruption surface that
+  `detectOrphanRootHeading` (v0.3.9, #16) only partially covered.
+
+  After the flip, per-target-type defaults are: `heading` →
+  `false` (changed), `block` → `false` (unchanged from v0.3.7),
+  `frontmatter` → `true` (unchanged; frontmatter keys rarely
+  produce silent-corruption footguns and Templater-backed flows
+  depend on key creation as intent).
+
+  Callers that genuinely want the permissive create-on-missing
+  behaviour for headings (rare — typically a migration script that
+  creates section markers on first run) opt in explicitly with
+  `createTargetIfMissing: true`. The wrapper-side
+  `detectOrphanRootHeading` carve-out stays as defence-in-depth on
+  the explicit opt-in path: the orphan-root H2+ shape is genuinely
+  unresolvable regardless of opt-in intent and should still fail
+  loud with `McpError(InvalidParams, …)`.
+
+  Pinned by 7 cases in `patchVaultFile.test.ts` (default flip,
+  explicit-true opt-in, explicit-false idempotence, frontmatter
+  unchanged, block unchanged + its two opt-in cases). The
+  `detectOrphanRootHeading` test surface from v0.3.9 stays intact.
+
+  Breaking-change scope is symmetric to v0.3.7 (#6): only callers
+  who today rely on `patch_*_file` with `targetType: "heading"`
+  and an *unresolvable* `target` silently creating a heading at
+  EOF are affected. That behaviour is the data-corruption path the
+  surrounding fixes have been progressively closing — this flip is
+  the final closure on the heading axis.
+
 ## [0.4.0-beta.1] — 2026-04-27
 
 First beta of the 0.4.0 line. Closes Phase 4 of the

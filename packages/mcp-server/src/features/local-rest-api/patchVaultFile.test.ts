@@ -129,18 +129,24 @@ describe("buildPatchHeaders — issue #78 (non-ASCII) + wiring", () => {
     expect(headers.Target).toBe("Top%20Level%3A%3ASection%20A");
   });
 
-  test("defaults Create-Target-If-Missing to 'true' when unset", () => {
-    // Backward-compatible default: upstream 0.2.x hardcoded true. We keep
-    // that default but now expose the flag so callers can opt into strict
-    // mode with createTargetIfMissing: false.
+  test("stringifies createTargetIfMissing: true for explicit opt-in on heading", () => {
+    // Explicit opt-in for the permissive create-on-missing path — the
+    // header reflects the caller's choice verbatim. The opt-in path is
+    // typically a migration script that creates section markers on first
+    // run; rare in agent-caller traffic. Per-target-type defaults are
+    // pinned in the issue #71 + #58 block below.
     const headers = buildPatchHeaders(
-      { operation: "append", targetType: "heading" },
+      {
+        operation: "append",
+        targetType: "heading",
+        createTargetIfMissing: true,
+      },
       "X",
     );
     expect(headers["Create-Target-If-Missing"]).toBe("true");
   });
 
-  test("stringifies createTargetIfMissing: false for strict mode", () => {
+  test("stringifies createTargetIfMissing: false for explicit strict mode", () => {
     const headers = buildPatchHeaders(
       {
         operation: "replace",
@@ -220,31 +226,35 @@ describe("buildPatchHeaders — issue #78 (non-ASCII) + wiring", () => {
   });
 });
 
-describe("buildPatchHeaders — issue #71 (block-in-table gap, per-target-type default)", () => {
-  test("block target defaults Create-Target-If-Missing to 'false' (safer)", () => {
+describe("buildPatchHeaders — issues #71 + #58 (per-target-type Create-Target-If-Missing defaults)", () => {
+  test("heading target defaults Create-Target-If-Missing to 'false' (issue #58, 0.4.0)", () => {
+    // Rationale: an unresolvable heading target (typo on the leaf, missing
+    // parent H1, stale reference) used to fall through to silent EOF append.
+    // In the dominant agent-caller use case the HTTP 200 is indistinguishable
+    // from a successful in-place patch without a post-write read, so silent-
+    // create is data corruption. The flip mirrors the v0.3.7 (#6) `block`
+    // flip rationale: fail loud, agent caller can react, callers who
+    // genuinely want the permissive path opt in explicitly.
+    const headers = buildPatchHeaders(
+      { operation: "append", targetType: "heading" },
+      "Section A",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("false");
+  });
+
+  test("block target defaults Create-Target-If-Missing to 'false' (issue #71, v0.3.7)", () => {
     // Rationale: a block `^id` that cannot be located — especially one
     // inside a markdown table cell, which markdown-patch's block indexer
     // does not search — must fail loud instead of silently appending the
     // caller's content at EOF. Silent EOF append on a missing block is
     // data corruption: the caller gets HTTP 200 but the vault is now in
     // an unexpected shape, with the "patch" accumulated at file end rather
-    // than in place.
+    // than in place. Unchanged from v0.3.7.
     const headers = buildPatchHeaders(
       { operation: "replace", targetType: "block" },
       "block-id-42",
     );
     expect(headers["Create-Target-If-Missing"]).toBe("false");
-  });
-
-  test("heading target default remains 'true' (no regression)", () => {
-    // Pins the backwards-compatible default for heading targets, which is
-    // the load-bearing shape for upstream 0.2.x parity. If this flips, any
-    // caller relying on "create heading if missing" behavior breaks.
-    const headers = buildPatchHeaders(
-      { operation: "append", targetType: "heading" },
-      "Section A",
-    );
-    expect(headers["Create-Target-If-Missing"]).toBe("true");
   });
 
   test("frontmatter target default remains 'true' (no regression)", () => {
@@ -257,6 +267,39 @@ describe("buildPatchHeaders — issue #71 (block-in-table gap, per-target-type d
       "aliases",
     );
     expect(headers["Create-Target-If-Missing"]).toBe("true");
+  });
+
+  test("heading target with createTargetIfMissing: true explicitly overrides the safe default", () => {
+    // Opt-in for callers who genuinely want the permissive behaviour on
+    // headings (rare — typically a migration script that creates section
+    // markers on first run). Explicit is better than implicit. The
+    // wrapper-side `detectOrphanRootHeading` from v0.3.9 (#16) still fires
+    // on the orphan-root H2+ shape regardless of this flag, as defence-
+    // in-depth.
+    const headers = buildPatchHeaders(
+      {
+        operation: "append",
+        targetType: "heading",
+        createTargetIfMissing: true,
+      },
+      "Section A",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("true");
+  });
+
+  test("heading target with createTargetIfMissing: false explicitly is idempotent with the new default", () => {
+    // Idempotence: explicit `false` on a heading target is the same as the
+    // 0.4.0 default. No surprise; pinning the path so a future refactor
+    // can't drift the explicit-opt-in semantics.
+    const headers = buildPatchHeaders(
+      {
+        operation: "replace",
+        targetType: "heading",
+        createTargetIfMissing: false,
+      },
+      "Section A",
+    );
+    expect(headers["Create-Target-If-Missing"]).toBe("false");
   });
 
   test("block target with createTargetIfMissing: true explicitly overrides the safe default", () => {
@@ -284,21 +327,6 @@ describe("buildPatchHeaders — issue #71 (block-in-table gap, per-target-type d
         createTargetIfMissing: false,
       },
       "block-id",
-    );
-    expect(headers["Create-Target-If-Missing"]).toBe("false");
-  });
-
-  test("heading target with createTargetIfMissing: false explicitly is 'false'", () => {
-    // Strict-mode opt-in still works on heading targets — this is the
-    // existing safety hatch for callers that want patch-or-fail
-    // semantics across all target types.
-    const headers = buildPatchHeaders(
-      {
-        operation: "replace",
-        targetType: "heading",
-        createTargetIfMissing: false,
-      },
-      "Section A",
     );
     expect(headers["Create-Target-If-Missing"]).toBe("false");
   });
