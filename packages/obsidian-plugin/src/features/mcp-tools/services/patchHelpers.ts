@@ -155,6 +155,149 @@ export function findBlockPositionFromCache(
   };
 }
 
+// === Frontmatter plan helpers (shared by T6 and T13) ============================
+//
+// Pure / synchronous decision functions that decide what to do when a
+// `targetType: "frontmatter"` patch lands on a field. They exist as separate,
+// unit-testable helpers because the frontmatter branch of `applyPatch` is a
+// known regression hotspot (issues #12 / #13 on the istefox fork): the 0.3.x
+// line had to add hardening against silent array→scalar coercion and against
+// HTTP-500-on-JSON-scalar; the 0.4.0 in-process port was a fresh write and
+// missed both. Putting the policy in pure helpers keeps the regression tests
+// simple and the production branch a thin dispatch.
+
+/**
+ * Decision returned by `planFrontmatterReplace`.
+ *
+ * - `ok` — caller should assign `value` (which is either `null` or an array)
+ *   to the frontmatter field.
+ * - `ok-string` — existing field is not array-shaped, so the safe behaviour
+ *   is to assign `args.content` verbatim (the legacy scalar-replace path).
+ * - `reject` — refuse the call with `message`. Used for the array+scalar
+ *   mismatch that previously corrupted data silently.
+ */
+export type FrontmatterReplacePlan =
+  | { kind: "ok"; value: unknown }
+  | { kind: "ok-string" }
+  | { kind: "reject"; message: string };
+
+/**
+ * Decide what `replace` should do against an existing frontmatter value.
+ *
+ * Policy (reverse-engineered from the 0.3.8 hardening + adapted to the
+ * in-process flow that no longer carries a `contentType` parameter):
+ *
+ * - existing is **not array** → caller assigns `content` as a string.
+ * - existing **is array** + `content` is JSON-decodable as `null` or an
+ *   array → caller assigns the parsed value (preserves array shape, or
+ *   clears the field via `null`).
+ * - existing **is array** + anything else → reject with an actionable
+ *   message that names the JSON forms the caller should use.
+ *
+ * Closes folotp's #12: prior to this, `replace` on an array-valued field
+ * with a plain string content silently coerced the field to a scalar and
+ * destroyed the array.
+ *
+ * Args:
+ *   existing: The current value of `fm[target]` as read by `processFrontMatter`.
+ *   content: The raw `content` string supplied by the MCP caller.
+ *   target: The frontmatter key — only used to build the rejection message.
+ *
+ * Returns:
+ *   A `FrontmatterReplacePlan` describing the next step.
+ */
+export function planFrontmatterReplace(
+  existing: unknown,
+  content: string,
+  target: string,
+): FrontmatterReplacePlan {
+  if (!Array.isArray(existing)) {
+    return { kind: "ok-string" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { kind: "reject", message: arrayMismatchMessage(target) };
+  }
+  if (parsed === null || Array.isArray(parsed)) {
+    return { kind: "ok", value: parsed };
+  }
+  return { kind: "reject", message: arrayMismatchMessage(target) };
+}
+
+function arrayMismatchMessage(target: string): string {
+  return (
+    `Refusing to replace array-valued frontmatter field "${target}" ` +
+    `with a scalar value: this would silently destroy the existing array ` +
+    `structure. Pass content as a JSON-encoded value — for example ` +
+    `'["new"]' to set a single-element array, ` +
+    `'["a","b"]' for multiple elements, or ` +
+    `'null' to clear the field.`
+  );
+}
+
+/**
+ * Decision returned by `planFrontmatterAppend`.
+ *
+ * - `array-push` — existing field is array; `values` should be pushed
+ *   (`append`) or unshifted (`prepend`) into a copy of it.
+ * - `string-concat` — existing field is scalar/null/undefined; the caller
+ *   falls back to the legacy `String(existing) + content` path.
+ */
+export type FrontmatterAppendPlan =
+  | { kind: "array-push"; values: unknown[] }
+  | { kind: "string-concat" };
+
+/**
+ * Decide what `append` / `prepend` should do against an existing frontmatter
+ * value. Symmetric to `planFrontmatterReplace`, but never rejects: append on
+ * an array has one reasonable interpretation in every input shape.
+ *
+ * Policy:
+ *
+ * - existing is **not array** → caller falls back to string concatenation.
+ * - existing **is array** + `content` is JSON-decodable as an array →
+ *   spread the parsed array's elements.
+ * - existing **is array** + `content` is JSON-decodable as a scalar →
+ *   push that single parsed scalar (matches the 0.3.8 auto-wrap fix from
+ *   `coerceFrontmatterAppendArrayContent`).
+ * - existing **is array** + `content` is **not** valid JSON → push the raw
+ *   content as a single string element. This is the "DWIM where there is
+ *   one reasonable interpretation" branch: an LLM caller that does not
+ *   know about JSON encoding will just send `"new-tag"` and reasonably
+ *   expect it to land in the array.
+ *
+ * Closes folotp's #13: prior to this, append/prepend on an array-valued
+ * field flattened the array via `String(existing) + content`, producing
+ * comma-joined corruption like `tags: existing,new-tag"new-tag"`.
+ *
+ * Args:
+ *   existing: The current value of `fm[target]` as read by `processFrontMatter`.
+ *   content: The raw `content` string supplied by the MCP caller.
+ *
+ * Returns:
+ *   A `FrontmatterAppendPlan` describing the next step.
+ */
+export function planFrontmatterAppend(
+  existing: unknown,
+  content: string,
+): FrontmatterAppendPlan {
+  if (!Array.isArray(existing)) {
+    return { kind: "string-concat" };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { kind: "array-push", values: [content] };
+  }
+  if (Array.isArray(parsed)) {
+    return { kind: "array-push", values: parsed };
+  }
+  return { kind: "array-push", values: [parsed] };
+}
+
 // === PatchArgs type and applyPatch function (shared by T6 and T13) ===
 
 export type PatchArgs = {
@@ -178,7 +321,11 @@ export type PatchArgs = {
  *   fallback. Returns an error if not found and `createTargetIfMissing` is
  *   false (the default for blocks — see upstream issue #71).
  * - **frontmatter**: uses `app.fileManager.processFrontMatter` to mutate the
- *   requested key according to the operation.
+ *   requested key. Array-typed values are handled structurally via the
+ *   `planFrontmatterReplace` / `planFrontmatterAppend` helpers — `replace`
+ *   on an array rejects scalar input rather than corrupting the structure
+ *   (issue #12); `append` / `prepend` on an array push elements
+ *   structurally, JSON-decoding the content when valid (issue #13).
  *
  * Args:
  *   app: Obsidian App instance.
@@ -200,20 +347,52 @@ export async function applyPatch(
   const createIfMissing = args.createTargetIfMissing ?? defaultCreate;
 
   // ── frontmatter branch ──────────────────────────────────────────────────
+  // Dispatches through the pure planners above so the policy stays testable
+  // without needing the full `processFrontMatter` machinery. `rejection` is
+  // captured out of the closure because `processFrontMatter` returns void —
+  // we cannot bubble an Error back without aborting the write entirely (and
+  // some Obsidian versions still rewrite the YAML even on throw, which would
+  // produce a confusing partial-update). Setting a flag and skipping the
+  // mutation keeps the file untouched while letting us return a typed error.
   if (args.targetType === "frontmatter") {
+    let rejection: string | null = null;
     await app.fileManager.processFrontMatter(file, (fm) => {
       const existing = fm[args.target];
       if (args.operation === "replace") {
-        fm[args.target] = args.content;
-      } else if (args.operation === "append") {
-        fm[args.target] =
-          existing != null ? String(existing) + args.content : args.content;
-      } else {
-        // prepend
-        fm[args.target] =
-          existing != null ? args.content + String(existing) : args.content;
+        const plan = planFrontmatterReplace(existing, args.content, args.target);
+        if (plan.kind === "reject") {
+          rejection = plan.message;
+          return;
+        }
+        fm[args.target] = plan.kind === "ok" ? plan.value : args.content;
+        return;
       }
+      // append / prepend
+      const plan = planFrontmatterAppend(existing, args.content);
+      if (plan.kind === "array-push") {
+        const arr = (existing as unknown[]).slice();
+        if (args.operation === "append") arr.push(...plan.values);
+        else arr.unshift(...plan.values);
+        fm[args.target] = arr;
+        return;
+      }
+      // string-concat: existing is scalar / null / undefined — keep the
+      // legacy concatenation semantics for backward compatibility.
+      if (existing == null) {
+        fm[args.target] = args.content;
+        return;
+      }
+      fm[args.target] =
+        args.operation === "append"
+          ? String(existing) + args.content
+          : args.content + String(existing);
     });
+    if (rejection !== null) {
+      return {
+        content: [{ type: "text", text: rejection }],
+        isError: true,
+      };
+    }
     return { content: [{ type: "text", text: "File patched successfully" }] };
   }
 
@@ -272,11 +451,23 @@ export async function applyPatch(
     // We want to insert content just before sectionEnd (append) or just after
     // headingLine (prepend) or replace the whole body (replace).
     const body = normalizeAppendBody(args.content, args.operation);
+    // For `replace`, the original section body absorbed the trailing blank
+    // line that visually separated the heading we're patching from the next
+    // sibling/parent heading. When we splice `body` in and concatenate the
+    // tail starting at sectionEnd, that blank line disappears unless we
+    // re-emit it — producing `## A\n<body>\n## B` instead of the expected
+    // `## A\n<body>\n\n## B`. Only matters when the tail starts with another
+    // heading and `body` does not already end with a newline.
+    const tailIsHeading =
+      sectionEnd < lines.length && /^#{1,6}\s/.test(lines[sectionEnd]);
+    const bodyEndsBlank = body === "" || body.endsWith("\n");
     let newLines: string[];
     if (args.operation === "replace") {
+      const separator = tailIsHeading && !bodyEndsBlank ? [""] : [];
       newLines = [
         ...lines.slice(0, headingLine + 1),
         body,
+        ...separator,
         ...lines.slice(sectionEnd),
       ];
     } else if (args.operation === "prepend") {

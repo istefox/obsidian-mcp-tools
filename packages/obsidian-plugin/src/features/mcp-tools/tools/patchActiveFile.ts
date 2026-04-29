@@ -4,6 +4,8 @@ import {
   resolveHeadingPath,
   findBlockPositionFromCache,
   normalizeAppendBody,
+  planFrontmatterReplace,
+  planFrontmatterAppend,
   type PatchOperation,
 } from "$/features/mcp-tools/services/patchHelpers";
 
@@ -80,31 +82,49 @@ export async function applyPatch(
   const delimiter = args.targetDelimiter ?? "::";
 
   // --- frontmatter branch ---
+  // Mirrors the frontmatter logic in services/patchHelpers.ts:applyPatch
+  // (used by patch_vault_file). Both call sites share planFrontmatter*
+  // helpers so the policy stays in one place — see issues #12 / #13 for
+  // why this was non-trivial. Note: the two `applyPatch` functions are
+  // currently duplicated; consolidating them is a separate refactor.
   if (args.targetType === "frontmatter") {
+    let rejection: string | null = null;
     await app.fileManager.processFrontMatter(file, (fm) => {
+      const existing = fm[args.target];
       if (args.operation === "replace") {
-        fm[args.target] = args.content;
-      } else if (args.operation === "append") {
-        const existing = fm[args.target];
-        if (Array.isArray(existing)) {
-          existing.push(args.content);
-        } else if (typeof existing === "string") {
-          fm[args.target] = existing + args.content;
-        } else {
-          fm[args.target] = args.content;
+        const plan = planFrontmatterReplace(existing, args.content, args.target);
+        if (plan.kind === "reject") {
+          rejection = plan.message;
+          return;
         }
-      } else {
-        // prepend
-        const existing = fm[args.target];
-        if (Array.isArray(existing)) {
-          existing.unshift(args.content);
-        } else if (typeof existing === "string") {
-          fm[args.target] = args.content + existing;
-        } else {
-          fm[args.target] = args.content;
-        }
+        fm[args.target] = plan.kind === "ok" ? plan.value : args.content;
+        return;
       }
+      // append / prepend
+      const plan = planFrontmatterAppend(existing, args.content);
+      if (plan.kind === "array-push") {
+        const arr = (existing as unknown[]).slice();
+        if (args.operation === "append") arr.push(...plan.values);
+        else arr.unshift(...plan.values);
+        fm[args.target] = arr;
+        return;
+      }
+      // string-concat: existing is scalar / null / undefined.
+      if (existing == null) {
+        fm[args.target] = args.content;
+        return;
+      }
+      fm[args.target] =
+        args.operation === "append"
+          ? String(existing) + args.content
+          : args.content + String(existing);
     });
+    if (rejection !== null) {
+      return {
+        content: [{ type: "text", text: rejection }],
+        isError: true,
+      };
+    }
     return { content: [{ type: "text", text: "OK" }] };
   }
 
@@ -167,7 +187,24 @@ export async function applyPatch(
       lines.splice(headingLine + 1, 0, args.content);
     } else {
       // replace: swap out the section body between this heading and the next.
-      lines.splice(headingLine + 1, sectionEnd - headingLine - 1, args.content);
+      // The original body absorbed the blank line that visually separated the
+      // section from the next sibling/parent heading; without re-emitting it
+      // here we'd produce `## A\n<content>\n## B` instead of the expected
+      // `## A\n<content>\n\n## B`. Only relevant when the tail starts with
+      // another heading and `args.content` does not already end blank.
+      const tailIsHeading =
+        sectionEnd < lines.length && /^#{1,6}\s/.test(lines[sectionEnd]);
+      const contentEndsBlank =
+        args.content === "" || args.content.endsWith("\n");
+      const replacement =
+        tailIsHeading && !contentEndsBlank
+          ? [args.content, ""]
+          : [args.content];
+      lines.splice(
+        headingLine + 1,
+        sectionEnd - headingLine - 1,
+        ...replacement,
+      );
     }
 
     await app.vault.modify(file, lines.join("\n"));
