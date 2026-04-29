@@ -159,6 +159,8 @@ describe("execute_template tool", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.content).toBe("RENDERED_CONTENT");
     expect(parsed.message).toMatch(/created successfully/i);
+    // Issue #20: createFile success response includes the targetPath.
+    expect(parsed.path).toBe("Output/note.md");
 
     // Verify the file was actually created in the mock vault
     const createdFile = plugin.app.vault.getAbstractFileByPath("Output/note.md");
@@ -243,7 +245,7 @@ describe("execute_template tool", () => {
     expect((result as Record<string, unknown>).mcpTools).toBeUndefined();
   });
 
-  test("restores generate_object even when read_and_parse_template throws", async () => {
+  test("issue #19: read_and_parse_template error surfaces as isError result with verbatim message (no double prefix)", async () => {
     setMockFile("a.md", "X");
     const fakeTemplater = makeFakeTemplater("RENDERED");
     fakeTemplater.read_and_parse_template = async () => {
@@ -251,19 +253,24 @@ describe("execute_template tool", () => {
     };
     const plugin = mockPluginWithTemplater(fakeTemplater);
 
-    await expect(
-      executeTemplateHandler({
-        arguments: { templatePath: "a.md" },
-        app: plugin.app,
-        plugin,
-      }),
-    ).rejects.toThrow("Templater internal error");
+    const result = await executeTemplateHandler({
+      arguments: { templatePath: "a.md" },
+      app: plugin.app,
+      plugin,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Templater internal error");
+    // The handler must NOT wrap the message in `MCP error -<code>:` itself —
+    // the registry would then wrap again, producing the double prefix folotp
+    // reported.
+    expect(result.content[0].text).not.toMatch(/MCP error -?\d+:.*MCP error/);
 
     // generate_object must be restored to the non-injecting version
-    const result = await fakeTemplater.functions_generator.generate_object(
+    const restored = await fakeTemplater.functions_generator.generate_object(
       {} as never,
       undefined,
     );
-    expect((result as Record<string, unknown>).mcpTools).toBeUndefined();
+    expect((restored as Record<string, unknown>).mcpTools).toBeUndefined();
   });
 });

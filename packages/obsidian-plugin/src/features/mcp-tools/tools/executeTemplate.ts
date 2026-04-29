@@ -121,7 +121,19 @@ export async function executeTemplateHandler(
 
     const processedContent = await templater.read_and_parse_template(config);
 
-    // Optionally create a vault file at targetPath
+    // Optionally create a vault file at targetPath.
+    //
+    // Issue #20 (folotp, 0.3.12 → ported here): the response includes
+    // `path` so callers chaining off the response (open-in-Obsidian,
+    // follow-up patch, link-rewrite) don't have to re-track the
+    // targetPath themselves. `path` reflects what THIS handler operated
+    // on (`ctx.arguments.targetPath`), not where Templater may have
+    // moved the rendered file via `tp.file.move()` in the prelude —
+    // that's a side effect of the rendering pass and produces a
+    // separate file at the move target. The contract is "the path this
+    // handler operated on", semantically forward-compatible with a
+    // future refactor that delegates to
+    // `templater.create_new_note_from_template(...)`.
     if (createFile && ctx.arguments.targetPath) {
       await ctx.app.vault.create(ctx.arguments.targetPath, processedContent);
       return {
@@ -132,6 +144,7 @@ export async function executeTemplateHandler(
               {
                 message: "Template executed and file created successfully",
                 content: processedContent,
+                path: ctx.arguments.targetPath,
               },
               null,
               2,
@@ -155,6 +168,23 @@ export async function executeTemplateHandler(
           ),
         },
       ],
+    };
+  } catch (error) {
+    // Issue #19 (folotp): surface the underlying Templater message verbatim
+    // through the `isError`-style result instead of letting it propagate to
+    // the registry's catch — that path wraps the error in McpError, which
+    // some clients then double-prefix as `MCP error -32603: MCP error -32603:
+    // <text>`. Returning `isError: true` keeps the message clean and matches
+    // the convention used by the other vault tools.
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Template execution failed: ${message}`,
+        },
+      ],
+      isError: true,
     };
   } finally {
     // Always restore generate_object — even when an error is thrown — to
