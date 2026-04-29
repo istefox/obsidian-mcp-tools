@@ -27,7 +27,7 @@ describe("get_vault_file tool", () => {
     expect(result.content[0].text).toBe("# Hello");
   });
 
-  test("returns JSON shape when format=json with frontmatter+tags", async () => {
+  test("returns JSON shape when format=json with frontmatter+tags+stat", async () => {
     setMockFile("a.md", "---\ntags: [foo]\n---\n# Body");
     setMockMetadata("a.md", {
       frontmatter: { tags: ["foo"] },
@@ -41,6 +41,12 @@ describe("get_vault_file tool", () => {
     expect(parsed.path).toBe("a.md");
     expect(parsed.frontmatter).toEqual({ tags: ["foo"] });
     expect(parsed.tags).toEqual(["foo"]);
+    // ApiNoteJson contract — `stat` was missing in the initial 0.4.0 port.
+    expect(parsed.stat).toEqual({
+      ctime: 0,
+      mtime: 0,
+      size: "---\ntags: [foo]\n---\n# Body".length,
+    });
   });
 
   test("returns image content block for .png file", async () => {

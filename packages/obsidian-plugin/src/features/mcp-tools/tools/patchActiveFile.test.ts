@@ -121,6 +121,89 @@ describe("patch_active_file tool", () => {
     expect(final).toContain("Tail content");
   });
 
+  // ── Frontmatter regression coverage (issues #12, #13) ─────────────────
+
+  test("issue #12: replace on array-valued frontmatter with scalar content → typed reject, file untouched", async () => {
+    setMockFile("a.md", "---\ntags:\n  - alpha\n  - beta\n---\nbody\n");
+    setMockActiveFile("a.md");
+    setMockMetadata("a.md", { frontmatter: { tags: ["alpha", "beta"] } });
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "frontmatter",
+        target: "tags",
+        content: "gamma",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/array/i);
+    const cache = app.metadataCache.getFileCache(app.workspace.getActiveFile()!);
+    expect(cache?.frontmatter?.tags).toEqual(["alpha", "beta"]);
+  });
+
+  test("issue #13: append on array-valued frontmatter with JSON scalar pushes parsed scalar", async () => {
+    setMockFile("a.md", "---\ntags:\n  - existing\n---\n");
+    setMockActiveFile("a.md");
+    setMockMetadata("a.md", { frontmatter: { tags: ["existing"] } });
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "append",
+        targetType: "frontmatter",
+        target: "tags",
+        content: '"new-tag"',
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const cache = app.metadataCache.getFileCache(app.workspace.getActiveFile()!);
+    expect(cache?.frontmatter?.tags).toEqual(["existing", "new-tag"]);
+  });
+
+  test("issue #13: append on array-valued frontmatter with plain string pushes as element", async () => {
+    setMockFile("a.md", "---\ntags:\n  - existing\n---\n");
+    setMockActiveFile("a.md");
+    setMockMetadata("a.md", { frontmatter: { tags: ["existing"] } });
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "append",
+        targetType: "frontmatter",
+        target: "tags",
+        content: "new-tag",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const cache = app.metadataCache.getFileCache(app.workspace.getActiveFile()!);
+    expect(cache?.frontmatter?.tags).toEqual(["existing", "new-tag"]);
+  });
+
+  test("regression: heading replace preserves blank line before next heading", async () => {
+    setMockFile("a.md", "## A\nold\n\n## B\n");
+    setMockActiveFile("a.md");
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "A",
+        content: "new",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.workspace.getActiveFile()!;
+    const final = await app.vault.read(file);
+    expect(final).toContain("## A\nnew\n\n## B");
+  });
+
   test("returns error when no active file", async () => {
     setMockActiveFile(null);
     const result = await patchActiveFileHandler({

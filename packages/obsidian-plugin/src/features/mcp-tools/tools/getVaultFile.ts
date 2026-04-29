@@ -125,7 +125,10 @@ export async function getVaultFileHandler(ctx: GetVaultFileContext): Promise<{
 
   // ── JSON format ────────────────────────────────────────────────────────────
   // Explicit format=json: read text content and attach metadata regardless of
-  // extension. This mirrors the upstream ApiNoteJson contract.
+  // extension. This mirrors the upstream ApiNoteJson contract:
+  // `{ path, content, frontmatter, tags, stat: { ctime, mtime, size } }`.
+  // The `stat` field was missing in the initial 0.4.0 port — folotp flagged
+  // the drift between the description and the actual response.
   if (ctx.arguments.format === "json") {
     const text = await ctx.app.vault.read(file);
     const cache = ctx.app.metadataCache.getFileCache(file);
@@ -133,13 +136,18 @@ export async function getVaultFileHandler(ctx: GetVaultFileContext): Promise<{
     const tags = Array.isArray(frontmatter.tags)
       ? (frontmatter.tags as string[])
       : [];
+    const stat = {
+      ctime: file.stat?.ctime ?? 0,
+      mtime: file.stat?.mtime ?? 0,
+      size: file.stat?.size ?? 0,
+    };
 
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
-            { path: file.path, content: text, frontmatter, tags },
+            { path: file.path, content: text, frontmatter, tags, stat },
             null,
             2,
           ),

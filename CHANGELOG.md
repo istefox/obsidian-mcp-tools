@@ -100,18 +100,91 @@ This entry consolidates the four alpha pre-releases and the beta. The full per-t
 - **`OBSIDIAN_HOST` accepts URL forms** (carried forward from 0.3.12): bare hostname (the documented form) and full URL with protocol+port both work; the wrapper detects `://` and parses via `parseApiUrl` (#21, originally upstream `jacksteamdev/obsidian-mcp-tools#84`).
 - **0.3.x install surface retired** in 0.4.0 settings (`mcp-server-install/components/McpServerInstallSettings.svelte` no longer mounted; kept in tree for rollback safety; full removal in a follow-up).
 
+### Fixed (post-`0.4.0-beta.1` batch — folotp soak)
+
+The `0.4.0-beta.1` end-to-end soak by @folotp (macOS arm64, Obsidian
+1.12.7, Local REST API 3.6.1) surfaced four regressions in the
+in-process tool handlers vs the 0.3.x stable line. The in-process
+patcher and `executeTemplate` tool were fresh writes, not 1:1 ports;
+the hardening that 0.3.8 / 0.3.12 had added against the same call
+shapes was not carried forward.
+
+- **`patch_*_file` `targetType: "frontmatter"`, `operation: "replace"`,
+  scalar content against an array-valued field** used to return HTTP
+  200 while silently coercing the field from array to scalar (#12).
+  `tags: [alpha, beta]` patched with `content: "gamma"` became
+  `tags: gamma`, destroying the array structure with no signal to the
+  caller. The branch now dispatches through a pure
+  `planFrontmatterReplace` helper: when the existing field is an array,
+  content must JSON-decode to an array (`'["new"]'`,
+  `'["a","b"]'`) or `null` (clears the field); anything else returns
+  `isError: true` with an actionable message naming the JSON forms.
+  Mirrors the 0.3.8 `detectFrontmatterReplaceArrayMismatch` policy
+  adapted to the in-process flow that no longer carries `contentType`.
+- **`patch_*_file` `targetType: "frontmatter"`, `operation:
+  "append"` / `"prepend"` against an array-valued field** used to
+  flatten the array via `String(existing) + content`, producing
+  comma-joined corruption like
+  `tags: existing,new-tag"new-tag-040"` (#13). The branch now
+  dispatches through a pure `planFrontmatterAppend` helper: when the
+  existing field is an array, content is JSON-decoded if possible (a
+  parsed array is spread; a parsed scalar is pushed as one element)
+  and otherwise the raw content is pushed as a single string element
+  (DWIM for naive callers that don't JSON-encode). Mirrors 0.3.8's
+  `coerceFrontmatterAppendArrayContent`.
+- **`execute_template` createFile success response was missing
+  `path`** (#20). The 0.3.12 fix was already ported to
+  `main.ts:handleTemplateExecution` in commit `03331b0`, but in 0.4.0
+  that LRA endpoint is dead code: the in-process MCP server reaches
+  Templater directly via `features/mcp-tools/tools/executeTemplate.ts`,
+  which had been written fresh and missed the fix. The createFile
+  success branch now returns `{ message, content, path:
+  ctx.arguments.targetPath }`. The semantic contract is "the path
+  this handler operated on" (not where Templater may have moved the
+  file via `tp.file.move()`), forward-compatible with a future
+  delegation to `templater.create_new_note_from_template(...)`.
+- **`execute_template` errors were double-prefixed as
+  `MCP error -32603: MCP error -32603: <text>`** in some clients
+  (#19). The handler now catches Templater failures and surfaces them
+  through the `isError: true` result shape with the underlying message
+  verbatim, instead of throwing up to the registry's catch (which
+  wraps in `McpError`, then the client wraps again). Matches the
+  convention used by the other vault tools.
+
+Bonus polish in the same batch:
+
+- **`patch_*_file` heading `replace` consumed the blank line between
+  the patched section and the next sibling/parent heading**, producing
+  `## A\n<body>\n## B` instead of `## A\n<body>\n\n## B`. Re-emits the
+  separator when the tail starts with a heading and the body does not
+  already end blank.
+- **`get_vault_file format: "json"` was missing the `stat` field**
+  declared by the upstream `ApiNoteJson` contract
+  (`packages/shared/src/types/plugin-local-rest-api.ts:31`). The
+  response now includes `stat: { ctime, mtime, size }` populated from
+  the `TFile`.
+
+Internal: `patchActiveFile.ts` carries its own duplicate of
+`applyPatch` (parallel to the one in
+`services/patchHelpers.ts:applyPatch`); both are now wired through the
+new `planFrontmatter*` helpers so the policy stays in one place.
+Consolidating the two call sites is a separate refactor.
+
 ### Continuous integration
 
 - New `.github/workflows/ci.yml` runs `bun run check` + per-package `bun test` on every push to `main` and `feat/http-embedded`, plus on every PR targeting either branch. Cancels in-flight runs for the same ref when a new push lands.
 
 ### Tests
 
-528+ unit + integration tests pass across the four phases:
+599+ unit + integration tests pass across the plugin package (528+
+through `0.4.0-beta.1`, +28 added in the post-beta.1 fix batch covering
+the frontmatter / `execute_template` / heading-replace regressions
+above):
 
 - 87 across `features/migration/` and `features/mcp-client-config/` (Phase 4).
 - 123 across `features/semantic-search/` (Phase 3).
 - 244 across `features/mcp-transport/`, `features/core/`, `features/access-control/`, settings (Phase 1).
-- The remaining baseline carried forward from 0.3.x: tool registry, command-permissions, mcp-server-install, plus the patch / smart-search / templates regression suites.
+- The remaining baseline carried forward from 0.3.x: tool registry, command-permissions, mcp-server-install, plus the patch / smart-search / templates regression suites — augmented with 17 unit cases on the new `planFrontmatter*` helpers and 11 integration cases on the patch tools.
 
 ### Known limitations
 
