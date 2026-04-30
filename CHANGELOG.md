@@ -195,7 +195,189 @@ above):
 - Design: [`docs/design/2026-04-24-http-embedded-design.md`](docs/design/2026-04-24-http-embedded-design.md)
 - Phase plans: `docs/plans/0.4.0-phase-{1,2,3,4}-*.md`
 - Upstream context: [`jacksteamdev/obsidian-mcp-tools#79`](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/79) (official unmaintained, 2026-04-24)
-- Pre-release tags: `0.4.0-alpha.1`, `0.4.0-alpha.2`, `0.4.0-alpha.3`, `0.4.0-alpha.4`, `0.4.0-beta.1` — see [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases) for the full per-tag detail.
+- Pre-release tags: `0.4.0-alpha.1`, `0.4.0-alpha.2`, `0.4.0-alpha.3`, `0.4.0-alpha.4`, `0.4.0-beta.1`, `0.4.0-beta.2` — see [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases) for the full per-tag detail.
+
+## [0.3.12] — 2026-04-28
+
+### Fixed
+- **Re-release of 0.3.11 with `bun.lock` aligned to the workspace
+  `package.json` files.** The 0.3.11 tag's release workflow failed at
+  `bun install --frozen-lockfile` because the lockfile shipped on the
+  tag had ~100 lines of drift introduced during the rapid back-to-
+  back Dependabot merges (most likely the vite v5→v8 rebase). No
+  release artifacts were produced for 0.3.11 — the GitHub release
+  exists as metadata only, with zero attached binaries — so BRAT users
+  on `main` were unable to download it. This release contains the
+  same code as 0.3.11 plus a regenerated lockfile, and re-runs the
+  release workflow cleanly.
+
+  Per the branch protection policy, tags on the 0.3.x line are not
+  re-pointed; the corrective release ships as 0.3.12.
+
+## [0.3.11] — 2026-04-28
+
+### Fixed
+- **`POST /templates/execute` dropped the caught error message from
+  the response body** (#19, reported by @folotp). The catch block in
+  `handleTemplateExecution` captured `error.message` for the logger
+  but the HTTP response always returned the generic
+  `{"error": "An error occurred while processing the prompt"}`.
+  Templates that throw on validation (a `tp.user.*` function
+  enforcing a controlled vocabulary, or `<%* throw new Error(...) %>`
+  inside a template) produced clean, actionable messages that were
+  invisible to anything reading the HTTP response — only the plugin's
+  developer-console logger had them. The 503 body now includes an
+  additive `message` field alongside the existing `error`. Backwards-
+  compatible: every current client keeps working; clients that opt
+  into `message` get richer diagnostics. `String(error)` fallback
+  handles `throw "string"` and `throw {custom}` without pattern
+  matching.
+- **`OBSIDIAN_HOST=http://...` produced a malformed BASE_URL with a
+  doubled protocol** (#21, originally upstream
+  `jacksteamdev/obsidian-mcp-tools#84`). The variable was read as a
+  raw hostname and concatenated under a fixed `https://` prefix, so a
+  user setting `OBSIDIAN_HOST=http://127.0.0.1:27123` (a full URL — a
+  common mistake given how the variable name reads) ended up with
+  `BASE_URL=https://http://127.0.0.1:27123:27124` and every request
+  failed. New `resolveHostOverride(raw)` helper detects the `://`
+  substring and parses the URL via the existing `parseApiUrl`. Bare
+  hostnames keep working unchanged. When a URL form is used, its port
+  and protocol parts feed PORT/USE_HTTP only where the more specific
+  variables (`OBSIDIAN_PORT`, `OBSIDIAN_USE_HTTP`) are unset. New
+  `logger.info("Obsidian REST API base URL", { url: BASE_URL })` at
+  module load surfaces this class of misconfiguration in the log file
+  without requiring a network round trip to discover. Six new tests
+  in `makeRequest.test.ts` (40 total, all green).
+
+### Added
+- **`POST /templates/execute` success response now includes `path`**
+  (#20, reported by @folotp). When `createFile: true` and `targetPath`
+  are both set, the success body adds `path: params.targetPath`
+  alongside the existing `message`/`content`. Collapses the two-call
+  create-and-locate dance some MCP wrappers were forced into. Field
+  added only in the `createFile: true` branch (the `false` branch does
+  not operate on a file). Field name `path` chosen to align with the
+  Local REST API convention (`GET /vault/{path}`) and to be forward-
+  compatible with a future refactor that would delegate to
+  `templater.create_new_note_from_template(...)` and read
+  `tp.config.target_file.path`.
+
+## [0.3.10] — 2026-04-26
+
+### Changed
+- **Diagnostic logging in `updateClaudeConfig`** to make Install
+  Server failures self-diagnosable from the Obsidian developer
+  console. INFO at entry (configPath, presence/length of serverPath
+  and apiKey, extraEnv keys), DEBUG when reading existing config
+  (pre-existing `mcpServers` keys, whether our entry was already
+  there), ERROR with structured context (`errorName`, `errorCode`,
+  `errorMessage`) on non-ENOENT read failures, INFO post-write
+  (final `mcpServers` keys, whether our entry was persisted, length
+  of our command). No credential leak — only flags and lengths are
+  ever logged. Motivated by fork issue #11 (folotp), where the
+  symptom (`mcpServers: {}` after Install with location=outside
+  vault) could not be reproduced from the code path; the new logs
+  pinpoint root cause unambiguously when the next user hits the
+  same symptom.
+- **8 new regression tests** in `config.test.ts` pinning the
+  invariants `updateClaudeConfig` upholds across edge cases:
+  folotp's exact toggle sequence, `serverPath` empty/undefined,
+  malformed/empty/BOM-prefixed existing config, missing
+  `mcpServers` key. All proven on `main`; act as guard rails
+  against future regressions that would match the #11 symptom.
+
+## [0.3.9] — 2026-04-26
+
+### Fixed
+- **`patch_vault_file` / `patch_active_file` silently EOF-appended
+  content when targeting a root-orphan heading** (`targetType:
+  "heading"`, `operation: "replace"`/`"append"`/`"prepend"`, leaf
+  name pointing at a non-H1 heading at the root of the file with no
+  level-1 (`#`) parent). Same family as the silent EOF append
+  behaviour fixed for `block` targets in #71 (0.3.7). Root cause: the
+  Local REST API's `markdown-patch` indexer keys headings by their
+  full hierarchical path starting from H1, so a root-orphan H2/H3/…
+  cannot be addressed by leaf name. With the upstream-compat default
+  `Create-Target-If-Missing: true` for headings, the PATCH fell
+  through to the silent-create branch and returned HTTP 200 with the
+  caller's content appended at EOF, leaving a duplicate heading and
+  no in-place edit.
+
+  The wrapper now calls a new `detectOrphanRootHeading` helper
+  immediately after fetching the file content (which it already
+  needed for `resolveHeadingPath` — no extra GET roundtrip) and
+  throws `McpError(ErrorCode.InvalidParams, …)` with an actionable
+  message before the silent corruption can land. The error message
+  documents both workarounds: add a level-1 heading at the top of
+  the file, or pass `createTargetIfMissing=false` to make the
+  failure explicit.
+
+  Twelve regression tests in `patchVaultFile.test.ts` pin the
+  detection: @folotp's exact repro, the canonical valid cases (H1
+  root, H2 nested under H1, H3 under H1+H2), the orphan
+  generalization to H3 and H3-under-orphan-H2, the first-match-wins
+  ambiguity rule, and defensive cases (heading not found, empty
+  content, mid-paragraph fake-heading text, sticky H1 ancestor
+  flag). Closes the heading half of upstream
+  `jacksteamdev/obsidian-mcp-tools#71`; reported by @folotp on the
+  v0.3.7 follow-up.
+
+## [0.3.8] — 2026-04-26
+
+### Fixed
+- **`search_vault_smart` returned HTTP 400 `must be a string (was an
+  object)` on every call** — the plugin-side `/search/smart` endpoint
+  validated `req.body` with `string.json.parse → searchRequest`, but
+  Express had already parsed the body via `bodyParser.json()` upstream.
+  ArkType saw an object, failed the `string` domain check, and the
+  handler 400'd before Smart Connections was ever invoked, making
+  semantic search fully unreachable from any MCP client (Claude
+  Desktop, Claude Code, Cline). Promoted `searchRequest` to a public
+  export and dropped the obsolete `jsonSearchRequest` alias; the
+  caller now binds against the parsed-object schema directly. Six
+  regression tests in `packages/shared/src/types/smart-search.test.ts`
+  pin the parsed-object contract (minimal `{query}`, populated
+  `filter`, empty `filter: {}`, missing/empty `query`, and an
+  explicit guard against the double-parse regressing). Closes #9;
+  contributed by @ezrahill (#10).
+- **`patch_vault_file` / `patch_active_file` silently destroyed
+  array-valued frontmatter fields on `replace` with text/markdown
+  content** — same family as the silent EOF append behaviour fixed
+  for `targetType: "block"` in #71 (0.3.7). The wrapper now
+  pre-fetches the parsed frontmatter (one extra GET, only when the
+  call shape is `frontmatter + replace + non-JSON content`) and
+  rejects with `McpError(InvalidParams, …)` when the target field is
+  an array. The error message points the caller at the JSON-content
+  escape hatch with concrete examples (`'["new"]'` for a
+  single-element array, `'null'` to clear). Pre-fetch is best-effort:
+  if the GET fails (404, permission), the precheck is skipped and the
+  original PATCH propagates its own error. The new helper
+  `detectFrontmatterReplaceArrayMismatch` is pure / synchronous and
+  unit-tested in isolation (10 cases). Closes #12; reported by
+  @folotp.
+- **`patch_vault_file` / `patch_active_file` returned HTTP 500 on
+  frontmatter `append` / `prepend` with a JSON scalar payload** — the
+  upstream Local REST API parser cannot handle a scalar value on the
+  array-form append/prepend op. The wrapper now auto-wraps a JSON
+  scalar in a single-element array client-side via
+  `JSON.stringify([parsed])` before forwarding the PATCH —
+  unambiguous DWIM since there is exactly one reasonable
+  interpretation (append THIS element to the array). Only triggers on
+  `targetType: "frontmatter" + (append|prepend) +
+  contentType: "application/json"` to keep the surface area minimal;
+  malformed JSON is forwarded untouched so the REST API surfaces its
+  own error. The `normalizeAppendBody` `\n\n` trailer is intentionally
+  skipped on the JSON branch so it does not invalidate the JSON body.
+  The new helper `coerceFrontmatterAppendArrayContent` is pure /
+  synchronous and unit-tested in isolation (10 cases covering
+  string/number/boolean/null/object scalars, array passthrough,
+  prepend symmetry, malformed JSON, and four pass-through paths).
+  Closes #13; reported by @folotp.
+
+### Changed
+- Added 20 regression tests in `packages/mcp-server/src/features/local-rest-api/patchVaultFile.test.ts`
+  (10 for #12 + 10 for #13) pinning the frontmatter precheck and
+  scalar auto-wrap behavior against accidental regression.
 
 ## [0.3.7] — 2026-04-24
 
