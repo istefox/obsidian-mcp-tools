@@ -463,6 +463,21 @@ Per validazioni locali in vault TEST/Lab durante un'eventuale beta.3 o pre-cut s
 6. **In Claude Desktop**: "lista i tool MCP disponibili" → atteso 20 tool. Verifica `get_active_file`, `search_vault_simple`, `execute_template`, `search_vault_smart` (semantic native, primo uso scarica MiniLM ~25MB).
 7. **Logging**: console developer Obsidian `Cmd+Opt+I`. 401 = token sbagliato; 403 Origin = origin non loopback.
 
+### G — 🟡 Gotcha operativo 0.4.0: port drift + Claude Desktop config staleness
+
+Verificato dal vault TEST il 2026-04-29 sera — sintomo: Claude Desktop al startup mostra "MCP mcp-tools-istefox: Server disconnected" + "Could not attach to MCP server", log `~/Library/Logs/Claude/mcp-server-mcp-tools-istefox.log` riporta `ECONNREFUSED 127.0.0.1:27201`.
+
+**Causa primaria (sempre)**: il server HTTP del plugin 0.4.0 vive **dentro il processo Obsidian**. Senza Obsidian aperto sul vault dove il plugin è attivo, la porta è chiusa e `mcp-remote` (lo shim stdio→HTTP usato da Claude Desktop) non ha nulla a cui attaccarsi. Fix: aprire Obsidian, attendere ~3-5s che il plugin binde la porta, riavviare la connessione MCP in Claude Desktop (Settings → Developer → Restart, oppure quit+relaunch).
+
+**Gotcha secondario (port drift, da verificare se già gestito)**: il plugin usa `bindWithFallback` su `27200-27205` (`packages/obsidian-plugin/src/features/mcp-transport/services/port.ts`), itera in ordine. Se al primo avvio 27200 è occupata, sale a 27201 e (con auto-write toggle ON) `updateClaudeDesktopConfig` riscrive `claude_desktop_config.json` con la nuova porta. Al successivo avvio Obsidian, se 27200 è libera, il plugin **torna a 27200**. Conseguenze:
+
+1. **Auto-write deve girare a ogni `setup()`**, non solo on-toggle: da verificare in `setup.ts` se `updateClaudeDesktopConfig(currentPort)` è invocato post-bind con auto-write ON. Se sì → drift autorisolto. Se no → config Claude Desktop stale finché user non clicca "Auto-write" manualmente.
+2. **Claude Desktop non ricarica live la config**: legge `claude_desktop_config.json` solo al startup. Se è già aperto quando il plugin si sposta porta (es. plugin disable+enable a vault aperto), `mcp-remote` continua a usare il target vecchio fino al prossimo restart di Claude Desktop. Limitation client-side, non risolvibile lato plugin.
+
+**Mitigazioni candidate per 0.4.1 (post-T14, non blocking T14)**: audit `setup.ts` per chiudere il punto 1; bind preferenziale **sticky** (persisti la porta dell'ultima sessione in `data.json`, prova quella prima del range); settings UI warning quando porta corrente differisce dalla porta scritta nella config Claude Desktop più recente; doc lato user.
+
+Issue dedicata da aprire post-T14.
+
 ---
 
 ## 7. File chiave da conoscere
