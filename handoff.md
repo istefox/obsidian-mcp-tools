@@ -1,6 +1,6 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-27 sera (T12.d Command Permissions UX redesign chiuso).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-04-30 mattina (post-folotp soak revisione + 0.4.0-beta.2 cut).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
 
@@ -8,31 +8,35 @@
 
 ## 🚦 Quick Start — apertura sessione (Warp o qualsiasi terminale)
 
-**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-beta.1** (rilasciata 2026-04-27 mattina). Ultimo commit pushato: **`4cc8ae3`** (T12.d).
+**Branch attivo:** `feat/http-embedded` (NON `main`). Versione: **0.4.0-beta.2** (rilasciata 2026-04-29 mattina, commit `1013d11`). Working tree pulito, allineato con `origin`.
 
 **Stato dei due track:**
-- `main` = **0.3.10** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md).
-- `feat/http-embedded` = **0.4.0-beta.1** + 2 commit di rifinitura UX post-tag (T12.c tool-toggle redesign + T12.d command-permissions redesign). **Phase 1+2+3 chiuse, Phase 4 chiusa eccetto T14**.
+- `main` = **0.3.12** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md). Tre fix shippati 2026-04-28: #19 (templates/execute error message), #20 (path field in success), #21 (`OBSIDIAN_HOST` accetta URL).
+- `feat/http-embedded` = **0.4.0-beta.2**. **Phase 1+2+3 chiuse, Phase 4 chiusa eccetto T14 (stable cut)**. Beta.1 soak (folotp, 2026-04-28) ha trovato **4 regressioni reali** vs 0.3.x — tutte chiuse in PR #69 → tag beta.2.
 
 **Prossimi passi concreti (in ordine):**
 
-1. **Decision check 0.4.0 stable cut** — routine `trig_01UC96J5aCxLJwD4meBCDWtm` programmata per **2026-04-30 07:00 UTC** (~09:00 Rome). Verifica: PR Store #11919 attività, fork issue/PR nuovi dal 2026-04-27, CI verde su feat/http-embedded e main, star/fork count. Output: GO / WAIT / FIX.
-2. **T14 — 0.4.0 stable cut** (gated su decision check): version bump → tag `0.4.0` → release CI → update manifest sul PR Store #11919 (target 0.3.10 → 0.4.0) → outreach jacksteamdev (Discord DM + README PR upstream) **gated su community store acceptance**.
-3. **Soak window**: ~3 giorni residui di beta.1 in mano ai BRAT users della linea alpha.
+1. **🔴 Soak round su beta.2 — gating la stable cut.** Folotp ha confermato il 2026-04-29 ("Away from home until Friday. Will retest first thing when I get back."). Friday = **2026-05-01 (domani)**. Aspettare sign-off esplicito sui 4 ripro (#12 array→scalar, #13 array structure flattening, #19 double-prefix, #20 missing path).
+2. **T14 — 0.4.0 stable cut** (gated su sign-off folotp): finalize CHANGELOG (move `[Unreleased] #58` entry to `[0.4.0]`, sostituisci `TBD` con la data) → bump manuale `package.json`+`manifest.json`+`versions.json` a `0.4.0` (lo script bun version non supporta pre-release semver, vedi memory) → commit `0.4.0` → tag → push → release CI → comment su PR Store #11919 ("manifest updated to 0.4.0, please re-validate").
+3. **Outreach jacksteamdev** (Discord DM + README PR upstream) **gated su community store acceptance**, non sulla cut.
 
-**Cosa è stato chiuso nella sessione 2026-04-27 (5 milestone in giornata):**
-- `2ff40a1` **0.4.0-beta.1** (mattina, ~05:23 UTC) — T13. Smoke E2E vault TEST + Claude Desktop reale via `npx mcp-remote` validato. CI release run `24978026319` verde.
-- Strategic competitor analysis + Store PR nudge (~16:50 UTC) — comment professionale postato su PR #11919 (`comment-4328854187`) dopo 8+ giorni di silenzio. Strategia 3-fasi (A get-into-store, B activate-jacksteamdev-funnel, C lead-through-quality) documentata in `project_fork_state.md`.
-- `808c052` **T12.c — Tool toggle UX redesign** (~20:30 UTC) — `applyDisabledToolsFilter` + checkbox grid clickable + 20 KNOWN_MCP_TOOL_NAMES (era 18). Smoke E2E validato.
-- `4cc8ae3` **T12.d — Command Permissions UX redesign** (~22:00 UTC) — chip-list "allowed-first" + search Enter fast-path + preset row inline + browse raggruppato per namespace + stale entries section + destructive nudge ⚠ + Refresh registry. 2 nuovi pure helper (`groupCommandsByNamespace`, `splitAllowlistByRegistry`) + 11 unit test. 100/100 test pass. Smoke validato in vault TEST.
+**Cosa è stato chiuso dopo la beta.1 (sessioni 2026-04-28 → 2026-04-29):**
+- **6 PR di stable-cut prep** (2026-04-28 sera): #56 port-forward 0.3.12 fixes su `feat/http-embedded`, #59 fix #58 (heading createTargetIfMissing default flip), #60 README rewrite per 0.4.0, #61 CHANGELOG collapse alpha+beta in `[0.4.0] — TBD`, #62 release.yml split tag-prefix-aware (binari solo per `0.3.*`, plugin-only per il resto), #63 hide toolToggle UI (registry gating non wired), #64 retire `McpServerInstallSettings.svelte` + `openFolder.ts`, #65 vite dedup via package overrides (fix svelte-check CI failure).
+- **Soak folotp 2026-04-28**: end-to-end macOS arm64 / Obsidian 1.12.7 / LRA 3.6.1 + mcp-inspector. Migration uneventful, transport+native semantic search funzionano. Surfaceate **4 regressioni reali** dai tool handler in-process (riscritti da zero in 0.4.0, non port 1:1, mancavano hardening 0.3.8 / 0.3.12) + 2 polish.
+- **PR #69** (`4c495d4`, 2026-04-29): folotp post-beta.1 batch — fix #12 (replace array→scalar silent corruption), #13 (append/prepend array structure flattening, peggio dell'originale), #19 (double-prefix error), #20 (missing `path` in execute_template response) + heading replace blank-line + `get_vault_file format:json` stat field.
+- **Tag `0.4.0-beta.2`** (`1013d11`, 2026-04-29 06:24 UTC): bump manuale package/manifest, push, CI release.yml verde 45s. Asset shippati: `main.js` + `manifest.json` + `obsidian-plugin-0.4.0-beta.2.zip` (914 KB). Plugin-only confermato (split #62 funziona).
+- **Outreach beta.2 su #54** (2026-04-29 06:25 UTC): pingato folotp con summary "fixed in beta.2 commit 1013d11" + 6 fix. Folotp risponde 15:21 UTC che è "away until Friday".
+
+**Nuovo attore su #54 da monitorare:**
+- **@EXDEV-oss** (2026-04-29 17:15 UTC): domanda generica su prompt injection / data leakage. Hai risposto col threat model. Lui ha proposto di spostarsi su Telegram (`@plotcrypt`) per "test logs strutturati"; declinato fermo "GitHub + GHSA per exploitable". Lui poi: "ok faccio first pass qui" (19:52 UTC) — nessun finding. Confidenza media che sia social engineering low-effort. Solo da monitorare.
 
 **Routine remote attive (cloud Anthropic, indipendenti dal terminale):**
-- `trig_01UC96J5aCxLJwD4meBCDWtm` — **2026-04-30 07:00 UTC one-shot**, decision check GO/WAIT/FIX per 0.4.0 stable cut
-- `trig_015yL8D3VNao7nhRKjBu95ZK` — Lun 07:00 UTC, monitor PR store #11919
-- `trig_01Dx8sZTD78yBj7buuVYP9KE` — orario, watch issue #79
+- `trig_01UC96J5aCxLJwD4meBCDWtm` — **2026-04-30 07:00 UTC one-shot** (oggi ~09:00 Rome), decision check GO/WAIT/FIX per 0.4.0 stable cut. Atteso WAIT visto che folotp retesta venerdì.
+- `trig_015yL8D3VNao7nhRKjBu95ZK` — Lun 07:00 UTC, monitor PR store #11919.
+- `trig_01Dx8sZTD78yBj7buuVYP9KE` — orario, watch issue #79.
 
 **Primo prompt suggerito alla nuova sessione:**
-> "Leggi `handoff.md` e `CLAUDE.md` in repo root. Siamo a 0.4.0-beta.1 + T12.c/T12.d UX rifiniture pushate. Phase 4 chiusa eccetto T14 (cut stable). La routine di decision check `trig_01UC96J5aCxLJwD4meBCDWtm` gira il 2026-04-30 07:00 UTC; controlla se è già scattata e qual è stato l'output (GO/WAIT/FIX). Se GO: procediamo con T14 — bump 0.4.0, retarget manifest del PR Store #11919, outreach jacksteamdev (Discord DM + README PR) gated su store acceptance."
+> "Leggi `handoff.md` e `CLAUDE.md`. Siamo a 0.4.0-beta.2 (commit `1013d11`, 2026-04-29). Beta.1 soak ha trovato 4 regressioni → PR #69 → beta.2. Soak round 2 in corso: folotp ha detto che retesta venerdì 2026-05-01. Stable cut bloccata sul suo sign-off. Controlla #54 per attività folotp dal 2026-04-29 15:21 UTC, e l'output della routine `trig_01UC96J5aCxLJwD4meBCDWtm` (decision check di stamattina 07:00 UTC). Se folotp ha confermato i 4 ripro green: procedere con T14 — finalize CHANGELOG, bump manuale 0.4.0, tag, push, comment su PR Store #11919."
 
 ---
 
@@ -57,40 +61,51 @@
 - **Plugin id:** `mcp-tools-istefox` (deve essere unico nel community store).
 - **Display name:** "MCP Connector".
 - **Branch attivi (vedi § Branch protection in CLAUDE.md):**
-  - `main` = **0.3.7** stabile (PROTETTO, intoccabile)
-  - `feat/http-embedded` = **0.4.0-alpha.2** dev (Phase 1 + Phase 2 done — 20 tool registrati e funzionanti, CI su Node 24)
+  - `main` = **0.3.12** stabile (PROTETTO, intoccabile)
+  - `feat/http-embedded` = **0.4.0-beta.2** (Phase 1+2+3+4 closed except T14 stable cut; soak round 2 in corso, gating su sign-off folotp 2026-05-01)
 - **Remote setup canonico:**
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git`
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, dichiarato unmaintained 2026-04-24)
-- **Ultimo commit pushato su `feat/http-embedded` (2026-04-25 pomeriggio):** **`eba555c`** (`chore(ci): bump GitHub Actions to Node.js 24 runtime versions`). Tag `0.4.0-alpha.2` su `27311e5`.
+- **Ultimo commit pushato su `feat/http-embedded` (2026-04-29 mattina):** **`1013d11`** (`0.4.0-beta.2`). Tag `0.4.0-beta.2` sullo stesso commit.
+- **Note CLI**: `gh` di default risolve sul remote `upstream` (jacksteamdev/obsidian-mcp-tools) — usare sempre `gh ... --repo istefox/obsidian-mcp-connector` per release/run/issue del fork.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
 | Versione | Data | Note |
 |---|---|---|
-| **`0.4.0-alpha.2`** | 2026-04-25 pomeriggio | Pre-release sul branch `feat/http-embedded`. Phase 2 completa: tutti e 20 i tool registrati e funzionanti via Streamable HTTP transport (no binario, no Local REST API per il core path; `search_vault` degrada gracefully a Local REST API, `search_vault_smart` ancora dipende da Smart Connections finché Phase 3 non chiude). Include fix `string.url` → `string` in `tools/fetch.ts` (bug silente che azzerava `tools/list`). 351 test verdi. CI release.yml verde in 44s + tutte le GitHub Actions bumpate a Node 24 e validate (run separata 46s). |
-| **`0.4.0-alpha.1`** | 2026-04-25 mattina | Pre-release sul branch `feat/http-embedded`. Phase 1 completa: HTTP server in-process, Bearer auth, Origin validation, ToolRegistry, smoke tool `get_server_info`, settings UI. Solo `get_server_info` esposto: 19 tool reali pronti nei file ma non ancora registrati (T23 pending all'epoca). NON sostituisce 0.3.7 in produzione. |
-| **`0.3.7`** | 2026-04-24 | LATEST stable su `main`. Patch fix #71/#81 (block gap fix). Tag `0.3.7`, BRAT users sono qui. |
-| `0.3.6` | 2026-04-24 | Patch fix #71 (block reference patch gap). |
-| `0.3.5` | 2026-04-24 | Fix installer 404 (#3, @Metal0gic). Storia di rilascio "burn": lockfile drift causò release vuota, eliminata + tag re-emesso. |
-| `0.3.4` | 2026-04-21 sera | Native MCP image/audio content blocks in `get_vault_file` (issue #59). Smoke test harness. |
+| **`0.4.0-beta.2`** | 2026-04-29 mattina | Pre-release sul branch `feat/http-embedded` (commit `1013d11`). Folotp post-beta.1 fix batch (PR #69): #12 replace array→scalar, #13 append/prepend array structure flattening, #19 double-prefix error message, #20 missing `path` in execute_template response + heading replace blank-line + `get_vault_file format:json` stat field. Asset plugin-only (split #62): `main.js` + `manifest.json` + zip 914KB, no binari mcp-server. 528+ test verdi. **Soak round 2 in corso, gating la stable cut.** |
+| `0.4.0-beta.1` | 2026-04-27 mattina | Pre-release. Phase 4 closed. In-process MCP server `127.0.0.1:27200`, no binary, native semantic search MiniLM-L6-v2, automatic 0.3.x→0.4.0 migration via first-load modal. Smoke E2E vault TEST + Claude Desktop via `npx mcp-remote` validato. **Soak folotp 2026-04-28 ha trovato 4 regressioni** → fixate in beta.2. |
+| `0.4.0-alpha.4` | 2026-04-26 | Phase 3 fix: `bun.config.ts` redirect onnxruntime-node→onnxruntime-web per Electron renderer. Native semantic search end-to-end verificato in vault TEST. |
+| `0.4.0-alpha.3` | 2026-04-26 | Phase 3 — semantic search nativo via Transformers.js + Xenova/all-MiniLM-L6-v2 (384-dim, ~25MB quantized, lazy download al primo uso). |
+| `0.4.0-alpha.2` | 2026-04-25 pomeriggio | Phase 2 completa: tutti e 20 i tool registrati. Fix `string.url` → `string` in `tools/fetch.ts`. 351 test. |
+| `0.4.0-alpha.1` | 2026-04-25 mattina | Phase 1: HTTP infrastructure, Bearer auth, Origin validation, smoke tool `get_server_info`. |
+| **`0.3.12`** | 2026-04-28 | LATEST stable su `main`. Re-release di 0.3.11 con lockfile aligned (CI fail su frozen lockfile). Fix #19 (templates/execute error `message`), #20 (path in success), #21 (`OBSIDIAN_HOST` URL forms). Verificato end-to-end da @folotp. |
+| `0.3.11` | 2026-04-28 | Tag con assets vuoti (CI fail). Sostituito da 0.3.12. Tag NON re-pointato per branch protection. |
+| `0.3.10` | 2026-04-26 | Diagnostic logging fix #11 (install location toggle bug). |
+| `0.3.9` | ~2026-04-25 | `detectOrphanRootHeading` (#16). |
+| `0.3.8` | ~2026-04-25 | Frontmatter ops corruption fix #12/#13 (folotp report). |
+| `0.3.7` | 2026-04-24 | Patch fix #71/#81 (block gap fix). |
+| `0.3.6` | 2026-04-24 | Block reference patch gap. |
+| `0.3.5` | 2026-04-24 | Fix installer 404 (#3, @Metal0gic). |
+| `0.3.4` | 2026-04-21 sera | Native MCP image/audio content blocks (#59). |
 | `0.3.3` | 2026-04-21 pomeriggio | Fix upstream #66 / #63 / #37. |
-| `0.3.2` | 2026-04-17 | Refactor interni: `McpServer` high-level API migration. |
-| `0.3.1` | 2026-04-13 notte | Manifest description corretta per community-store rules. |
+| `0.3.2` | 2026-04-17 | Migration `Server` → `McpServer` SDK 1.29.0. |
+| `0.3.1` | 2026-04-13 notte | Manifest description per community-store rules. |
 | `0.3.0` | 2026-04-13 notte | First public release. Brand "MCP Connector". |
 
 URL release: https://github.com/istefox/obsidian-mcp-connector/releases
 
-### Health (snapshot 2026-04-25 pomeriggio, branch `feat/http-embedded`)
+### Health (snapshot 2026-04-30 mattina, branch `feat/http-embedded` @ `1013d11`)
 | | |
 |---|---|
-| `bun run check` (4 package) | ✅ passa |
-| Test obsidian-plugin | ✅ **351 pass / 0 fail** (124 nuovi vs 0.3.x — Phase 1+2) |
-| Test mcp-server | ✅ legacy, ~152 pass — il package non viene shippato in 0.4.0 ma è vivo per `main` |
+| `bun run check` (4 package) | ✅ passa (verificato pre-tag beta.2) |
+| Test obsidian-plugin | ✅ **528+ pass / 0 fail** (Phase 1+2+3+4 completi + folotp post-beta.1 batch) |
+| Test mcp-server | ✅ legacy ~152 pass — il package non viene shippato in 0.4.0 ma è vivo per `main` |
 | Plugin prod build | ✅ |
 | Server cross-compile | ⚠️ irrilevante per 0.4.0 (architettura HTTP-embedded elimina il binary) |
-| GitHub Actions release.yml | ✅ esercitata su `0.4.0-alpha.2` (44s) + validazione separata Node 24 (46s, tag throwaway) |
-| GitHub Actions Node 24 bump | ✅ done — `checkout@v6`, `gh-release@v3`, `attest-build-provenance@v4`, `github-script@v9` (commit `eba555c`) |
+| GitHub Actions CI | ✅ run `25094090499` su `feat/http-embedded` 30s |
+| GitHub Actions Release.yml | ✅ run `25094137700` su tag `0.4.0-beta.2` 45s, plugin-only assets |
+| Release.yml split (#62) | ✅ tag `0.3.*` → binari mcp-server + SLSA; altri tag → plugin-only. Verificato su beta.2. |
 
 ### Funzionalità complete
 
@@ -319,12 +334,20 @@ esplicitamente:)
 
 ---
 
-## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-25)
+## 5. Cosa è stato fatto nella serie di sessioni (2026-04-09 → 2026-04-29)
 
 In ordine cronologico inverso, con commit SHA. Il prefisso branch è esplicito quando non è `main`.
 
 | Date approx | Lavoro | Commit/merge |
 |---|---|---|
+| 2026-04-29 mattina | **0.4.0-beta.2 cut (`feat/http-embedded`)** — bump manuale `package.json` + `manifest.json` da `0.4.0-beta.1` a `0.4.0-beta.2`, `versions.json` non toccato (lo script `bun run version` non supporta pre-release semver). Tag `0.4.0-beta.2` su commit di bump. Push branch + tag. CI run `25094090499` (CI verde 30s) + release run `25094137700` (release.yml verde 45s, plugin-only assets confermati: `main.js` + `manifest.json` + `obsidian-plugin-0.4.0-beta.2.zip` 914KB). Pre-release pubblicata 2026-04-29T06:24:40Z. **Outreach beta.2 su issue #54** alle 06:25 UTC: ping a @folotp con summary 6 fix; risposta sua 15:21 UTC "Away from home until Friday. Will retest first thing when I get back." | branch `feat/http-embedded` — `1013d11` |
+| 2026-04-29 mattina | **PR #69 — folotp post-beta.1 batch** — chiude le 4 regressioni reali trovate da @folotp nel soak end-to-end della beta.1 (2026-04-28). Tutti dovuti a fresh writes nei tool handler in-process di 0.4.0 che non hanno portato l'hardening 0.3.8/0.3.12: **#12** replace array→scalar (silent corruption regressed), **#13** append/prepend array structure flattening (peggio dell'originale), **#19** double-prefix error message in `/templates/execute` 503 path, **#20** missing `path` in execute_template createFile success response. Più 2 polish: heading replace ate blank line + `get_vault_file format:json` missing `stat`. Hint critico di folotp: `contentType` non più sullo schema in 0.4.0 → root cause del patcher branch. | branch `feat/http-embedded` — merge `4c495d4` (PR #69) |
+| 2026-04-28 sera | **Stable-cut prep batch (6 PR su `feat/http-embedded`)** — preparazione architetturale alla 0.4.0 stable cut. (1) **PR #56** port-forward 0.3.12 fixes (#19/#20) su `feat/http-embedded`; design note `tp.file.move()` semantics anchored inline con link al comment folotp. (2) **PR #59** — fix #58: flip `createTargetIfMissing` default a `false` per `targetType: "heading"` (mirror 0.3.7 #6 per `block`). (3) **PR #60** README rewrite per 0.4.0: drops 0.3.x sections, leads con HTTP-embedded architecture, 3 Copy-config snippet verbatim, MCP Inspector per verification. (4) **PR #61** CHANGELOG collapse: 4 alpha + beta.1 entries (470 linee) consolidate in `[0.4.0] — TBD` per phase. (5) **PR #62** release.yml split tag-prefix-aware: `0.3.*` → mcp-server binari + SLSA; altri tag → plugin-only. (6) **PR #63** hide toolToggle UI (registry gating non wired in 0.4.0; persistence preservata). (7) **PR #64** retire `McpServerInstallSettings.svelte` (654 linee) + `openFolder.ts`; `services/`, `constants/`, `types.ts` mantenuti perché `features/migration/` ne ha bisogno per legacy 0.3.x detection. (8) **PR #65** vite dedup via `package.json` overrides (pin `vite: 5.4.11`) — fix svelte-check CI failure. | branch `feat/http-embedded` — `b1e82e2`, `fb70bd2`, `d596318`, `c0261ae`, `9e38214`, `562c754`, `6b461fc`, `03331b0` |
+| 2026-04-28 sera | **Soak folotp 0.4.0-beta.1 (esterno)** — end-to-end macOS arm64 / Obsidian 1.12.7 / LRA 3.6.1 + mcp-inspector verification. Migration uneventful. Surfaceate 4 regressioni reali + 2 polish. Soak strategy validata: il pivot "no beta.2, soak diretto su beta.1" è stato invalidato; nuovo gate "beta.2 + fresh soak round 2 con sign-off folotp" prima della stable cut. | (esterno, vedi issue #54) |
+| 2026-04-28 mattina | **0.3.12 su `main`** — re-release di 0.3.11 con lockfile aligned (CI fail su `bun install --frozen-lockfile`). Fix #19 + #20 (templates/execute) + #21 (`OBSIDIAN_HOST` URL forms; era upstream `jacksteamdev/obsidian-mcp-tools#84`). 0.3.11 ha asset vuoti, NON re-pointato per branch protection. Verificato end-to-end da @folotp post-merge. | tag `0.3.11`, `0.3.12` (`ba4110e`) |
+| 2026-04-27 sera | **T12.c + T12.d UX redesign (`feat/http-embedded`)** — `808c052` Tool toggle UX (`applyDisabledToolsFilter` + checkbox grid + 20 KNOWN_MCP_TOOL_NAMES). `4cc8ae3` Command Permissions UX (chip-list "allowed-first" + search Enter fast-path + preset row inline + browse raggruppato + stale entries section + destructive nudge ⚠ + Refresh registry). 2 nuovi pure helper + 11 unit test. | branch `feat/http-embedded` — `808c052`, `4cc8ae3` |
+| 2026-04-27 mattina | **0.4.0-beta.1 cut (`feat/http-embedded`, T13)** — Phase 4 closed. Smoke E2E vault TEST + Claude Desktop reale via `npx mcp-remote` validato. CI release run `24978026319` verde. Outreach test cohort: @folotp (fork #19 ping + #54 thread), @juicyjonny (upstream #79), @FiReCRaSHb (upstream #84), tutti 2026-04-28. | branch `feat/http-embedded` — tag su `2ff40a1` |
+| 2026-04-26 | **0.4.0-alpha.3 + alpha.4 (`feat/http-embedded`)** — Phase 3 semantic search nativo: `@xenova/transformers` ONNX runtime WASM + `Xenova/all-MiniLM-L6-v2` (384-dim, ~25MB quantized, lazy download). Alpha.4 fix `bun.config.ts` redirect onnxruntime-node→onnxruntime-web per Electron renderer. End-to-end verificato in vault TEST. | branch `feat/http-embedded` — tag `0.4.0-alpha.3`, `0.4.0-alpha.4` |
 | 2026-04-25 pomeriggio | **Phase 2 finalizzazione + 0.4.0-alpha.2 + CI Node 24 bump (`feat/http-embedded`)** — sessione di chiusura Phase 2: (1) trovato bug silente in `tools/fetch.ts` con un probe schema-by-schema — `type("string.url")` di ArkType usa `predicate: isParsableUrl`, non convertibile in JSON Schema → `registry.list()` crashava, SDK MCP rispondeva `tools: []` (commit `4cfda35`); (2) **T23** registrazione di tutti e 20 i tool in `mcp-tools/index.ts` + 2 type tweak collaterali (`deleteActiveFile.ts` `Record<string,never>` → `object` per matchare il vincolo `ToolRegistry`, `getVaultFile.ts` semplificazione `extension`) (commit `2712367`); (3) **T24** release `0.4.0-alpha.2` — bump 3 file versione + CHANGELOG entry, commit + tag + push, CI release.yml verde in 44s (commit `27311e5`); (4) **CI Actions bump a Node 24**: `actions/checkout@v4 → @v6`, `softprops/action-gh-release@v1 → @v3`, `actions/attest-build-provenance@v2 → @v4`, `actions/github-script@v7 → @v9` per chiudere il deprecation warning Node 20; validato con tag throwaway `ci-validate-2026-04-25` (CI verde 46s, tag/release cancellati a fine validazione) (commit `eba555c`). 351 test verdi end-to-end. | branch `feat/http-embedded` — `4cfda35`, `2712367`, `27311e5`, `eba555c` |
 | 2026-04-25 mattina/pomeriggio | **Phase 2 batches B3+B4 (`feat/http-embedded`)** — port di 8 tool a colpi di subagent paralleli: `list_obsidian_commands` (`25e10c4`), `get_vault_file` con binary blocks nativi (`41cee32`), `patch_active_file` (`1afe78d`), `search_vault_simple` (`8723483`), `fetch` con `requestUrl`+Turndown (`ec22778`), `patch_vault_file` (`adc4ea4`), `search_vault` con fallback Local REST API (`de87b3b`), `search_vault_smart` via Smart Connections API (`bfcf246`), `execute_template` via Templater API (`12bf469`), `execute_obsidian_command` con permission + rate limit (`28c95d2`). 351 test totali verdi. **T23 + T24 chiusi nella sessione successiva** (vedi riga sopra). | branch `feat/http-embedded` — vedi `git log feat/http-embedded ^main --oneline` |
 | 2026-04-25 mattina | **Branch protection policy** scritta in `CLAUDE.md` § "Branch protection policy" + memory `feedback_main_branch_protection.md`. Hard rule: `main` resta su 0.3.7 finché Stefano non autorizza esplicitamente il bump a 0.4.0. | (parte della sessione `feat/http-embedded` notte) |
@@ -364,48 +387,52 @@ git log --oneline                       # tutti i commit
 
 ## 6. Cosa resta aperto
 
-In ordine di priorità per le prossime sessioni (focus: smoke test alpha.2 → Phase 3 semantic search):
+In ordine di priorità per le prossime sessioni (focus: chiudere la 0.4.0 stable cut):
 
-### A — 🔴 Smoke test 0.4.0-alpha.2 in vault TEST/Lab (blocking per pianificare Phase 3)
+### A — 🔴 Soak round 2 su 0.4.0-beta.2 (gating la stable cut)
 
-Phase 1+2 sono code-complete e CI-verified, ma manca la validazione end-to-end in un vault Obsidian reale con un client MCP esterno (Claude Desktop / `bun run inspector` / `mcp-remote`). Procedura: § F in basso. Cosa verificare:
-1. `tools/list` ritorna i 20 tool (non `[]` — il fix `string.url` previene quel caso, ma serve conferma runtime).
-2. Bearer auth + Origin validation funzionano con i client reali (Claude Desktop tramite `npx mcp-remote`).
-3. I tool che usano API plugin (`execute_template` → Templater, `search_vault_smart` → Smart Connections) caricano correttamente le dipendenze reattive in un vault con quei plugin installati.
-4. `execute_obsidian_command` rispetta il gate `command-permissions` con il modal vero (non mock).
+- **Stato**: folotp ha ricevuto il ping il 2026-04-29 06:25 UTC con summary delle 6 fix; ha risposto 15:21 UTC dichiarando "Away from home until Friday. Will retest first thing when I get back." → retest atteso **2026-05-01**.
+- **Cosa cercare** nei suoi findings: ripro green dei 4 casi #12 (replace array→scalar), #13 (append/prepend array structure flattening), #19 (double-prefix error message), #20 (missing `path` in execute_template) + i 2 polish (heading replace blank-line + `get_vault_file format:json` stat field).
+- **Sblocco**: sign-off esplicito ("all four reproductions clear") = via libera per T14.
+- **Se trova nuove regressioni**: branch `fix/0.4-beta.3-...` da `feat/http-embedded`, PR, merge, tag `0.4.0-beta.3`, nuovo soak round. Branch protection invariant: mai mergiare in main.
 
-Eventuali bug trovati → 0.4.0-alpha.3 prima di entrare in Phase 3.
+### B — T14: 0.4.0 stable cut (gated su sign-off folotp)
 
-### B — Phase 3: semantic search nativo (priorità top dopo lo smoke test)
+Sequenza precisa (lo script `bun run version` non gestisce pre-release semver, quindi è manuale fino al bump finale):
 
-- **Plan da scrivere** in `docs/plans/0.4.0-phase-3-semantic-search.md`. Riferimento: § Semantic search del design `docs/design/2026-04-24-http-embedded-design.md` (decisioni D7-D9 sulla scelta di Transformers.js, MiniLM-L6-v2 single-model in 0.4.0, tri-state setting native/Smart Connections/auto, indexer live + low-power opt-in).
-- **Stack**: `@xenova/transformers` (Transformers.js, ONNX runtime WASM) + `Xenova/all-MiniLM-L6-v2` (384-dim, ~25MB quantized). Bundle plugin +~200KB per il runtime; il modello si scarica al primo uso e si persiste nella cartella plugin.
-- **Architettura**: `SemanticSearchProvider { search(query, opts) }` interfaccia con due implementazioni — `NativeProvider` (Transformers.js + indexer locale) e `SmartConnectionsProvider` (wrapper esistente). `search_vault_smart` dispatcha via la setting tri-state. Indexer in `features/semantic-search/`: due modalità (live: re-embedding su `vault.modify`/`vault.create`/`vault.delete`; low-power: opt-in batched in idle hook).
-- **Effetto utente**: `search_vault_smart` autosufficiente — Smart Connections diventa fallback opzionale, non dipendenza.
+1. **Pre-cut port-forward (doc-only, safe da fare anche durante soak)** — su `feat/http-embedded` mancano 5 entry 0.3.x già presenti su `main`. Port-forward:
+   - `CHANGELOG.md`: copia le sezioni `[0.3.12]` `[0.3.11]` `[0.3.10]` `[0.3.9]` `[0.3.8]` da `main` (`git show main:CHANGELOG.md`), inseriscile tra `[0.4.0] — TBD` e `[0.3.7]`.
+   - `versions.json`: aggiungi le 5 entry `"0.3.8"`–`"0.3.12"` ognuna `"0.15.0"`. Si trovano in `git show main:versions.json`.
+   - Branch dedicato + PR (consigliato per audit trail), o commit diretto su `feat/http-embedded`.
+2. **CHANGELOG finalize**: sposta la entry `[Unreleased] #58` dentro `[0.4.0]` (sezione `### Changed` esistente), sostituisci `TBD` con la data del cut. La sezione `### Fixed (post-0.4.0-beta.1 batch — folotp soak)` è già presente.
+3. **Bump manuale a 0.4.0**:
+   - Root `package.json` → `"version": "0.4.0"`
+   - Root `manifest.json` → `"version": "0.4.0"` (manifest è in repo root, NON in `packages/obsidian-plugin/`)
+   - Root `versions.json` → aggiungi `"0.4.0": "0.15.0"` (NON `1.7.7` — `minAppVersion` è sempre stata `0.15.0`; tutti gli entry storici puntano a `0.15.0`).
+4. **Commit + tag + push**: `git commit -m "0.4.0"`, `git tag 0.4.0`, `git push origin feat/http-embedded` + `git push origin 0.4.0`.
+5. **Release CI** (release.yml split #62): tag non `0.3.*` → plugin-only artifacts. Verifica run su `gh run list --repo istefox/obsidian-mcp-connector`.
+6. **Comment su PR #11919**: testo tipo "manifest updated to 0.4.0, please re-validate" per retriggerare il lint del community store.
 
-### C — Phase 4: migration UX + community store update
+### C — Outreach @jacksteamdev (gated su community store acceptance)
 
-- Migration modal per utenti 0.3.x al primo upgrade a 0.4.0 (spiega cambio architettura, rimuove binary, aggiorna config Claude Desktop).
-- Auto-detect Node.js + pre-warm `npx mcp-remote` (bridge stdio→HTTP per Claude Desktop, che non ha ancora supporto HTTP nativo).
-- Tre generatori "Copy config" nel settings UI: Claude Desktop, Claude Code, Cursor/Cline/Continue.
-- Cut **0.4.0 stabile** quando Phase 2-3-4 verificate in vault reale.
-- Aggiornamento PR community store #11919 (bumpa il manifest a 0.4.0 quando ready) — ma solo dopo che jacksteamdev ha condiviso la sua decisione finale.
+- Eseguire **solo quando**: (a) PR #11919 mergiata AND (b) 0.4.0 LATEST stabile sul fork.
+- Carico: Discord DM (canale `#maintainers` o DM diretto) + PR contro `jacksteamdev/obsidian-mcp-tools` che aggiorna README linkando il fork. Match condizione issue #79.
+- Routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Lun 07:00 UTC) notifica su attività della PR Store.
 
-### D — Discord DM a @jacksteamdev (post-merge community store)
+### D — Monitoraggio passivo (routine già attive)
 
-- Eseguire **solo quando**: (a) PR #11919 mergiata AND (b) 0.4.0 con HTTP transport è LATEST stabile.
-- Carico: PR contro `jacksteamdev/obsidian-mcp-tools` che aggiorna README linkando il fork (conditions issue #79).
-- Monitoraggio routine: `trig_015yL8D3VNao7nhRKjBu95ZK` (Lun 07:00 UTC) → notifica al merge.
+- **PR store #11919**: settimanale via `trig_015yL8D3VNao7nhRKjBu95ZK`.
+- **Issue #79 upstream**: orario via `trig_01Dx8sZTD78yBj7buuVYP9KE`.
+- **Decision check stable cut**: one-shot `trig_01UC96J5aCxLJwD4meBCDWtm` su 2026-04-30 07:00 UTC. Output da leggere all'apertura sessione.
+- **Sync upstream**: `git fetch upstream` periodicamente; jacksteamdev è frozen dal 2026-04-24 ma if-resumed-flag.
 
-### E — Monitoraggio passivo
+### E — ⚠️ EXDEV-oss su issue #54 (monitorare, non agire)
 
-- **PR community store #11919**: routine settimanale già in funzione. Niente da fare lato Stefano finché la routine non riporta novità.
-- **Issue #79 upstream**: routine oraria (`trig_01Dx8sZTD78yBj7buuVYP9KE`) per qualsiasi reply post-2026-04-24.
-- **Sync upstream**: `git fetch upstream` periodicamente. Improbabile che jacksteamdev riprenda, ma se succede serve saperlo.
+Apparso 2026-04-29 17:15 UTC con domanda generica su prompt injection / data leakage. Pattern: domanda vaga → push off-platform Telegram (`@plotcrypt`) → declinato → "ok faccio first pass qui" (19:52 UTC) → nessun finding effettivo. Confidenza media che sia social engineering low-effort. Azione: solo monitor. Se posta findings reali, valuti nel merito; se torna a chiedere off-platform o private channels, non rispondere.
 
-### F — Test 0.4.0-alpha in Obsidian (procedura manuale)
+### F — Test 0.4.0-beta.2 in Obsidian (procedura manuale, post-build)
 
-Dato che l'utente vuole testare 0.4.0-alpha.1/alpha.2 in vault TEST:
+Per validazioni locali in vault TEST/Lab durante un'eventuale beta.3 o pre-cut sanity-check:
 
 1. **Build del plugin** sul branch `feat/http-embedded`:
    ```bash
@@ -416,57 +443,25 @@ Dato che l'utente vuole testare 0.4.0-alpha.1/alpha.2 in vault TEST:
    Output: `main.js` + `styles.css` in `packages/obsidian-plugin/` (NON in `dist/`).
 2. **Symlink in vault TEST** (se non già presente):
    ```bash
-   REPO=~/Developer/Obsidian_MCP/obsidian-mcp-tools
+   REPO=~/Developer/Obsidian_MCP/obsidian-mcp-connector
    mkdir -p ~/Obsidian/TEST/.obsidian/plugins
    ln -s "$REPO/packages/obsidian-plugin" ~/Obsidian/TEST/.obsidian/plugins/mcp-tools-istefox
    ```
-3. **Riavviare Obsidian** → Settings → Community plugins → disable+re-enable "MCP Connector" per ricaricare. Aprire i settings del plugin → sezione "Access Control" → copiare il Bearer token.
-4. **Verifica HTTP up**: dal terminale, `curl -s http://127.0.0.1:27200/healthz` (o porta successiva se 27200 occupata; controllare i log della console di Obsidian per la porta effettiva). Risposta attesa: `{"status":"ok"}` o simile.
-5. **Connettere Claude Desktop** (o altro client MCP):
-   - Su `~/Library/Application Support/Claude/claude_desktop_config.json`:
-     ```json
-     {
-       "mcpServers": {
-         "obsidian-http": {
-           "command": "npx",
-           "args": ["mcp-remote", "http://127.0.0.1:27200/mcp", "--header", "Authorization: Bearer YOUR_TOKEN_HERE"]
-         }
+3. **Riavviare Obsidian** → Settings → Community plugins → disable+re-enable "MCP Connector" per ricaricare. Settings del plugin → sezione "Access Control" → copia il Bearer token.
+4. **Verifica HTTP up**: `curl -s http://127.0.0.1:27200/healthz` (o porta successiva 27201-27205; controlla console Obsidian per la porta effettiva).
+5. **Connettere Claude Desktop** via `npx mcp-remote`:
+   ```json
+   {
+     "mcpServers": {
+       "obsidian-http": {
+         "command": "npx",
+         "args": ["mcp-remote", "http://127.0.0.1:27200/mcp", "--header", "Authorization: Bearer YOUR_TOKEN_HERE"]
        }
      }
-     ```
-   - Riavviare Claude Desktop.
-6. **In Claude Desktop**: chiedere "lista i tool MCP disponibili". Atteso: `get_server_info` (alpha.1) o tutti e 20 (alpha.2).
-7. **Test funzionali**: chiedere "leggi la nota corrente di Obsidian" (`get_active_file`), "cerca 'foo' nel vault" (`search_vault_simple`), "esegui il template X" (`execute_template`).
-8. **Logging**: aprire la Console developer di Obsidian (`Cmd+Opt+I`) per vedere richieste e risposte HTTP. In caso di errore 401, il token è sbagliato. In caso di 403 su Origin, Origin header non è loopback (`127.0.0.1` o `localhost`).
-
-### Z — ~~Fase 4 outreach — annuncia il fork sulle issue upstream risolte~~ ✅ COMPLETATO 2026-04-21
-
-- **Eseguito il 2026-04-21 ~19:21 UTC** via `scripts/fork-outreach-comment.py run --execute`.
-- **23 commenti pubblicati** su `jacksteamdev/obsidian-mcp-tools` (una per issue risolta direttamente): #26, #28, #29, #30, #31, #33, #35, #36, #37, #39, #40, #41, #59, #60, #61, #62, #63, #66, #67, #68, #71, #77, #78. Audit trail completo con URL dei comment in `scripts/.outreach-log.jsonl`.
-- **Template utilizzato**: quello pre-merge community store (mentions PR #11919 pending). Il template live nel repo è stato successivamente riscritto evergreen (solo BRAT, no PR reference) per future iterazioni — vedi commit `d25cf53`.
-- **Deliberatamente NON commentate**:
-  - **#27, #38** (indirect coverage): lasciate aperte per onestà intellettuale — non ho evidenza specifica che la install-path refactor di #28 risolva il loro caso, solo inferenza. Rischio content-integrity > beneficio marginale (2 issue extra su 26).
-  - **#79**: meta-issue aperta da te stesso (fork announcement), self-comment non avrebbe senso.
-- **Quando ri-fare outreach**: solo quando PR community store `obsidianmd/obsidian-releases#11919` viene mergiata, con template esteso per menzionare il community store. Comando: `python3 scripts/fork-outreach-comment.py run --force --execute` (il `--force` bypassa il log idempotente).
-- **Monitoring**: GitHub manda notifiche su qualsiasi commento/chiusura dei 23 issue. Nelle 48-72 h dopo il batch, aspettarsi alcune chiusure spontanee da autori originali + eventualmente il maintainer upstream (se torna).
-
-### C — Sync periodico con upstream
-- **Effort**: 5 min per il check, ore se ci sono cose da cherry-pick
-- **Scope**: `git fetch upstream && git log upstream/main --oneline -20` periodicamente. Storico: upstream è dormant, ma se il maintainer torna è bene saperlo.
-
-### D — Pulizia operativa
-- ✅ `*.bun-build` gitignored
-- ✅ `docs/features/prompt-requirements.md` rimosso
-- Rimasto opzionale: cancellare i 2 file `.bun-build` fisici (~118 MB), si rigenerano al prossimo build
-
-### E — ~~Issue #59 full implementation (binary content types)~~ ✅ COMPLETATO 2026-04-21
-- Rilasciato in **0.3.4**. Commit `6110b89`, merge `d037ed9`. Supporto nativo MCP image/audio content blocks, fallback text-metadata per tipi non supportati o oversize (10 MiB cap). 14 nuovi unit test + 5/5 smoke test PASS via `scripts/smoke-verify-binary.py`.
-
-### F — Roadmap dopo il merge community store
-- Una volta che la PR `obsidianmd/obsidian-releases#11919` è merged:
-  - Aggiornare README rimuovendo "Once approved" e mettendo solo "Available in community store"
-  - Aggiornare migration-from-upstream.md indicando il community store come opzione preferita
-  - Considerare di aprire issues "good first issue" per attirare contributor (es. test Linux/Windows manuali, traduzioni, etc.)
+   }
+   ```
+6. **In Claude Desktop**: "lista i tool MCP disponibili" → atteso 20 tool. Verifica `get_active_file`, `search_vault_simple`, `execute_template`, `search_vault_smart` (semantic native, primo uso scarica MiniLM ~25MB).
+7. **Logging**: console developer Obsidian `Cmd+Opt+I`. 401 = token sbagliato; 403 Origin = origin non loopback.
 
 ---
 
