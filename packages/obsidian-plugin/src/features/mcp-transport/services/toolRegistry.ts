@@ -247,6 +247,23 @@ export class ToolRegistryClass<
         `Unknown tool: ${params.name}`,
       );
     } catch (error) {
+      // Surface tool failures via the MCP `isError: true` envelope
+      // instead of throwing the McpError up to the transport layer.
+      //
+      // Why: the transport's outer serializer (and at least one client
+      // shim, e.g. mcp-remote when bridging stdio↔HTTP) prepends its
+      // own `MCP error -<code>:` prefix to the message of any thrown
+      // McpError, producing the cosmetic `MCP error -32603: MCP error
+      // -32603: <text>` double-prefix folotp observed during the
+      // 0.4.0-beta.2 retest on issue #74. Returning the result as
+      // `isError: true` keeps the path that does NOT add a prefix —
+      // the message reaches the client clean. The `executeTemplate.ts`
+      // local fix in PR #69 was the same shape; this lifts the pattern
+      // up so it applies uniformly to every tool that throws.
+      //
+      // Logging stays on `logger.error` because we still want full
+      // diagnostic context (stack, error, params) for the operator
+      // even when the client-facing surface is the cleaner envelope.
       const formattedError = formatMcpError(error);
       logger.error(`Error handling ${params.name}`, {
         ...formattedError,
@@ -255,7 +272,12 @@ export class ToolRegistryClass<
         error,
         params,
       });
-      throw formattedError;
+      return {
+        content: [
+          { type: "text" as const, text: formattedError.message },
+        ],
+        isError: true,
+      };
     }
   };
 }
