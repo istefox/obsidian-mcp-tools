@@ -35,6 +35,7 @@ import {
 // imported by `tool-toggle/components/ToolToggleSettings.svelte` in a
 // branch that no longer fires in 0.4.0). T14 retires it for good.
 // import { setup as setupMcpServerInstall } from "./features/mcp-server-install";
+import { registerTemplatesCompatRoute } from "./features/mcp-tools/services/templatesCompat";
 import { setupMigration } from "./features/migration";
 import {
   setup as semanticSearchSetup,
@@ -440,20 +441,27 @@ export default class McpToolsPlugin extends Plugin {
     // In 0.3.x the binary mcp-server called back into the plugin via
     // three LRA-mounted endpoints (/search/smart, /templates/execute,
     // /mcp-tools/command-permission/). In 0.4.0 the MCP server runs
-    // in-process and calls Obsidian APIs directly — those endpoints are
-    // dead and intentionally not registered.
+    // in-process and calls Obsidian APIs directly — most of those
+    // endpoints are dead. One exception: `/templates/execute` is
+    // re-registered as a thin compat shim onto the in-process
+    // `executeTemplateHandler`, because users who upgrade silently can
+    // keep a residual custom-id MCP server entry in their Claude
+    // Desktop config that still spawns the 0.3.x binary, and that
+    // binary's only path to render a template is the LRA route. See
+    // `features/mcp-tools/services/templatesCompat.ts` and issue #73.
     //
-    // The single LRA consumer that survives is the `search_vault` tool
-    // (DQL / JsonLogic via Dataview), which uses LRA's `/search/`
-    // endpoint with an apiKey. If LRA is not installed, that tool
-    // returns an actionable error to the MCP client; the rest of the
-    // 19 tools work without LRA. Hence: load best-effort, log debug,
-    // never show a "required" Notice.
+    // The single LRA consumer that survives directly is the
+    // `search_vault` tool (DQL / JsonLogic via Dataview), which uses
+    // LRA's `/search/` endpoint with an apiKey. If LRA is not
+    // installed, that tool returns an actionable error to the MCP
+    // client; the rest of the 19 tools work without LRA. Hence: load
+    // best-effort, log debug, never show a "required" Notice.
     lastValueFrom(loadLocalRestAPI(this))
       .then((localRestApi) => {
         this.localRestApi = localRestApi;
         if (this.localRestApi.api) {
           logger.info("Local REST API detected — `search_vault` is available");
+          registerTemplatesCompatRoute(this);
         } else {
           logger.debug(
             "Local REST API not installed — `search_vault` will return an actionable error if invoked; the other 19 tools are unaffected",
