@@ -16,9 +16,10 @@
 
 **Prossimi passi concreti (in ordine):**
 
-1. **🔴 Soak round su beta.2 — gating la stable cut.** Folotp ha confermato il 2026-04-29 ("Away from home until Friday. Will retest first thing when I get back."). Friday = **2026-05-01 (domani)**. Aspettare sign-off esplicito sui 4 ripro (#12 array→scalar, #13 array structure flattening, #19 double-prefix, #20 missing path).
-2. **T14 — 0.4.0 stable cut** (gated su sign-off folotp): finalize CHANGELOG (move `[Unreleased] #58` entry to `[0.4.0]`, sostituisci `TBD` con la data) → bump manuale `package.json`+`manifest.json`+`versions.json` a `0.4.0` (lo script bun version non supporta pre-release semver, vedi memory) → commit `0.4.0` → tag → push → release CI → comment su PR Store #11919 ("manifest updated to 0.4.0, please re-validate").
-3. **Outreach jacksteamdev** (Discord DM + README PR upstream) **gated su community store acceptance**, non sulla cut.
+1. **🔴 Soak beta.2 → beta.3.** Folotp è tornato presto (2026-05-01 03:49 UTC, non venerdì come annunciato): tutti e 4 i fix targeted **verified** (#12, #13 directly; #19, #20 indirettamente perché bloccati da #73), MA ha aperto **#73** = nuova regressione `execute_template` HTTP 404 (root cause: residuo binary 0.3.x lato user — non è bug del plugin in-process). Più 2 side observations: #74 = double-prefix leak strutturale (bundling con #73 in beta.3), e dead-code DWIM branch (deferito 0.4.1).
+2. **🟡 0.4.0-beta.3 cut** (gated sul retest folotp dei due fix): branch `fix/73-templates-execute-compat-shim` ha già **entrambi** i fix committati (`3dd9bda` compat shim + `d1958b2` registry isError) — bundle in unico PR per beta.3. **Sequenza**: push branch → apri PR su `feat/http-embedded` → merge dopo review → bump manuale `0.4.0-beta.3` (package/manifest/versions) → tag + push → CI release → comment su #54 con BRAT pin "test these against beta.3".
+3. **T14 — 0.4.0 stable cut** (gated su sign-off folotp post-beta.3): finalize CHANGELOG (move `[Unreleased] #58` entry to `[0.4.0]`, sostituisci `TBD` con la data) → bump manuale `package.json`+`manifest.json`+`versions.json` a `0.4.0` (lo script bun version non supporta pre-release semver, vedi memory) → commit `0.4.0` → tag → push → release CI → comment su PR Store #11919 ("manifest updated to 0.4.0, please re-validate").
+4. **Outreach jacksteamdev** (Discord DM + README PR upstream) **gated su community store acceptance**, non sulla cut.
 
 **Cosa è stato chiuso dopo la beta.1 (sessioni 2026-04-28 → 2026-04-29):**
 - **6 PR di stable-cut prep** (2026-04-28 sera): #56 port-forward 0.3.12 fixes su `feat/http-embedded`, #59 fix #58 (heading createTargetIfMissing default flip), #60 README rewrite per 0.4.0, #61 CHANGELOG collapse alpha+beta in `[0.4.0] — TBD`, #62 release.yml split tag-prefix-aware (binari solo per `0.3.*`, plugin-only per il resto), #63 hide toolToggle UI (registry gating non wired), #64 retire `McpServerInstallSettings.svelte` + `openFolder.ts`, #65 vite dedup via package overrides (fix svelte-check CI failure).
@@ -36,7 +37,7 @@
 - `trig_01Dx8sZTD78yBj7buuVYP9KE` — orario, watch issue #79.
 
 **Primo prompt suggerito alla nuova sessione:**
-> "Leggi `handoff.md` e `CLAUDE.md`. Siamo a 0.4.0-beta.2 (commit `1013d11`, 2026-04-29). Beta.1 soak ha trovato 4 regressioni → PR #69 → beta.2. Soak round 2 in corso: folotp ha detto che retesta venerdì 2026-05-01. Stable cut bloccata sul suo sign-off. Controlla #54 per attività folotp dal 2026-04-29 15:21 UTC, e l'output della routine `trig_01UC96J5aCxLJwD4meBCDWtm` (decision check di stamattina 07:00 UTC). Se folotp ha confermato i 4 ripro green: procedere con T14 — finalize CHANGELOG, bump manuale 0.4.0, tag, push, comment su PR Store #11919."
+> "Leggi `handoff.md` e `CLAUDE.md`. Siamo a 0.4.0-beta.2 (commit `1013d11`, 2026-04-29) con branch `fix/73-templates-execute-compat-shim` pronto per beta.3 (compat shim #73 + registry isError #74, 4/4 test verdi). Folotp ha retestato beta.2 il 2026-05-01 03:49 UTC: 4/4 fix targeted verified, ma ha aperto #73 (nuova regressione `execute_template` 404). Triage in commento `4358460658` chiede 2 check di repro (jq config + ls binary path) per confermare diagnosi (residuo binary 0.3.x lato user, non bug plugin). Controlla #73 per nuovi comment di folotp dal 2026-05-01 ~04:00 UTC. Se conferma diagnosi: push branch + PR + bump beta.3 + comment su #54. Se falsifica: digging ulteriore prima di mergiare. Nel frattempo #74 è già implementato e bundlato; resta solo coperta la #73 hypothesis."
 
 ---
 
