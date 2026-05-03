@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
+import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { normalizeInputSchema, ToolRegistryClass } from "./toolRegistry";
 
 /**
@@ -187,16 +188,27 @@ describe("ToolRegistry enable/disable", () => {
     expect(tools.list().tools.map((t) => t.name)).toEqual(["beta"]);
   });
 
-  test("dispatch() on a disabled tool throws Unknown tool", async () => {
+  test("dispatch() on a disabled tool returns isError: true with Unknown tool message", async () => {
     const { tools, alphaSchema } = buildRegistryWithTwoTools();
 
     tools.disable(alphaSchema);
 
     // A disabled tool must be indistinguishable from an unregistered
     // one — otherwise `list()` and `dispatch()` would disagree.
-    await expect(
-      tools.dispatch({ name: "alpha", arguments: {} }, fakeContext),
-    ).rejects.toThrow(/Unknown tool: alpha/);
+    //
+    // After issue #74, the registry no longer throws the McpError up to
+    // the transport layer (which would cause downstream clients to
+    // double-prefix the message); it surfaces the error via the MCP
+    // `isError: true` envelope. The semantic distinction is the same —
+    // the caller learns the tool is not available — but the wire format
+    // is the cleaner single-prefix one.
+    const result = (await tools.dispatch(
+      { name: "alpha", arguments: {} },
+      fakeContext,
+    )) as { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/Unknown tool: alpha/);
   });
 
   test("dispatch() still works for other enabled tools after one is disabled", async () => {
@@ -230,5 +242,116 @@ describe("ToolRegistry enable/disable", () => {
     expect(result).toBe(false);
     // Both tools still listed.
     expect(tools.list().tools.map((t) => t.name)).toEqual(["alpha", "beta"]);
+  });
+});
+
+/**
+ * Issue #74 — registry-level isError envelope for thrown errors.
+ *
+ * Background: in PR #69 the `executeTemplate.ts` handler was changed to
+ * return `{ content, isError: true }` instead of throwing McpError, to
+ * avoid the cosmetic `MCP error -<code>: MCP error -<code>: <text>`
+ * double-prefix that downstream MCP clients (mcp-remote bridging
+ * stdio↔HTTP) prepend to thrown McpErrors. That fix was local to one
+ * handler. Folotp's 0.4.0-beta.2 retest (issue #74) showed the same
+ * double-prefix is still visible on every other tool that throws —
+ * `patch_vault_file`, `patch_active_file`, etc.
+ *
+ * Fix: hoist the same `isError: true` pattern up to the `dispatch()`
+ * catch in `ToolRegistry`, so it applies uniformly to every tool that
+ * throws. The handler-side fix in `executeTemplate.ts` becomes a
+ * defence-in-depth safety net (kept for explicit clarity).
+ */
+describe("ToolRegistry — issue #74 (registry-level isError envelope)", () => {
+  test("handler throwing McpError surfaces as isError: true with the original message", async () => {
+    const tools = new ToolRegistryClass();
+    const schema = type({
+      name: '"throwing-tool"',
+      arguments: {},
+    }).describe("Tool that throws an McpError");
+
+    tools.register(schema, () => {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        "Refusing to overwrite array with scalar",
+      );
+    });
+
+    const result = (await tools.dispatch(
+      { name: "throwing-tool", arguments: {} },
+      fakeContext,
+    )) as { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe(
+      "MCP error -32602: Refusing to overwrite array with scalar",
+    );
+    // Crucially: NOT the double-prefixed form (`MCP error -32602: MCP error -32602: ...`).
+    expect(result.content[0]?.text).not.toMatch(
+      /MCP error -\d+:\s+MCP error -\d+:/,
+    );
+  });
+
+  test("handler throwing a plain Error is wrapped to InternalError and surfaced as isError: true", async () => {
+    const tools = new ToolRegistryClass();
+    const schema = type({
+      name: '"plain-throw"',
+      arguments: {},
+    }).describe("Tool that throws a plain Error");
+
+    tools.register(schema, () => {
+      throw new Error("Templater rendering exploded");
+    });
+
+    const result = (await tools.dispatch(
+      { name: "plain-throw", arguments: {} },
+      fakeContext,
+    )) as { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Templater rendering exploded");
+    // formatMcpError wraps plain Error as InternalError (-32603)
+    expect(result.content[0]?.text).toMatch(/^MCP error -32603:/);
+    // No double-prefix
+    expect(result.content[0]?.text).not.toMatch(
+      /MCP error -\d+:\s+MCP error -\d+:/,
+    );
+  });
+
+  test("handler returning normally is unaffected (success path is not wrapped as isError)", async () => {
+    const { tools } = buildRegistryWithTwoTools();
+
+    const result = await tools.dispatch(
+      { name: "alpha", arguments: {} },
+      fakeContext,
+    );
+
+    expect(result).toEqual({
+      content: [{ type: "text", text: "alpha-ok" }],
+    });
+    // The success path did not gain a spurious isError flag.
+    expect((result as { isError?: boolean }).isError).toBeUndefined();
+  });
+
+  test("handler returning isError: true normally (e.g. executeTemplate.ts pattern) is passed through unchanged", async () => {
+    const tools = new ToolRegistryClass();
+    const schema = type({
+      name: '"already-isError"',
+      arguments: {},
+    }).describe("Tool that returns isError: true without throwing");
+
+    tools.register(schema, () => ({
+      content: [{ type: "text", text: "Template not found: foo.md" }],
+      isError: true,
+    }));
+
+    const result = (await tools.dispatch(
+      { name: "already-isError", arguments: {} },
+      fakeContext,
+    )) as { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+    // Handler-side isError envelope is forwarded byte-for-byte.
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe("Template not found: foo.md");
   });
 });
