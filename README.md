@@ -362,6 +362,10 @@ We welcome genuine contributions but maintain strict community standards. Be res
 
 See [GitHub Releases on this fork](https://github.com/istefox/obsidian-mcp-connector/releases) and [`CHANGELOG.md`](CHANGELOG.md) for the detailed changelog.
 
+## Other MCP servers by istefox
+
+- **[istefox-dt-mcp](https://github.com/istefox/istefox-dt-mcp)** — MCP server for [DEVONthink 4](https://www.devontechnologies.com/apps/devonthink) (macOS). Six outcome-oriented tools, preview-then-apply with audit log + selective undo, optional local RAG (ChromaDB + sentence-transformers), `.mcpb` bundle for Claude Desktop. Privacy-first, local-only. Listed on [Glama](https://glama.ai/mcp/servers/istefox/istefox-dt-mcp). MIT.
+
 ## License
 
 [MIT License](LICENSE)
