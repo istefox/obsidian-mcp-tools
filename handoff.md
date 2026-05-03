@@ -1,8 +1,17 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-04-30 mattina (post-folotp soak revisione + 0.4.0-beta.2 cut).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-03 pomeriggio (post-beta.3 cut + decisione Glama listing).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-03
+
+- **`0.4.0-beta.3` cut** (commit `bbc1289`, tag pushato, CI release verde, marcato prerelease). Bundle PR #75 = #73 (compat shim `POST /templates/execute` 404) + #74 (registry-level `isError` hoist per double-prefix). Folotp pingato su #54 con scope round 3. Stato: in attesa retest.
+- **Cross-link reciproco DT-MCP ↔ fork Obsidian** nei README. Sul fork: commit `dcacaa1` su `feat/http-embedded` ("Other MCP servers by istefox" → linka `istefox-dt-mcp`, pointer-only). Sul DT-MCP: PR #41 `docs/glama-listing-and-cross-link` (badge Glama + reciproco). Cross-link è branding/discoverability puro, non propedeutico a Glama listing del fork.
+- **Glama listing del fork — RINVIO A FASE B (post-store-accept).** Listing è tecnicamente possibile (registry indicizza repo GitHub, esponendo tools/schema), ma il badge `Official` no: il fork 0.4.0 è plugin in-process Electron, non server stdio standalone runnable nel sandbox `/app` di Glama. Listing senza badge resta valore (presence in 22k server registry, profilo `istefox` verificato), ma aggiungerlo durante review store #11919 introduce un'altra dipendenza esterna da monitorare. Coerente con anti-tattica "no Reddit/Twitter pre-store-accept": un evento per volta. **Riapre come Fase B**, non scartato. Correggo la mia precedente affermazione "non vale lo sforzo" che era basata su lettura troppo categorica delle policy Glama.
+- **EXDEV-oss su #54 — replica terminale postata** (`comment 4366414002`, opzione B della lista opzioni). Il "rate limiter reset on client reconnect" del suo finding 14:29Z è architetturalmente impossibile (rate limiter è tumbling window module-global wall-clock-keyed, transport stateless senza nozione di "client"); confutato citando `rateLimit.ts:32-49` + invariante stateless transport, richiesto repro con commit SHA + sequenza request + timestamp. Il commento aveva frontmatter leak `:::writing{variant="chat_message" id="93147"}` + smart quotes + JSON malformato → conferma alta-confidenza pattern AI-template engagement già documentato in memoria. Aspettare drop-off; se doubled-down con altro template, valutare lock #54 dopo round 3 folotp.
 
 ---
 
