@@ -6,6 +6,20 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — fork #77 substantive triage + methodology rule
+
+**Trigger**: utente domanda "controlla l'issues #77" durante sweep di follow-up. #77 era OPEN da 13h con label `enhancement` (applicato in sessione pomeriggio) ma **zero comment**. Inherited come "future scope, no commitment, passive monitor" dal prior session's triage note. Framing sbagliato.
+
+**Action presa**:
+
+1. **Substantive triage comment postato** ([fork #77 comment 4373630242](https://github.com/istefox/obsidian-mcp-connector/issues/77#issuecomment-4373630242)) — preferenza technical Option A (LLM tool routing dis-ambiguation + schema surface clean + LRA mapping 1:1), implementation footprint stimato (~80-120 LOC, thin LRA wrapper come pattern PR #75 templatesCompat), timeline expectation (post-store-accept gated #11919, candidate per 0.4.2/0.4.3 cluster), commitment a pre-write ArkType schema + handler queueable. Plus side-note: cross-referenced upstream `jacksteamdev/obsidian-mcp-tools#81` likely already addressed dal Zod→ArkType migration, ping a folotp per re-verify.
+
+2. **Nuova rule aggiunta a `CLAUDE.md` outreach methodology** ([commit pending]): **Validated-contributor engagement rule** — fork issue OPEN da folotp/marcoaperez/grimlor con 0 comment >12h è engagement-priority indipendentemente da ping esplicito. Substantive triage comment richiesta (preferenza tra opzioni, implementation footprint estimate, timeline framed against gating). Non richiede milestone commitment — richiede engagement con la sostanza. "Future scope" gates milestone, non engagement.
+
+**Lesson learned (post-mortem honesto)**: bias di inheritance del framing "future scope" come proxy per "passive monitor" + auto-mode trigger asymmetry (priorità a thread con evento concreto da reagire, miss su engagement-drop signals senza trigger esplicito) + miss-applied anti-tactic ("no feature creep durante store review" diventato "no engagement on feature requests"). 0 comment >12h su proposal high-quality di trusted contributor è di per sé un signal.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 disambig round 2 🔍
 
 **Folotp ha risposto su upstream #83** (2026-05-04 17:52Z): bug reproduces on `0.4.1`, fornisce **variant matrix di 4 case** (A canonical / B single-row / C plain prose / D code-span no-table). Variant C decisivo: prose `Original content. This refers to ## Links below.` SENZA tabella né code-span riproduce — orphan `## Links below.` post-replace. Diagnosi tecnica di folotp: regex sta lavorando senza line-start anchor effettivo, tre opzioni concrete (regex sans `^`, `g`-flag senza `m` flag walking forward, input non split su `\n` sul live path).
