@@ -1,8 +1,51 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-04 sera (`0.4.0` stable + `0.4.1` patch shipped — comprehensive upstream outreach round).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-04 tarda sera (response wave: folotp + marcoaperez engagement).** `0.4.0` stable + `0.4.1` patch shipped + 21 upstream outreach comments + first responses landed (1.5h post-outreach window). Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-04 tarda sera — outreach response wave 📨
+
+**Post-outreach response window**: ~1.5h dopo i 21 comment upstream, due risposte substantive.
+
+### 🔴 Folotp upstream #83 — bug repro claim, awaiting disambiguation
+
+Folotp ha testato `0.4.1` su Cowork chain (12:29Z) e dichiara che il bug si riproduce — output con spurious `## Links\` |` line dopo replacement, contraddicendo il mio code-trace di stamattina ("`^` anchor doesn't hold in practice").
+
+**Mio counter-evidence**: scritto unit test che riproduce esattamente la sua fixture su `feat/http-embedded` HEAD `2387e0e`, output **clean** (no spurious line, 1/1 pass). Codice in `patchHelpers.ts:442-448` usa `lines[i].match(/^...)` per-line, NON può matchare mid-line.
+
+**Mio follow-up postato** ([comment 4371082861](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4371082861)): 3 hypothesis disambigation:
+- **(a)** BRAT cached old version → chiedo `get_server_info.apiExtensions[0].version`
+- **(b)** Replacement `content` shape differs from paraphrase → chiedo exact string
+- **(c)** Different code path I'm missing → offerta di esecuzione fixture byte-for-byte
+
+**Stato**: aspetto folotp clarification. Se conferma post-disambiguation, 0.4.2 patch immediato.
+
+### 🟢 Folotp fork #77 — partial-read RFC opened
+
+Folotp ha **eseguito la mia outreach suggestion** di stamattina su upstream #82 (suggerivo "file the same body on the fork tracker"). 46 minuti dopo, ha aperto fork #77 con cross-reference. Pattern di outreach validato: redirect "open the issue on fork" → utente esegue.
+
+**Triage**: applicato `enhancement` label. Anche allineato #67/#68 (sue altre RFC) con stesso label per consistenza. Tutti unmilestoned (future scope, no commitment).
+
+### 🟢 Marcoaperez upstream PR #69 — downstream maintainer engagement
+
+**Massimo positive outcome della giornata.** Marcoaperez (autore della PR #69 URL-encode non-ASCII headers) ha risposto al mio comment con un **inventory di 5+ tool che ha implementato sul suo downstream fork** (`marcoaperez/obsidian-mcp-tools` 0.3.4, 2026-04-14, in-house use):
+
+- **Net-new tools**: `get_recent_files`, `list_tags`, `get_document_map`, `get_periodic_note` family (3 tool), `execute_dataview_query`, `get_vault_files`
+- **Behaviour additions**: auto-truncation per large reads, search-results cap, `OBSIDIAN_PORT` env var
+- **Overlap**: il suo `list_commands`/`execute_command` = nostro `list_obsidian_commands`/`execute_obsidian_command` (shape diverso, semantics simili)
+
+Stated intent: evaluate MCP Connector 0.4.x as replacement for his fork; will read `CONTRIBUTING.md` + open RFCs (#67/#68/#77 in particular); propose small focused PRs for items that fit.
+
+**Mio reply substantive postato** ([comment 4371427847](https://github.com/jacksteamdev/obsidian-mcp-tools/pull/69#issuecomment-4371427847)) con per-feature triage in 4 categorie (overlap-shipped / strong-candidate / maybe-scope / architecturally-retired) + workflow guidance + suggested ordering (smallest-wins-first: `get_recent_files` + `list_tags` per familiarizzazione, poi `execute_dataview_query` + `get_document_map`/#77 per high-value).
+
+**Significato strategico**: secondo external contributor maintainer-grade (dopo folotp). Se converte, 5-10 PR in pipeline + secondo soak surface. Outcome più probabile (~60%): 1-2 PR piccole nelle prossime 1-2 settimane.
+
+### Methodology validation
+
+Pattern outreach validato due volte oggi: (1) folotp porta una RFC dal mio redirect suggestion in <1h; (2) marcoaperez offre upstream-from-his-fork dopo per-feature triage. **Outreach con per-feature triage + concrete workflow path > generic redirect**.
 
 ---
 
