@@ -6,6 +6,27 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — fork #79 aperto (searchVault LRA port unhardcode)
+
+**Trigger**: utente conferma "procedi" su mia proposta di tracciare formalmente il residual hardcode `searchVault.ts:6` come fork issue invece di lasciarlo solo nel handoff.
+
+**Action presa**:
+
+1. **Fork issue #79 aperto** ([istefox/obsidian-mcp-connector#79](https://github.com/istefox/obsidian-mcp-connector/issues/79)): "search_vault: unhardcode Local REST API URL — read port and protocol from LRA settings". Body strutturato con: context (upstream #67 stale-claim audit, residual scope after `0.4.x` architecture pivot), current behavior (`https://127.0.0.1:27124` hardcoded a `searchVault.ts:6`+`74`), desired behavior (read da LRA settings via plugin handle), implementation sketch (~10-15 LOC, `getLocalRestApiUrl()` helper su `McpToolsPlugin` mirroring `getLocalRestApiKey()` pattern at `main.ts:88-90`), tests (unit mock + fallback + manual smoke), out-of-scope (multi-vault già handled, remote LRA stays out for security), timeline (post-store-accept), references (upstream #67 + main.ts + searchVault.ts + #78). Label `enhancement`, unmilestoned.
+
+2. **Cross-link upstream → fork postato** ([upstream #67 comment 4374116783](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/67#issuecomment-4374116783)): "now tracked fork-side at istefox/obsidian-mcp-connector#79 — implementation sketch + acceptance criteria + tests scoped, target post-community-store-merge". Chiude pubblicamente il loop dal mio precedente "Fork-side issue worth filing if..." statement.
+
+**State change**:
+- Fork issue OPEN: 5 → 6 (added #79)
+- Backlog post-store-accept ora ha tre fork-side trackable items: #77 (folotp partial-read), #78 (migration UX), #79 (searchVault LRA port). Plus eventuali follow-up per #67 e #68 folotp RFCs (rename_vault_file + rename_heading) quando l'implementation phase parte.
+
+**Backlog cluster `0.4.2`/`0.4.3` post-#11919** (proiezione, non commitment):
+- Implementation phase items: #77, #78, #79 — combined ~3-5h technical work
+- Plus (se folotp/marcoaperez committano implementation effort): #67/#68 (folotp RFCs), marcoaperez 5+ tool batch
+- Plus eventuali bug surfaced da soak round 4 (se serve)
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — upstream #83 RISOLTO + fork backlog #78 aperto
 
 **Trigger**: utente chiede check (con typo: "issues #10" invece di #83). Folotp ha postato comment 19:49:15Z su upstream #83.
