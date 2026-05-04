@@ -67,6 +67,7 @@ import {
   executeTemplateHandler,
   executeTemplateSchema,
 } from "./tools/executeTemplate";
+import { listTagsHandler, listTagsSchema } from "./tools/listTags";
 
 export type RegisterToolsContext = {
   app: App;
@@ -121,6 +122,11 @@ export async function registerTools(
   );
   registry.register(deleteVaultFileSchema, async ({ arguments: args }) =>
     deleteVaultFileHandler({ arguments: args, app: ctx.app }),
+  );
+
+  // Metadata
+  registry.register(listTagsSchema, async ({ arguments: args }) =>
+    listTagsHandler({ arguments: args, app: ctx.app }),
   );
 
   // Search

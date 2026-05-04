@@ -36,8 +36,9 @@ When connected to an MCP-compatible client, this plugin enables:
 - **Prompt library** — author MCP prompts as markdown files in your vault's `Prompts/` folder, with parameters defined inline via Templater syntax. See [Using prompts](#using-prompts) below.
 - **Command execution** (opt-in) — authorize the agent to run specific Obsidian commands (e.g. `editor:toggle-bold`, `graph:open`) from a per-vault allowlist. Disabled by default; every invocation is audited. See [Command execution](#command-execution) below.
 - **Web fetch** — `fetch` tool retrieves arbitrary URLs and returns Markdown via Turndown, with pagination for long pages.
+- **Tag listing** — `list_tags` returns every tag in the vault with its usage count, sourced from `app.metadataCache.getTags()`. Inline `#tags` and frontmatter tags both included; no plugin dependency.
 
-20 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
+21 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
 
 ## Prerequisites
 
@@ -131,7 +132,7 @@ Click **Copy config for streamable-http clients**. The snippet uses the generic 
 
 ### Verifying the setup
 
-Once configured, your client should expose **20 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
+Once configured, your client should expose **21 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
 
 To verify the connection works end-to-end, ask the agent to call `get_server_info`. A successful response confirms the client can reach the in-process server and the bearer token is correct. For deeper inspection (request/response logs, tool schema inspection without an LLM in the loop), use [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector):
 

@@ -192,6 +192,7 @@ type MockVaultState = {
   >;
   commands: Array<{ id: string; name: string }>;
   executedCommands: string[];
+  tags: Record<string, number>;
   requestUrlResponses: Map<
     string,
     {
@@ -209,6 +210,7 @@ const _mockState: MockVaultState = {
   metadataCache: new Map(),
   commands: [],
   executedCommands: [],
+  tags: {},
   requestUrlResponses: new Map(),
 };
 
@@ -218,6 +220,7 @@ export function resetMockVault(): void {
   _mockState.metadataCache.clear();
   _mockState.commands = [];
   _mockState.executedCommands = [];
+  _mockState.tags = {};
   _mockState.requestUrlResponses.clear();
 }
 
@@ -263,6 +266,15 @@ export function setMockCommands(
 
 export function getExecutedCommands(): string[] {
   return [..._mockState.executedCommands];
+}
+
+/**
+ * Set the tag→count map returned by `app.metadataCache.getTags()`.
+ * Mirrors Obsidian's API shape: keys include the leading `#`, values
+ * are aggregated counts across the vault.
+ */
+export function setMockTags(tags: Record<string, number>): void {
+  _mockState.tags = { ...tags };
 }
 
 export function setMockRequestUrl(
@@ -418,6 +430,7 @@ export function mockApp(): App {
       const path = (file as unknown as MockTFile).path;
       return _mockState.metadataCache.get(path) ?? null;
     },
+    getTags: (): Record<string, number> => ({ ..._mockState.tags }),
   };
 
   const fileManager = {
