@@ -5,48 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
-### Changed
-
-- **Default `createTargetIfMissing: false` for `targetType: "heading"`**
-  on `patch_active_file` / `patch_vault_file` (#58, reported by
-  @folotp). Mirrors the v0.3.7 (#6) flip for `block` targets.
-
-  Rationale: an unresolvable heading target (typo on the leaf,
-  missing parent H1, stale heading reference) used to fall through
-  to silent EOF append. In the dominant agent-caller use case the
-  HTTP 200 is indistinguishable from a successful in-place patch
-  without a post-write read, so silent-create is data corruption.
-  The flip closes the residual silent-corruption surface that
-  `detectOrphanRootHeading` (v0.3.9, #16) only partially covered.
-
-  After the flip, per-target-type defaults are: `heading` →
-  `false` (changed), `block` → `false` (unchanged from v0.3.7),
-  `frontmatter` → `true` (unchanged; frontmatter keys rarely
-  produce silent-corruption footguns and Templater-backed flows
-  depend on key creation as intent).
-
-  Callers that genuinely want the permissive create-on-missing
-  behaviour for headings (rare — typically a migration script that
-  creates section markers on first run) opt in explicitly with
-  `createTargetIfMissing: true`. The wrapper-side
-  `detectOrphanRootHeading` carve-out stays as defence-in-depth on
-  the explicit opt-in path: the orphan-root H2+ shape is genuinely
-  unresolvable regardless of opt-in intent and should still fail
-  loud with `McpError(InvalidParams, …)`.
-
-  Pinned by 7 cases in `patchVaultFile.test.ts` (default flip,
-  explicit-true opt-in, explicit-false idempotence, frontmatter
-  unchanged, block unchanged + its two opt-in cases). The
-  `detectOrphanRootHeading` test surface from v0.3.9 stays intact.
-
-  Breaking-change scope is symmetric to v0.3.7 (#6): only callers
-  who today rely on `patch_*_file` with `targetType: "heading"`
-  and an *unresolvable* `target` silently creating a heading at
-  EOF are affected. That behaviour is the data-corruption path the
-  surrounding fixes have been progressively closing — this flip is
-  the final closure on the heading axis.
-
-## [0.4.0] — TBD
+## [0.4.0] — 2026-05-04
 
 The HTTP-embedded pivot. The plugin now hosts the MCP server in-process inside Obsidian and exposes Streamable HTTP on `127.0.0.1:27200`. **No native binary shipped from this repository** — closes the supply-chain attack surface that prompted upstream's official unmaintained declaration on 2026-04-24.
 
@@ -99,6 +58,22 @@ This entry consolidates the four alpha pre-releases and the beta. The full per-t
 - **`POST /templates/execute` response shape** (carried forward from 0.3.12): 503 body now includes `message` (#19) and success body now includes `path` (#20) — both contributed by @folotp, with the `tp.file.move()` semantic seam anchored as an inline design note in `handleTemplateExecution`.
 - **`OBSIDIAN_HOST` accepts URL forms** (carried forward from 0.3.12): bare hostname (the documented form) and full URL with protocol+port both work; the wrapper detects `://` and parses via `parseApiUrl` (#21, originally upstream `jacksteamdev/obsidian-mcp-tools#84`).
 - **0.3.x install surface retired** in 0.4.0 settings (`mcp-server-install/components/McpServerInstallSettings.svelte` no longer mounted; kept in tree for rollback safety; full removal in a follow-up).
+- **Default `createTargetIfMissing: false` for `targetType: "heading"`**
+  on `patch_active_file` / `patch_vault_file` (#58, reported by
+  @folotp). Mirrors the v0.3.7 (#6) flip for `block` targets.
+  Rationale: an unresolvable heading target (typo on the leaf,
+  missing parent H1, stale heading reference) used to fall through
+  to silent EOF append. In the dominant agent-caller use case the
+  HTTP 200 is indistinguishable from a successful in-place patch
+  without a post-write read, so silent-create is data corruption.
+  The flip closes the residual silent-corruption surface that
+  `detectOrphanRootHeading` (v0.3.9, #16) only partially covered.
+  After the flip, per-target-type defaults are: `heading` →
+  `false` (changed), `block` → `false` (unchanged from v0.3.7),
+  `frontmatter` → `true` (unchanged). Callers that genuinely want
+  the permissive create-on-missing behaviour for headings opt in
+  explicitly with `createTargetIfMissing: true`. Pinned by 7 cases
+  in `patchVaultFile.test.ts`.
 
 ### Fixed (post-`0.4.0-beta.1` batch — folotp soak)
 
@@ -170,16 +145,49 @@ Internal: `patchActiveFile.ts` carries its own duplicate of
 new `planFrontmatter*` helpers so the policy stays in one place.
 Consolidating the two call sites is a separate refactor.
 
+### Fixed (post-`0.4.0-beta.2` batch — folotp round 2 + 3)
+
+Round-2 soak by @folotp on `0.4.0-beta.2` (2026-05-01) verified the
+post-beta.1 regressions cleared, but surfaced two structural issues
+that landed in `0.4.0-beta.3` (PR #75):
+
+- **Legacy `POST /templates/execute` returned HTTP 404** on upgraded
+  installs where the 0.3.x binary was still resident alongside the
+  0.4.0 in-process plugin (#73). Phase 4 had dropped the LRA endpoint
+  registrations as dead code — correct for a clean install, but the
+  binary's transport layer expected the route to exist on the plugin
+  side. The fix re-registers `POST /templates/execute` as a thin LRA
+  `apiExtension` that proxies into the in-process `executeTemplate`
+  handler. Backward-compatible response shape; no change for users on
+  a clean 0.4.0 install.
+- **`MCP error -<code>: MCP error -<code>: <text>` double-prefix on
+  every throwing tool** (#74). The PR #69 local fix on
+  `executeTemplate.ts` was the right shape but the wrong scope: the
+  underlying double-wrap was happening in the `ToolRegistry` outer
+  catch for any tool that propagated an `McpError`. The fix hoists
+  the same `isError: true` envelope from `executeTemplate.ts` up to
+  `ToolRegistry.dispatch()`. Every tool that throws —
+  `patch_vault_file`, `patch_active_file`, the rest — now returns
+  the cleaner single-prefix envelope. The `executeTemplate.ts` local
+  fix is kept as defence-in-depth.
+
+Round-3 soak on `0.4.0-beta.3` (2026-05-04) confirmed both fixes
+plus the carryover regression family: #12, #13, H2-root reject, stat
+field, block-in-table 400, YAML auto-quote — all clean. One cosmetic
+issue (#76, heading-replace blank-line consumption) deferred to
+`0.4.1`.
+
 ### Continuous integration
 
 - New `.github/workflows/ci.yml` runs `bun run check` + per-package `bun test` on every push to `main` and `feat/http-embedded`, plus on every PR targeting either branch. Cancels in-flight runs for the same ref when a new push lands.
 
 ### Tests
 
-599+ unit + integration tests pass across the plugin package (528+
-through `0.4.0-beta.1`, +28 added in the post-beta.1 fix batch covering
-the frontmatter / `execute_template` / heading-replace regressions
-above):
+613 unit + integration tests pass across the plugin package (528+
+through `0.4.0-beta.1`, +28 in the post-beta.1 fix batch covering the
+frontmatter / `execute_template` / heading-replace regressions above,
++31 in the post-beta.2 fix batch (PR #75) covering the templates
+compat shim and the registry-level `isError` envelope):
 
 - 87 across `features/migration/` and `features/mcp-client-config/` (Phase 4).
 - 123 across `features/semantic-search/` (Phase 3).
@@ -195,7 +203,7 @@ above):
 - Design: [`docs/design/2026-04-24-http-embedded-design.md`](docs/design/2026-04-24-http-embedded-design.md)
 - Phase plans: `docs/plans/0.4.0-phase-{1,2,3,4}-*.md`
 - Upstream context: [`jacksteamdev/obsidian-mcp-tools#79`](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/79) (official unmaintained, 2026-04-24)
-- Pre-release tags: `0.4.0-alpha.1`, `0.4.0-alpha.2`, `0.4.0-alpha.3`, `0.4.0-alpha.4`, `0.4.0-beta.1`, `0.4.0-beta.2` — see [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases) for the full per-tag detail.
+- Pre-release tags: `0.4.0-alpha.1`, `0.4.0-alpha.2`, `0.4.0-alpha.3`, `0.4.0-alpha.4`, `0.4.0-beta.1`, `0.4.0-beta.2`, `0.4.0-beta.3` — see [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases) for the full per-tag detail.
 
 ## [0.3.12] — 2026-04-28
 
