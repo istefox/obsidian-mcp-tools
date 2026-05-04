@@ -312,6 +312,17 @@ Items resolved and out of "pending":
 - ~~Phase 2 — Tool handler migration — landed in 0.4.0-alpha.2/alpha.3.~~
 - ~~Phase 3 — Native semantic search — landed in 0.4.0-alpha.3 / fixed in alpha.4 (`bun.config.ts` redirect onnxruntime-node→onnxruntime-web for Electron renderer).~~
 
+## Outreach triage methodology
+
+When triaging an upstream issue (or any candidate for cross-link outreach to a third-party project), **never skip without informed evidence.** Before marking a candidate as "skip", apply these two checks in order:
+
+1. **Read the full issue body.** Excerpt-level reading misses substance — the asker's context, the bug shape, the specific repro that may already be addressed in the fork. Comment counts and labels are not enough.
+2. **Targeted code grep on the fork.** When the claim is technical (parser bug, transport issue, tool behaviour), grep for the load-bearing function and hand-trace against the asker's fixture. A 5-minute trace beats a "cannot verify" assumption.
+
+If **both** checks fail to unblock an informed position, skip is justified — and frame any comment to future-you that way ("did not verify"). If **either** unblocks one, engage with the confidence the evidence supports.
+
+**Why this rule exists:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. Lazy skip costs reach.
+
 ## References
 
 **In-repo docs** (read before implementing a new feature):
