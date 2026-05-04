@@ -6,6 +6,24 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 multi-point offer ack + explicit thanks + 4ª rule expanded
+
+**Trigger 1**: utente flagga che mia reply su upstream #83 ([comment 4373359535](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4373359535)) NON ha acknowledged adeguatamente l'offer multipoint di folotp. Folotp aveva enumerato 3 punti (debug build con boundary scan logs, verify 4 variants pre-cut, additional variants on request); io ho coperto **solo parzialmente** punto 1 (focus diverso = `vault.on('modify')` invece di boundary scan) e **silently dropped** punti 2 e 3.
+
+**Trigger 2** (dopo che ho postato il multi-point ack): utente flagga che manca **explicit thanks** per l'offer di remote test bench in sé — il valore dell'engagement shape (continuous test bench, real vault, real workflow chains, multiple cut cycles) è load-bearing per la qualità del progetto e va riconosciuto separatamente dal point-by-point acceptance.
+
+**Action presa (3 step)**:
+
+1. **Multi-point acceptance follow-up postato** ([comment 4374006687](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4374006687)): accept esplicitamente tutti e 3 i punti point-by-point, scope per-punto, link al flow corrente. (1) debug build con boundary scan instrumentation se i 4 disambig step non unblock; (2) BRAT-pin candidate + folotp re-run A/B/C/D pre-tag (stesso cycle che ha shippato 0.4.0-beta.3 → 0.4.1 per #76); (3) extended fixture set su `## ` fenced code / HTML comment / multi-byte chars come regression sentinel post-fix.
+
+2. **Explicit thanks follow-up postato** ([comment 4374017682](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4374017682)): articulate **what about the engagement shape is load-bearing for the project** — real vaults producono edge cases che unit test fixture non surface, mixed clients chain (Claude Desktop / Cowork / Cursor / `mcp-remote` / Inspector), Linter + auto-format plugins layered, real workflow repeats. Three soak rounds in (beta.1→beta.2→beta.3→0.4.0→0.4.1) il pattern ha shippato il ship-quality multiplier che il progetto necessitava. Acknowledgement non obsequioso, riconoscimento del valore unique del remote test bench.
+
+3. **Rule 4 espansa in `CLAUDE.md` con preamble step**: ora la rule "Multi-point offer acknowledgement" ha **due layer espliciti**: (1) preamble = explicit thanks per offer shape stesso, articulate what is load-bearing, NOT generic gratitude; (2) point-by-point acceptance. Le 4 rule complete coprono il failure-mode spectrum visto over 24h: lazy skip, since-filter blind spot, un-audited prior comments, inherited passive-monitor framing, asymmetric reply to multi-point offers (ora con explicit-thanks layer dentro).
+
+**Lesson learned consolidata**: 5 failure mode in 24h (lazy skip / since-filter / un-audited / inherited-passive / asymmetric multi-point) tutti capturati strutturalmente in CLAUDE.md outreach methodology via 4 rule. Future session vedono la rule prima di replicare. Il pattern "scrivi la rule dopo il failure mode concreto" continua a payoff — meta-lesson della giornata.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 multi-point offer ack + 4ª rule
 
 **Trigger**: utente flagga che mia reply su upstream #83 ([comment 4373359535](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4373359535)) NON ha acknowledged adeguatamente l'offer multipoint di folotp. Folotp aveva enumerato 3 punti concreti (debug build con boundary scan logs, verify 4 variants pre-cut, additional variants on request); io ho coperto **solo parzialmente** punto 1 (debug build con focus diverso = `vault.on('modify')` invece di boundary scan come chiesto) e **silently dropped** punti 2 e 3.
