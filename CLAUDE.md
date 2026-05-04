@@ -314,7 +314,23 @@ Items resolved and out of "pending":
 
 ## Outreach triage methodology
 
-When triaging an upstream issue (or any candidate for cross-link outreach to a third-party project), **never skip without informed evidence.** Before marking a candidate as "skip", apply these two checks in order:
+### Foundational principle: read fully, analyze deeply, take the time
+
+**Before posting any reply, comment, follow-up, or triage on any GitHub thread (fork or upstream — issues, PRs, review comments, all of them), read the entire thread end-to-end and analyze it.** This is non-negotiable and supersedes every rule below; the rules are concrete instances of this principle, not substitutes for it. Stefano has flagged this expectation explicitly after a cluster of failure modes in a single 24-hour window: "i post, gli issues ecc... vanno letti interamente ma soprattutto **analizzati**! prenditi il tempo che vuoi, ma vanno analizzati a fondo!" Take that as standing instruction for every outreach action, not just the ones that look ambiguous.
+
+What "read fully + analyze" means in practice:
+
+- **Read the issue/PR body in full**, including code blocks, hyperlinks, referenced design docs, and screenshots.
+- **Read every prior comment** in the thread chronologically. Identify who has authority on what (upstream maintainer, dependency maintainer, original reporter, validated contributor) and what they have already established as fact, retracted, or refined.
+- **Map the state**: what is settled, what is open, what is disputed, who is asking what of whom — before drafting your reply.
+- **For technical claims**, run the targeted code grep + hand-trace yourself. Don't infer behaviour from the comment author's framing alone.
+- **If an offer is multi-point or structured**, enumerate the points before drafting; ensure the reply addresses each.
+
+There is **no time pressure** on outreach or triage. Take whatever time is required. The cost of a 5-minute deeper read is one session-time unit; the cost of posting on a misread thread is a relationship with a domain authority + a follow-up correction + an entry in this rule list. The concrete rules below all exist because of failures of this foundational principle in a single 24-hour window. If this principle is followed, the others mostly take care of themselves.
+
+### When triaging an upstream issue or any candidate for cross-link outreach
+
+**Never skip without informed evidence.** Before marking a candidate as "skip", apply these two checks in order:
 
 1. **Read the full issue body.** Excerpt-level reading misses substance — the asker's context, the bug shape, the specific repro that may already be addressed in the fork. Comment counts and labels are not enough.
 2. **Targeted code grep on the fork.** When the claim is technical (parser bug, transport issue, tool behaviour), grep for the load-bearing function and hand-trace against the asker's fixture. A 5-minute trace beats a "cannot verify" assumption.
@@ -333,6 +349,12 @@ When a major release event happens (architecture pivot, stable cut, deprecation)
 
 When a fork issue is **OPEN, authored by a validated maintainer-grade contributor (folotp / marcoaperez / grimlor)**, and has **zero comments after >12h**, treat it as engagement-priority regardless of whether you've been pinged. These contributors invest meaningful effort into proposals; silence past the 12h mark reads as drop signal even if the issue is "future scope, no commitment". Post a substantive triage comment within the next session: technical preference between proposed options, implementation footprint estimate, timeline expectation framed against current gating constraints. The comment doesn't have to commit to a milestone — but it has to engage with the substance. The 2026-05-04 fork #77 (folotp's partial-read RFC) was sat for ~13h with the `enhancement` label and no other action because the prior session's triage note ("future scope, no commitment") was inherited as a passive-monitor signal in the next session's sweep; that framing was wrong. "Future scope" gates milestone commitment, not engagement.
 
+### Authority disambiguation rule
+
+When triaging or following up on a third-party issue, **read the full comment thread, not just the issue body**. If a **domain authority** has already disambiguated the framing in a prior comment — typically: the maintainer of an upstream dependency mentioned in the report (e.g. `coddingtonbear` on Local REST API issues), the original bug reporter retracting or refining the claim, or the upstream maintainer (`jacksteamdev`) on his own repo — your reply MUST acknowledge that disambiguation, not re-assert the original framing.
+
+Re-asserting after a domain authority has corrected the framing reads as either inattention or insistence, both of which damage relationships with the people whose project you're indirectly building on. The 2026-05-04 stale-claim follow-up on `jacksteamdev/obsidian-mcp-tools#68` posted "the `apiExtensions` / `certificateInfo` validation that broke against LRA `v3.4.x`" — but `coddingtonbear` (LRA maintainer) had already replied 2026-02-22 explaining that nothing changed in LRA `v3.4.x` and the missing fields were the documented response shape for unauthenticated requests. The 2026-04-21 batch had also missed this. A second follow-up was needed to acknowledge the LRA maintainer's authoritative read and correct the record. Concrete check before posting: skim every prior comment in the thread, look specifically for replies from people whose repo or project is referenced in the issue body, and if they've spoken authoritatively, mirror their framing in yours.
+
 ### Multi-point offer acknowledgement rule
 
 When a validated contributor makes a **multi-point engagement offer** (test bench with multiple deliverable types, fixture variants on request, verify-before-cut commitment, etc.), the response needs two layers, both explicit:
@@ -342,7 +364,7 @@ When a validated contributor makes a **multi-point engagement offer** (test benc
 
 Implicit single-point responses to multi-point offers read as engagement loss — the contributor invested effort enumerating each commitment, and a generic "happy to ship X" reply only acknowledging one of them silently drops the others. The 2026-05-04 reply on `jacksteamdev/obsidian-mcp-tools#83` paraphrased one of folotp's three offer points (debug build) into a narrower scope (`vault.on('modify')` instrumentation only, not the boundary-scan instrumentation he'd specifically asked for) and didn't acknowledge the other two (verify-4-variants-before-cut, additional-variants-on-request) **or** the test-bench offer shape itself. Two follow-ups were needed to repair: one for point-by-point acceptance, a separate one for the explicit thanks. Doing both in the original reply would have been one message.
 
-**Why these rules exist:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. The same-day deep re-analysis then surfaced 10 never-commented items the morning sweep had missed (since-filter blind spot), 1 stale Group B claim (#61 toolToggle in 0.4.0), 1 missed engagement on a high-quality validated-contributor proposal (#77 sat 13h with no triage comment), and 1 multi-point engagement offer answered with a single-point reply (#83 reply paraphrased one of folotp's three offer points and silently dropped the other two). Lazy skip + filtered enumeration + un-audited prior comments + inherited passive-monitor framing + asymmetric reply to multi-point offers each cost reach.
+**Why these rules exist:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. The same-day deep re-analysis then surfaced 10 never-commented items the morning sweep had missed (since-filter blind spot), 1 stale Group B claim (#61 toolToggle in 0.4.0), 1 missed engagement on a high-quality validated-contributor proposal (#77 sat 13h with no triage comment), 1 multi-point engagement offer answered with a single-point reply (#83 reply paraphrased one of folotp's three offer points and silently dropped the other two), and 1 stale-claim follow-up that re-asserted a misframing the LRA maintainer had already corrected on the thread (#68 follow-up ignored `coddingtonbear`'s 2026-02-22 reply and propagated the "LRA changed at v3.4.x" framing for the second time). Lazy skip + filtered enumeration + un-audited prior comments + inherited passive-monitor framing + asymmetric reply to multi-point offers + un-read prior comments by domain authorities each cost reach.
 
 ## References
 

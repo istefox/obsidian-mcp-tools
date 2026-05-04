@@ -6,6 +6,29 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — upstream #68 misframing + 5ª rule (Authority disambiguation)
+
+**Trigger**: utente flagga "su #68 c'è un utente che mi sembra ci abbiamo risposto in modo piccato". Diagnosi: l'utente piccato è **coddingtonbear** (maintainer Local REST API), e il piccato è giustificato perché io ho **propagato per la seconda volta** un framing errato che lui aveva già corretto sul thread.
+
+**Sequenza dei fatti**:
+
+1. **2026-02-22 coddingtonbear** (autorità su LRA): chiarisce che non c'è bug in LRA. La differenza nei response shape è semplicemente authentication: client non autenticato → response shorter, client autenticato → response includes `apiExtensions`/`certificateInfo`. Diagnosi corretta.
+2. **2026-04-21 istefox** (batch boilerplate): "fixed in fork v0.3.0 commit 939f167" — ignorato il chiarimento di coddingtonbear, accettato il framing originale di rhm2k come se LRA fosse il problema.
+3. **2026-05-04 19:42 istefox** (stale-claim audit follow-up): ripetuto il misframing — "the `apiExtensions` / `certificateInfo` validation that broke against LRA `v3.4.x` is no longer on the hot path". Doppiato l'errore.
+4. **2026-05-04 19:48 coddingtonbear** (6 minuti dopo): risposta piccata + giustificata — "I'm the person responsible for LRA. Nothing changed in v3.4.x. The problem is the obvious thing: whoever is using the API has not provided a valid API key."
+
+**Action presa**:
+
+1. **Correzione esplicita postata** ([upstream #68 comment 4374038580](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/68#issuecomment-4374038580)): apologies + acknowledgment errore + correzione del record. Concretamente: (a) niente cambiò in LRA `v3.4.x`, (b) il `0.3.0` commit `939f167` era hardening del Bearer-token authentication wiring side-MCP, non fix LRA, (c) `0.4.x` muove ad architettura in-process per 19/20 tools, ma è change architettonico non fix di un bug LRA che non esisteva. Tono contrito, non obsequioso, technical-precise.
+
+2. **Nuova rule 5 aggiunta a `CLAUDE.md` outreach methodology**: **Authority disambiguation rule** — read the full comment thread, not just the body. Se un domain authority (maintainer di upstream dependency, original bug reporter, upstream maintainer su proprio repo) ha già disambiguato il framing in un comment precedente, il reply MUST acknowledge la disambiguation invece di re-asserire il framing originale. Concrete check pre-post: skim ogni comment prior, identify reply da people whose repo/project è referenced nell'issue body, mirror loro framing.
+
+**Lesson learned**: il rule esistente "full body read + code grep" copriva il **body** dell'issue ma NON i **comment** già presenti. Un domain authority che disambigua DEVE essere acknowledged, non sovrascritto. Failure mode complementare a quelli già visti — la 5° rule colma il gap "full thread reading" che era assunto dalla rule originale ma non esplicito.
+
+**Failure-mode coverage 24h ora COMPLETO con 5 rule**: lazy skip / since-filter blind spot / un-audited prior comments / inherited passive-monitor framing / asymmetric multi-point reply (con explicit-thanks layer) / un-read prior comments by domain authorities. Le 5 rule capturano tutto lo spectrum visto.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 multi-point offer ack + explicit thanks + 4ª rule expanded
 
 **Trigger 1**: utente flagga che mia reply su upstream #83 ([comment 4373359535](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4373359535)) NON ha acknowledged adeguatamente l'offer multipoint di folotp. Folotp aveva enumerato 3 punti (debug build con boundary scan logs, verify 4 variants pre-cut, additional variants on request); io ho coperto **solo parzialmente** punto 1 (focus diverso = `vault.on('modify')` invece di boundary scan) e **silently dropped** punti 2 e 3.
