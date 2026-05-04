@@ -49,6 +49,8 @@ Folotp ha **eseguito la mia outreach suggestion** di stamattina su upstream #82 
 
 **Pipeline attesa**: 1-2 PR nelle prossime 1-2 settimane (`get_recent_files` o `list_tags` come primo). Probabilità conversione completa (5-10 PR totali): salita da ~60% a ~75% post-closure-commit.
 
+**Acknowledgment**: lasciato 👍 reaction sulla closure comment (id `4372519873`, reaction `353335946`) — chiusura del loop senza notifica rumorosa al thread. No comment di follow-up postato (già ringraziato substantivamente nel reply 13:27Z; secondo "thanks" su PR chiusa = noise > value). **Prossimo touchpoint con marcoaperez**: review veloce e accurato sulla sua prima PR sul fork.
+
 ### Methodology validation
 
 Pattern outreach validato due volte oggi: (1) folotp porta una RFC dal mio redirect suggestion in <1h; (2) marcoaperez offre upstream-from-his-fork dopo per-feature triage. **Outreach con per-feature triage + concrete workflow path > generic redirect**.
