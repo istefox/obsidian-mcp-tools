@@ -1,8 +1,42 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-03 pomeriggio (post-beta.3 cut + decisione Glama listing).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-04 mattina (folotp round 3 ricevuto, EXDEV-oss doubled-down — context switch al Mac ufficio).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-04 (carry-over al Mac ufficio)
+
+**Inputs ricevuti durante la notte (2026-05-03 19:10Z → 2026-05-04 01:27Z):**
+
+1. **Folotp round 3 SOAK COMPLETATO** (2026-05-04 01:25Z, su #54). Soak su `0.4.0-beta.3` via Claude Cowork inside Claude Desktop `1.5354.0` (build `9a9e3d`) + `npx mcp-remote` bridge. Verdetti targeted: ✅ #73 PASS (compat shim), ✅ #20 PASS (path field), ✅ #19 PASS (message propagation), ❌ **#74 FAIL** sul Cowork+`mcp-remote` chain (collapse 3→2 prefix invece di 3→1). Carryover regression family vs 0.3.x: ✅ #12, #13, H2-root reject, stat field, block-in-table 400, YAML auto-quote. 🟡 H2 nested replace blank-line consumption persiste (carryover beta.1) → folotp ha filed **issue #76** (cosmetic, candidate 0.4.1).
+
+2. **#74 — diagnosi tecnica di folotp** (qualità altissima, reverse engineering wire shape su #74 stesso 2026-05-04 01:25Z): registry hoist HA peelato un prefix (registry's own wrap), ma resta un secondo prefix con due possibili fonti — **(a)** `mcp-remote` materializza `isError: true` come `throw new McpError` (`message = content[0].text`), aggiungendo proprio `MCP error -<code>:` prefix; **(b)** il `content[0].text` del registry ANCORA porta la stringa `MCP error -<code>:` da upstream del catch (concatenazione di `McpError.message` invece del bare body). **Smoke check discriminante proposto da folotp**: `patch_vault_file` array-replace fail-loud contro **MCP Inspector** (envelope verbatim, no JS Error materialization). Tre rami:
+   - Inspector single prefix in content text → bug downstream `mcp-remote`/Cowork, server clean → **beta.3 può andare a 0.4.0 stable**
+   - Inspector zero prefix → entrambi i prefix client-side → **beta.3 può andare a 0.4.0 stable**
+   - Inspector double prefix → `content[0].text` ancora sporco → server bug, hoist incompleto → **serve beta.4**
+
+3. **Issue #76 nuova** (folotp, 2026-05-04 01:27Z): `patch_vault_file targetType:"heading"` replace consumes trailing blank-line. Cosmetic, Linter normalizza on UI save. Repro pulito. **Triage**: bug + cosmetic, milestone 0.4.1 (NON blocca 0.4.0 stable).
+
+4. **EXDEV-oss pattern peggiorato — 3° colpo in 24h** (2026-05-03 19:10Z + 19:15Z, dopo replica B 14:37Z). Ha **cross-postato testo identico byte-per-byte** su **#71 (thread di grimlor!)** e **#54** — claim "plugin fails to load in Obsidian on Node.js v24, works on v20". Architetturalmente errato per la 3a volta: il plugin gira dentro Obsidian Electron renderer (Node bundle interno), NON dipende dal Node host; solo `mcp-remote` (CLI Anthropic, downstream del plugin) usa Node host installato. Pattern bot/AI engagement confermato beyond reasonable doubt: rate-limiter (#54 14:29Z) → cross-browser/mobile (#54 09:25Z) → Node v24 cross-post (#54+#71 19:10/15Z), tutti tre confutati architetturalmente.
+
+**Azioni pianificate al Mac ufficio (in ordine):**
+
+- **A. Smoke check Inspector** (10-15 min, deterministico). Vault TEST già setup, `mcp-tools-istefox` 0.4.0-beta.3 simlinkato. Comando: `cd packages/mcp-server && bun run inspector` → punta a `http://127.0.0.1:27200/mcp` con bearer token (auto-discovery vedi `reference_vault_and_api_key.md`) → repro `patch_vault_file` array-replace fail-loud (`targetType: frontmatter`, `target: tags`, plain string content on array-valued field, fixture pulito tipo `Tests/array-frontmatter.md` con `tags: [a, b]`) → osserva content text del JSON-RPC response in Inspector. Risultato deterministico → decide stable cut vs beta.4.
+- **B. Risposta a folotp su #54** (post-A): acknowledge round 3 + verdetto sul #74 in base allo smoke A + carryover wins. Tono peer technical, riconoscere quality dell'analisi.
+- **C. Triage issue #76**: aggiungere label `bug` + `cosmetic` + milestone `0.4.1` (post-stable). Niente fix urgente.
+- **D. Risposta EXDEV-oss su #71 + #54** (judgment call sul tono):
+  - **D1**. Risposta tecnica corta + close as not-a-bug su entrambi (architettura: plugin non dipende dal Node host; `mcp-remote` è downstream).
+  - **D2** *(raccomandato)*. Comment unico su #54 + close #71 as duplicate of #54, close ENTRAMBI come not-reproducible. Tono terminale, no apertura ulteriore.
+  - **D3**. Lock conversation #54 (drastico). Valutabile se EXDEV continua post-D2.
+
+**Sequenza ottimale**: A → B → C → D2.
+
+**Posto-A decision tree concrete:**
+
+- Se A → stable cut path (rami 1/2 dell'Inspector smoke): cut `0.4.0` stable (T14 unblocked) + comment su PR #11919 ("manifest target updated to 0.4.0, please re-validate") + Discord DM jacksteamdev + README PR upstream (entrambi gated su store accept).
+- Se A → beta.4 path (ramo 3): branch `fix/74-content-text-prefix-strip`, edit `ToolRegistry.dispatch()` catch per stripping `MCP error -<code>:` da `content[0].text` prima dell'envelope, test 5+ throwing tool, bump beta.4, push, comment su #74+#54 con BRAT pin per round-4 soak. Stable cut posticipato fino round-4 clean.
 
 ---
 
@@ -45,8 +79,8 @@
 - `trig_015yL8D3VNao7nhRKjBu95ZK` — Lun 07:00 UTC, monitor PR store #11919.
 - `trig_01Dx8sZTD78yBj7buuVYP9KE` — orario, watch issue #79.
 
-**Primo prompt suggerito alla nuova sessione:**
-> "Leggi `handoff.md` e `CLAUDE.md`. Siamo a 0.4.0-beta.2 (commit `1013d11`, 2026-04-29) con branch `fix/73-templates-execute-compat-shim` pronto per beta.3 (compat shim #73 + registry isError #74, 4/4 test verdi). Folotp ha retestato beta.2 il 2026-05-01 03:49 UTC: 4/4 fix targeted verified, ma ha aperto #73 (nuova regressione `execute_template` 404). Triage in commento `4358460658` chiede 2 check di repro (jq config + ls binary path) per confermare diagnosi (residuo binary 0.3.x lato user, non bug plugin). Controlla #73 per nuovi comment di folotp dal 2026-05-01 ~04:00 UTC. Se conferma diagnosi: push branch + PR + bump beta.3 + comment su #54. Se falsifica: digging ulteriore prima di mergiare. Nel frattempo #74 è già implementato e bundlato; resta solo coperta la #73 hypothesis."
+**Primo prompt suggerito alla nuova sessione (Mac ufficio, ripresa 2026-05-04):**
+> "Leggi `handoff.md` (sezione Decisioni 2026-05-04 in cima) e `CLAUDE.md`. Siamo a `0.4.0-beta.3` (commit `bbc1289`, HEAD feat/http-embedded `b27ceaa`). Folotp ha completato round 3 il 2026-05-04 01:25Z su #54: 3 PASS targeted (#73, #20, #19) + 1 FAIL chain-specific (#74 collapse 3→2 prefix invece 3→1 sul Cowork+mcp-remote chain) + #76 nuova issue cosmetic blank-line. EXDEV-oss ha cross-postato finding sbagliato (Node v24) su #71+#54 il 2026-05-03 19:10/15Z dopo mia replica B sul rate-limiter — 3° colpo architetturalmente errato in 24h, pattern bot/AI confermato. **Sequenza azioni**: (A) smoke check `patch_vault_file` array-replace fail-loud contro MCP Inspector — risultato decide stable cut vs beta.4 (vedi decision tree in handoff); (B) risposta folotp su #54 + #74 con verdetto smoke; (C) triage #76 con label bug+cosmetic+milestone 0.4.1; (D2) close #71 as duplicate + close #54 EXDEV thread as not-reproducible. Vault TEST + bearer token auto-discovery via `reference_vault_and_api_key.md`. Inspector: `cd packages/mcp-server && bun run inspector`."
 
 ---
 
