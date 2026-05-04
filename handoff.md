@@ -6,6 +6,30 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — upstream #83 RISOLTO + fork backlog #78 aperto
+
+**Trigger**: utente chiede check (con typo: "issues #10" invece di #83). Folotp ha postato comment 19:49:15Z su upstream #83.
+
+**Folotp ha trovato la disconnect**: stava testando contro il **legacy 0.3.x stdio binary residual** sul suo Mac (mai rimosso post-migration), non contro l'HTTP-embedded path. `apiExtensions[0].version = 0.4.1` lo aveva ingannato (era PLUGIN version registrato come LRA extension, non MCP path version). Diagnostica via `lsof` / `ps aux` / `claude_desktop_config.json` inspection ha rivelato che il client routava ancora attraverso `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` legacy → Local REST API → markdown-patch. Folotp poi ha:
+1. Rieseguito config a `npx mcp-remote http://127.0.0.1:27200/mcp` con bearer token
+2. Riprovato variant C contro `xxd`-verified fixture
+3. **Output: clean**, byte-exact, no orphan, no mid-line split
+
+**Source verification mia confermata.** Bug REALE è in `coddingtonbear/markdown-patch` library (legacy path); fork `0.4.x` bypassa per design (Goal 4 "Full bypass of Local REST API"). Folotp ha **già forwardato** la variant matrix a [`coddingtonbear/markdown-patch#10`](https://github.com/coddingtonbear/markdown-patch/issues/10) (mio issue 2026-04-24) un minuto prima della reply su #83 — perfect handoff.
+
+**Mio reply su #83** ([comment 4374080147](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4374080147)): structured per applicare le rule (foundational read-fully + multi-point ack + explicit thanks for engagement shape + authority framing mirroring). Sezioni: (1) acknowledge folotp's "wasted iterations" framing è too harsh on himself — systematic walk lsof/ps aux/config = exactly the value-shape; (2) confirming diagnosis tutti tre punti suoi; (3) variant matrix forwarding già done by folotp — perfect handoff; (4) closing #83 agreement (folotp can close come OP); (5) migration gotcha worth documenting con 3 backlog candidates.
+
+**Fork backlog issue #78 aperto** ([istefox/obsidian-mcp-connector#78](https://github.com/istefox/obsidian-mcp-connector/issues/78)): "Post-migration legacy-binary detection improvements" con label `enhancement`, unmilestoned. Cattura i 3 improvements: (a) README migration step "verify legacy binary is gone" cross-platform paths, (b) plugin first-load detector con `Notice` su ogni load mentre legacy path esiste (diagnostic non-modal output channel), (c) `get_server_info` include `localTransport: { protocol, host, port, path }` per disambiguate plugin-loaded vs client-routed. Stima ~1-2h combinato. Timeline: candidate post-store-accept batch (`0.4.2`/`0.4.3` cluster) coerente con anti-tactic "no feature creep durante store review".
+
+**State change**:
+- Fork issue OPEN: 4 → 5 (added #78)
+- Upstream #83: pending close from folotp con pointer a markdown-patch#10
+- `coddingtonbear/markdown-patch#10`: now ha sia table-cell-with-code-span case (mio originale) che plain-prose case (folotp variant C), rules out syntax-shape framing assumption
+
+**Lesson learned**: la tua application del foundational principle ("read fully + analyze") postata 30 minuti fa nel `feedback_deep_analysis_before_responding.md` ha gain immediato qui — ho letto il body completo del comment folotp + verificato markdown-patch#10 + visto che la variant matrix era già forwardata + composed reply structured che acknowledged la sua admission positivamente invece di neutrally. Pattern works.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — upstream #68 misframing + 5ª rule (Authority disambiguation)
 
 **Trigger**: utente flagga "su #68 c'è un utente che mi sembra ci abbiamo risposto in modo piccato". Diagnosi: l'utente piccato è **coddingtonbear** (maintainer Local REST API), e il piccato è giustificato perché io ho **propagato per la seconda volta** un framing errato che lui aveva già corretto sul thread.
