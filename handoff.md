@@ -6,6 +6,20 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 multi-point offer ack + 4ª rule
+
+**Trigger**: utente flagga che mia reply su upstream #83 ([comment 4373359535](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4373359535)) NON ha acknowledged adeguatamente l'offer multipoint di folotp. Folotp aveva enumerato 3 punti concreti (debug build con boundary scan logs, verify 4 variants pre-cut, additional variants on request); io ho coperto **solo parzialmente** punto 1 (debug build con focus diverso = `vault.on('modify')` invece di boundary scan come chiesto) e **silently dropped** punti 2 e 3.
+
+**Action presa**:
+
+1. **Follow-up acknowledgement postato** ([comment 4374006687](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4374006687)): accept esplicitamente tutti e 3 i punti point-by-point, scope per-punto, link al flow corrente. (1) debug build con boundary scan instrumentation se i 4 disambig step non unblock; (2) BRAT-pin candidate + folotp re-run A/B/C/D pre-tag (stesso cycle che ha shippato 0.4.0-beta.3 → 0.4.1 per #76); (3) extended fixture set su `## ` fenced code / HTML comment / multi-byte chars come regression sentinel post-fix.
+
+2. **Nuova rule aggiunta a `CLAUDE.md` outreach methodology** (4ª rule): **Multi-point offer acknowledgement rule** — quando validated contributor fa offer multi-point, accept ogni punto esplicitamente point-by-point. Implicit single-point response = engagement loss signal. Default shape: enumerate accepted points in stesso ordine, pin scope per-punto, link al flow corrente.
+
+**Lesson learned**: ho subito 4 failure mode in 24h tutti capturati strutturalmente in CLAUDE.md outreach methodology: lazy skip (#83 morning), filtered enumeration (since-filter blind spot), un-audited prior comments (#61), inherited passive-monitor framing (#77), asymmetric reply to multi-point offers (#83 ack). Le 4 rule coprono il complete spectrum dei failure mode visti finora — future session vedono le rule prima di replicare.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — extended sweep + stale-claim audit batch
 
 **Trigger**: utente chiede sweep esteso su fork + upstream dopo il miss su #77. Apply le 3 rule outreach methodology in `CLAUDE.md` (sweep enumeration / stale-claim audit / validated-contributor engagement).
