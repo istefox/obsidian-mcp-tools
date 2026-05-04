@@ -6,6 +6,52 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 notte — `0.4.2` patch shipped (#80 + #81 + soak-preflight rule) 🎯
+
+**Trigger**: folotp su #54 ha postato (2026-05-04 20:11Z) la **chain mis-identification correction** del round-3 soak. Tre verdetti del round-3 cambiavano sull'actual HTTP-embedded chain: due regression real (#80 H2-root silent accept, #81 block-in-table silent destruction), una correction inversa (#74 era legacy-chain artifact, source-side mio era right). Severity #81 = 🔴 HIGH vault-safety (silent data destruction). User ha autorizzato sequence A: `0.4.2` patch immediato cycle <12h (pattern già validato per #76 → 0.4.1).
+
+**Sequence eseguita**:
+
+1. **2 fork issue filed** ([#80](https://github.com/istefox/obsidian-mcp-connector/issues/80), [#81](https://github.com/istefox/obsidian-mcp-connector/issues/81)) con minimal repros byte-exact, mitigation hints, scope tests.
+
+2. **Reply folotp #54 acknowledgment correction** ([comment 4374210965](https://github.com/istefox/obsidian-mcp-connector/issues/54#issuecomment-4374210965)): no minimize né over-apologize, confirm 2 regression filed, #74 inverse OK, #76 awaiting his retest, cycle proposal.
+
+3. **CLAUDE.md "Soak preflight: chain identification" section aggiunta**: 3 discriminators di folotp (process inventory `ps aux | grep -E 'mcp-server|mcp-remote'`, `apiExtensions` presence in `get_server_info` shape, tool namespace prefix `mcp__obsidian-mcp-tools__*` legacy vs `mcp__mcp-tools-istefox__*` HTTP-embedded). First-line check per future soak round.
+
+4. **Branch + implementation**: `fix/0.4.2-h2root-and-block-in-table-rejects` da feat/http-embedded. Edit `patchHelpers.ts` + `patchActiveFile.ts` con due nuove exported helpers: `hasParentH1(lines, headingLine)` + `isInsideTableOrFencedCode(lines, lineIdx)`. Heading branch gate: H2+ root-orphan reject con legacy chain message wording verbatim. Block branch gate: post-resolve pre-splice check, symmetric append/prepend/replace.
+
+5. **Tests aggiunti — 33 nuovi cases tutti green**:
+   - `patchHelpers.test.ts` (+21): 6 hasParentH1 + 9 isInsideTableOrFencedCode + edge cases (separator-self, alignment-colon, false-positive stray pipes, fenced-code-already-closed, out-of-range indices)
+   - `patchVaultFile.test.ts` (+8): folotp R1+R2 fixtures byte-exact + controls (H1+H2 nested succeeds, createTargetIfMissing:true bypass, level-3 parity, block-in-fenced-code, block-in-paragraph control, append/prepend symmetric)
+   - `patchActiveFile.test.ts` (+4): mirrors per active-file path
+   - Plugin suite: 641/644 (3 pre-existing `bindWithFallback` network-dependent fails, unrelated)
+
+6. **PR #82** ([istefox/obsidian-mcp-connector#82](https://github.com/istefox/obsidian-mcp-connector/pull/82)) opened con body strutturato (summary + implementation + tests + test plan + references). Squash-merged dopo user authorization (commit `6748c9b`).
+
+7. **Version bump manuale** a 0.4.2 (`manifest.json`, `package.json`, `versions.json`) + CHANGELOG.md `[0.4.2]` entry con full reasoning + Documentation section per soak preflight rule. Commit `c931585` "0.4.2", tag `0.4.2` push, CI release run [`25342329151`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25342329151) ✅ SUCCESS, asset plugin-only confermati (`main.js` 3.0MB + `manifest.json` 392B + `obsidian-plugin-0.4.2.zip` 914KB), `prerelease: false`.
+
+8. **Issue closures**: [#80](https://github.com/istefox/obsidian-mcp-connector/issues/80) + [#81](https://github.com/istefox/obsidian-mcp-connector/issues/81) chiusi con release pointer + brief implementation summary.
+
+9. **Comment folotp #54** ([4374327819](https://github.com/istefox/obsidian-mcp-connector/issues/54#issuecomment-4374327819)): release notes `0.4.2`, what's in (helpers + gates), tests summary, **round-4 verify request** con 6 step concreti (chain-id first, R1, R2, R2-fenced, #76 sanity, optional bonus variants su `## ` fenced/HTML-comment/multi-byte).
+
+**Cycle stats**:
+- Issue surface to ship: ~3.5h end-to-end
+- Pattern conferma: <12h cycle replicabile per soak-driven regression fix
+- 0.4.2 = quarto cycle iterativo (`0.4.0-beta.3` → `0.4.0` → `0.4.1` → `0.4.2`), folotp engagement ha guidato ognuno
+
+**State change**:
+- Fork OPEN issues: 6 → 4 (#80 + #81 chiusi). Restanti: #54 (testers tracker), #67 (folotp rename_vault_file RFC), #68 (folotp rename_heading RFC), #77 (folotp partial-read RFC), #78 (migration UX backlog), #79 (searchVault LRA port). Wait — questo è 6 not 4. Ricalcolo: 6 prima del close (#54, #67, #68, #77, #78, #79, #80, #81 = 8). Closed 2 → ora 6 OPEN. Coerente.
+- Branch HEAD `feat/http-embedded` = `c931585` ("0.4.2")
+- Tag stack: `0.4.0-beta.1/2/3`, `0.4.0`, `0.4.1`, **`0.4.2`** (latest stable)
+
+**Awaiting**:
+- Folotp round-4 verify (6 step proposed) — atteso entro 24-72h del BRAT auto-update
+- Marcoaperez prima PR sul fork (1-2 settimane)
+- Store team #11919 (week 3 di 2-8 tipiche)
+- coddingtonbear review `markdown-patch#10` (con folotp's variant matrix forwardata)
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — fork #79 aperto (searchVault LRA port unhardcode)
 
 **Trigger**: utente conferma "procedi" su mia proposta di tracciare formalmente il residual hardcode `searchVault.ts:6` come fork issue invece di lasciarlo solo nel handoff.
