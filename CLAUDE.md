@@ -321,7 +321,15 @@ When triaging an upstream issue (or any candidate for cross-link outreach to a t
 
 If **both** checks fail to unblock an informed position, skip is justified — and frame any comment to future-you that way ("did not verify"). If **either** unblocks one, engage with the confidence the evidence supports.
 
-**Why this rule exists:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. Lazy skip costs reach.
+### Sweep enumeration rule
+
+When doing a periodic sweep of upstream issues / PRs, **enumerate `state=open` without `since=` filter**. Filtering by recent activity excludes old-but-still-open items that have been languishing without engagement — exactly the long-tail audience most receptive to a redirect to the maintained fork. The 2026-05-04 deep review surfaced 10 never-commented items (3 issues + 7 PRs, including a 2025-05 multi-vault PR and a 2025-07 NFS-symlink bug) that the prior `since=2026-04-29` sweep had hidden. Use `gh api '/repos/.../issues?state=open&per_page=100' --jq 'sort_by(.number) | .[] | …'` for the canonical full inventory.
+
+### Stale-claim audit on prior outreach
+
+When a major release event happens (architecture pivot, stable cut, deprecation), audit prior outreach comments for claims that are no longer true under the new release. The 2026-04-21 outreach script template said "fixed in v0.3.0" for #61 (toolToggle), which was accurate at the time, but the 0.4.0 architecture pivot **hid the toolToggle UI** (Known limitations entry) — leaving the prior comment misleading for users who BRAT-default-installed `0.4.x` after the cut. Don't rewrite history; post a follow-up with the version-specific delta. Cheap honesty, prevents user disappointment downstream.
+
+**Why these rules exist:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. The same-day deep re-analysis then surfaced 10 never-commented items the morning sweep had missed (since-filter blind spot) and 1 stale Group B claim (#61 toolToggle in 0.4.0). Lazy skip + filtered enumeration + un-audited prior comments each cost reach.
 
 ## References
 
