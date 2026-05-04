@@ -6,6 +6,29 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 tarda notte — extended sweep + stale-claim audit batch
+
+**Trigger**: utente chiede sweep esteso su fork + upstream dopo il miss su #77. Apply le 3 rule outreach methodology in `CLAUDE.md` (sweep enumeration / stale-claim audit / validated-contributor engagement).
+
+**Sweep result**: ZERO orphan threads.
+- Fork issue OPEN: 4/4 covered (54 testers tracker, 67/68/77 folotp triage substantive).
+- Upstream issue OPEN: 32/32 con ≥1 mio comment.
+- Upstream PR OPEN: 22/22 (9 individual + #45 vanmarkic consolidated covers series #45-#58, #44 OAuth skip-rationalized).
+- Threads dove last comment NON è mio: solo bot noise (`netlify[bot]` su vanmarkic series) + 3 third-party comment ≥7 settimane stale (PR #49 #51 #55) — coperti dal consolidated comment 2026-05-04 su lead PR #45.
+
+**Stale-claim audit batch 2026-04-21 vs 0.4.x**: 4 candidati identificati, 3 follow-up postati con version-specific delta:
+
+- **`jacksteamdev#66`** OBSIDIAN_API_URL ignored ([comment 4373975314](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/66#issuecomment-4373975314)): old fix `0.3.3` era env var; `0.4.x` architecture pivot rimuove il concetto (in-process HTTP plugin, port range `27200..27205` auto-fallback per multi-vault).
+- **`jacksteamdev#67`** port hardcoded 27124 ([comment 4373975470](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/67#issuecomment-4373975470)): old fix `0.3.0` era platform binary; `0.4.x` no binary, in-process HTTP. **19/20 tools no LRA dependency**. `search_vault` tool **ancora hardcoded a `https://127.0.0.1:27124`** in `searchVault.ts:6` — minore residual bug per LRA non-default port. Backlog candidate per future PR fork-side.
+- **`jacksteamdev#68`** LRA v3.4.x compat ([comment 4373975594](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/68#issuecomment-4373975594)): old fix `0.3.0` era compat shim; `0.4.x` mitiga drasticamente — root-endpoint validation non sul hot path per 19/20 tools, LRA opzionale.
+- **`jacksteamdev#29`** Command Execution Support: SKIP. Capability esiste tanto su `0.3.x` quanto su `0.4.x`; il toolToggle UI hidden in `0.4.0` (Known limitations) è separate concern e non invalida il claim originale "fixed in 0.3.0".
+
+**Backlog identified**: `searchVault.ts:6` hardcoded `REST_API_URL = "https://127.0.0.1:27124"`. Fix candidate post-store-accept: leggere LRA port da `plugin.localRestApi.plugin?.settings?.port` (already accessible — il plugin reads `apiKey` via stessa path su `main.ts:89`). ~10 LOC + test. Issue OPEN da filare fork-side se folotp/altri lo segnalano.
+
+**Memo**: il processo applicato qui (sweep + stale-claim audit cross-checked against current architecture) è la stessa strategia che ha shippato 17 outreach 2026-05-04 sera + i 3 follow-up di adesso. Le 3 rule in `CLAUDE.md` outreach methodology (sweep enumeration / stale-claim audit / validated-contributor engagement) hanno coverage completa di failure mode per now.
+
+---
+
 ## Decisioni di sessione 2026-05-04 tarda notte — fork #77 substantive triage + methodology rule
 
 **Trigger**: utente domanda "controlla l'issues #77" durante sweep di follow-up. #77 era OPEN da 13h con label `enhancement` (applicato in sessione pomeriggio) ma **zero comment**. Inherited come "future scope, no commitment, passive monitor" dal prior session's triage note. Framing sbagliato.
