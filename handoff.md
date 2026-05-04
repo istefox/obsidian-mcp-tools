@@ -1,8 +1,35 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-04 pomeriggio (`0.4.0` STABLE shipped — gating switch da folotp sign-off → community store #11919 acceptance).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-04 sera (`0.4.0` stable + `0.4.1` patch shipped — comprehensive upstream outreach round).** Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-04 sera — `0.4.1` patch + comprehensive outreach round 🎯
+
+**Carry-over dalla sessione pomeriggio (0.4.0 stable cut, vedi sezione successiva).**
+
+**Lavoro chiuso in serata:**
+
+1. **Quick wins fork** — closed 3 issues shipped ma open: #58 (createTargetIfMissing flip → 0.4.0), #73 (templates 404 compat shim → beta.3), #74 (registry isError hoist → beta.3 single-prefix verified via `toolRegistry.test.ts:286-292`). Plus #70 (SECURITY.md rewrite, T14-unblocked) → **commit `6f1148a`** rewrites the doc with 0.4.x threat model (loopback HTTP, Bearer + timingSafeEqual, Origin validation, command-permissions layer + out-of-scope section).
+
+2. **🆕 0.4.1 patch cut** ([release](https://github.com/istefox/obsidian-mcp-connector/releases/tag/0.4.1), commit `30ef3c9`) — closes **#76** (heading-replace blank-line carryover from beta.1, reported by folotp round-3). Symmetric leading-separator emission in both `applyPatch` impls (`patchHelpers.ts` canonical + `patchActiveFile.ts` duplicate). 6 new test cases pinning input-with-blank, input-without-blank-Linter-normalisation, caller-supplied-blank-no-double-emit on both files. CI release run `25315293484` green, plugin-only assets. **Cycle bug-report → patch ship: <12h end-to-end.**
+
+3. **Comprehensive upstream outreach round** — the morning sweep had used `since=2026-04-29` filter which **hid old-but-still-open items**. Deep re-analysis surfaced 10 never-commented Group A items + 1 stale Group B claim. Total comments posted today on upstream: **17** (8 issues + 9 PRs).
+   - Group A new outreach: #27 robin-collins (NFS symlink 2025-07), #38 FlatulentFowl (SuperAssistant 2025-09), #82 folotp (partial-read RFC), PRs #20 mbelinky (multi-vault), #45 vanmarkic (consolidated for 11-PR series), #64 dominikblei (port env), #65 DragonVibes (schema clarity), #74 vinhltt (port flag), #75 laplaque (POSIX path root-cause).
+   - Group B stale-claim audit: #61 toolToggle — 2026-04-21 said "fixed in v0.3.0" but 0.4.0 hides UI per Known Limitations → posted version-specific follow-up with BRAT-pin guidance for 0.3.12.
+   - Skipped: #44 after-ephemera (OAuth, empty PR body), #85/#86/#83 already covered earlier.
+
+4. **CLAUDE.md `## Outreach triage methodology` expanded** ([commit `97805d2`](https://github.com/istefox/obsidian-mcp-connector/commit/97805d2)) — added two new rules from this session's failure modes: (a) **Sweep enumeration rule** — `state=open` without `since=` filter to catch long-tail; (b) **Stale-claim audit on prior outreach** — re-check old comments after major release events for accuracy under new architecture. Pre-existing "full body read + code grep" rule preserved.
+
+**Working tree state:** clean on `feat/http-embedded` HEAD `97805d2`. Tags up to `0.4.1`.
+
+**Local plugin install (Lab vault on Mac ufficio):** upgraded to 0.4.1 in serata (curl direct download from release).
+
+**No active issues blocking anything**. Open items: #54 testers tracker (active), #67/#68 folotp design RFCs (post-stable, milestone 0.4.x feature batch). Open PRs: 0.
+
+**Outreach response monitoring**: 17 comment posted today, autori potrebbero rispondere nelle prossime 24-72h. Solo passive monitor; routine settimanale store PR #11919 already covers strategic event tracking.
 
 ---
 
@@ -85,11 +112,11 @@ Routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Lun 07:00 UTC) monitorerà PR #11919 se
 
 ## 🚦 Quick Start — apertura sessione (Warp o qualsiasi terminale)
 
-**Branch attivo:** `feat/http-embedded`. Versione: **`0.4.0` STABLE** (rilasciata 2026-05-04, commit `54584d9`). Working tree pulito, allineato con `origin`.
+**Branch attivo:** `feat/http-embedded`. Versione: **`0.4.1`** (rilasciata 2026-05-04 sera, commit `30ef3c9`; patch line latest `97805d2`). Working tree pulito, allineato con `origin`.
 
 **Stato dei due track:**
-- `main` = **0.3.12** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md). Tre fix shippati 2026-04-28: #19 (templates/execute error message), #20 (path field in success), #21 (`OBSIDIAN_HOST` accetta URL).
-- `feat/http-embedded` = **`0.4.0` stable**. **Phase 1+2+3+4 chiuse, T14 chiuso.** Tre soak rounds folotp completati: round 1 (beta.1 → beta.2 fix #12/#13/#19/#20), round 2 (beta.2 → beta.3 fix #73/#74), round 3 (beta.3 → stable, all clean). #76 cosmetic carryover deferito a 0.4.1.
+- `main` = **0.3.12** stabile, BRAT-distribuito, 20 tool, intoccabile (vedi § Branch protection in CLAUDE.md). Tre fix shippati 2026-04-28: #19, #20, #21.
+- `feat/http-embedded` = **`0.4.1`**. **Phase 1+2+3+4 chiuse, T14 chiuso, primo patch shipped.** Tre soak rounds folotp completati (beta.1→beta.2→beta.3→stable). 0.4.1 patch chiude #76 (heading-replace blank-line carryover, cosmetic, cycle report→ship <12h).
 
 **Prossimi passi concreti — TUTTI gated su community store #11919 acceptance:**
 
@@ -143,17 +170,18 @@ Routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Lun 07:00 UTC) monitorerà PR #11919 se
 - **Display name:** "MCP Connector".
 - **Branch attivi (vedi § Branch protection in CLAUDE.md):**
   - `main` = **0.3.12** stabile (PROTETTO, intoccabile)
-  - `feat/http-embedded` = **`0.4.0` STABLE** (Phase 1+2+3+4 chiuse, T14 chiuso 2026-05-04 pomeriggio; gating ora su community store #11919 acceptance per le azioni di outreach)
+  - `feat/http-embedded` = **`0.4.1`** (Phase 1+2+3+4 chiuse + T14 chiuso 2026-05-04 pomeriggio + patch 0.4.1 chiuso 2026-05-04 sera; gating outreach pubblico ora su community store #11919 acceptance)
 - **Remote setup canonico:**
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git`
   - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, dichiarato unmaintained 2026-04-24)
-- **Ultimo commit pushato su `feat/http-embedded` (2026-05-04 pomeriggio):** **`54584d9`** (`0.4.0`). Tag `0.4.0` sullo stesso commit.
+- **Tag latest stable:** `0.4.1` su commit `30ef3c9`. HEAD branch `97805d2` (CLAUDE.md outreach methodology expansion, post-tag).
 - **Note CLI**: `gh` di default risolve sul remote `upstream` (jacksteamdev/obsidian-mcp-tools) — usare sempre `gh ... --repo istefox/obsidian-mcp-connector` per release/run/issue del fork.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
 | Versione | Data | Note |
 |---|---|---|
+| **`0.4.1`** | 2026-05-04 sera | **Patch line.** Commit `30ef3c9`. Tag `0.4.1`. CI Release run `25315293484` ✅. Asset plugin-only: `main.js` 3.0MB + `manifest.json` 389B + `obsidian-plugin-0.4.1.zip` 914KB. Closes #76 (heading-replace leading blank-line, cosmetic carryover from beta.1) — symmetric leading-separator fix in both `applyPatch` impls. 6 new test cases. Cycle report→ship <12h. |
 | **`0.4.0`** | 2026-05-04 pomeriggio | **STABLE** — release pubblica primaria. Cut da `bbc1289` (= `0.4.0-beta.3`) con CHANGELOG finalize + version bump only. Commit `54584d9`. Tag `0.4.0`. CI Release run `25302713434` ✅. Asset plugin-only: `main.js` 3.0MB + `manifest.json` 389B + `obsidian-plugin-0.4.0.zip` 914KB. `prerelease: false`. 613/613 plugin tests verdi. Tre soak rounds folotp completati 2026-04-28/05-01/05-04. Closes Phase 4. |
 | `0.4.0-beta.3` | 2026-05-03 | Pre-release. Bundle PR #75 = #73 (compat shim `POST /templates/execute` 404 — residuo binary 0.3.x lato user) + #74 (registry-level `isError` hoist per double-prefix collapse). 31 nuovi test. CI release verde. |
 | `0.4.0-beta.2` | 2026-04-29 mattina | Pre-release. Folotp post-beta.1 fix batch (PR #69): #12 replace array→scalar, #13 append/prepend array structure flattening, #19 double-prefix error message, #20 missing `path` in execute_template response + heading replace blank-line + `get_vault_file format:json` stat field. 528+ test verdi. |
