@@ -6,6 +6,32 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 notte tarda — folotp #67 + #68 stale-claim audit + cluster ordering
+
+**Trigger**: utente chiede "controlla #67 se c'è qualcosa da fare". Foundational rule applied: lettura completa thread (body folotp + 1 mio comment substantive 2026-04-29). Identificata stale-claim — mio commento del 2026-04-29 diceva "target it for `0.4.1`" ma non è successo (0.4.1 = #76 cosmetic, 0.4.2 = #80+#81 vault-safety, niente feature shippato). Plus #68 sister RFC ha stesso pattern — mio commento 2026-04-29 diceva "target `0.4.2` or `0.4.3`" anch'esso stale.
+
+**Action presa**:
+
+1. **Stale-claim audit comment su #67** ([comment 4374387410](https://github.com/istefox/obsidian-mcp-connector/issues/67#issuecomment-4374387410)): timeline update con 3 cuts shipped (0.4.0/0.4.1/0.4.2 soak-driven), design contract stato (intact), cluster picture (5 fork issue post-store-accept), pre-write commitment esteso da #77 a #67 ("smallest wins first" pattern allineato a marcoaperez closure). Verified `renameVaultFile.ts` non esiste — site libero.
+
+2. **Stale-claim audit comment su #68** ([comment 4374393170](https://github.com/istefox/obsidian-mcp-connector/issues/68#issuecomment-4374393170)): sister update con stessa timeline rationale, design contract intact (Option A confirmed, 7 edge cases stand), cluster ordering smallest-first explicit (#79 → #78 → #67 → #77 → #68 last per size), pre-write **partial** (schema + handler stub OK pre-merge, walker + edge-case fixtures wait per focused review). Verified `headingRename.ts` + sibling test/wrapper non esistono — site libero.
+
+**Cluster ordering consolidato** (post-store-accept implementation phase, ordered smallest-first):
+
+| # | Scope | Effort | Pre-write status |
+|---|---|---|---|
+| #79 | `search_vault` LRA port unhardcode | ~10-15 LOC | Pending |
+| #78 | Migration UX (README + first-load Notice + get_server_info field) | ~1-2h | Pending |
+| #67 | `rename_vault_file` | ~30 LOC | Pre-write committed |
+| #77 | `get_vault_file_partial` | ~80-120 LOC | Pre-write committed |
+| #68 | `rename_heading` (link-rewriting + 7 edge cases) | 1.5-2 days | Pre-write **partial** (schema + handler stub, walker waits) |
+
+Plus quando marcoaperez ships PR (1-2 settimane atteso): 5+ tools batch (`get_recent_files`, `list_tags`, `get_document_map`, `get_periodic_note` family, `execute_dataview_query`, `get_vault_files`).
+
+**Lesson learned applied**: la rule "stale-claim audit on prior outreach" (CLAUDE.md outreach methodology rule 2) ora applicata anche a internal issue threads, non solo upstream batch outreach. Trigger: ogni timeline statement nel mio comment storico vs. realtà degli ship — quando diverge, transparent update protegge il public record + folotp's trust.
+
+---
+
 ## Decisioni di sessione 2026-05-04 notte — `0.4.2` patch shipped (#80 + #81 + soak-preflight rule) 🎯
 
 **Trigger**: folotp su #54 ha postato (2026-05-04 20:11Z) la **chain mis-identification correction** del round-3 soak. Tre verdetti del round-3 cambiavano sull'actual HTTP-embedded chain: due regression real (#80 H2-root silent accept, #81 block-in-table silent destruction), una correction inversa (#74 era legacy-chain artifact, source-side mio era right). Severity #81 = 🔴 HIGH vault-safety (silent data destruction). User ha autorizzato sequence A: `0.4.2` patch immediato cycle <12h (pattern già validato per #76 → 0.4.1).
