@@ -337,3 +337,201 @@ describe("patch_vault_file tool", () => {
     expect(result.content[0].text).toMatch(/block.*not found|unresolved/i);
   });
 });
+
+// ─── Regression rejects: 0.4.x parity with 0.3.x legacy chain ─────────────
+//
+// Both surfaced by folotp during the round-3 retest on the actual
+// HTTP-embedded chain after the chain mis-identification was corrected
+// (jacksteamdev/obsidian-mcp-tools#83). See fork issues #80 and #81.
+
+describe("patch_vault_file — H2-root reject (#80)", () => {
+  test("rejects level-2 root-orphan heading replace when createTargetIfMissing=false (folotp R1)", async () => {
+    // Folotp's fixture verbatim: a root-level H2 with no H1 parent.
+    setMockFile("Notes/r1.md", "## RootHeading\n\nBody content.\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r1.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "RootHeading",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/level-2 heading at the root/i);
+    // File content must be unchanged.
+    const file = app.vault.getAbstractFileByPath("Notes/r1.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    expect(final).toBe("## RootHeading\n\nBody content.\n");
+  });
+
+  test("succeeds on H2 nested under H1 (control: not root-orphan)", async () => {
+    setMockFile("Notes/r1c.md", "# Top\n\n## Sub\n\nBody.\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r1c.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "Sub",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("bypasses reject when createTargetIfMissing=true (default for heading)", async () => {
+    setMockFile("Notes/r1b.md", "## RootHeading\n\nBody.\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r1b.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "RootHeading",
+        createTargetIfMissing: true,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("rejects level-3 root-orphan heading symmetrically (parity)", async () => {
+    setMockFile("Notes/r1d.md", "### Deep\n\nBody.\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r1d.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "Deep",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/level-3 heading at the root/i);
+  });
+});
+
+describe("patch_vault_file — block-in-table / fenced-code reject (#81)", () => {
+  test("rejects block-in-table replace and preserves the file (folotp R2)", async () => {
+    // Folotp's fixture verbatim. The metadataCache reports the block at the
+    // data-row line — Obsidian newer versions do index inside-table blocks
+    // (the legacy "tables aren't indexed" comment in #71 has shifted),
+    // which is what made this regression surface in the first place.
+    const fixture =
+      "## Section\n\n| Col | Data |\n| --- | --- |\n| a   | b ^cell-id |\n";
+    setMockFile("Notes/r2.md", fixture);
+    setMockMetadata("Notes/r2.md", {
+      blocks: {
+        "cell-id": { startLine: 4, endLine: 4 },
+      },
+    });
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r2.md",
+        operation: "replace",
+        targetType: "block",
+        target: "cell-id",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+    // File content must be unchanged — this is the vault-safety property.
+    const file = app.vault.getAbstractFileByPath("Notes/r2.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    expect(final).toBe(fixture);
+  });
+
+  test("rejects block-in-fenced-code replace symmetrically", async () => {
+    const fixture =
+      "## Section\n\n```\ncode line ^block-id\n```\n\nEnd.\n";
+    setMockFile("Notes/r2f.md", fixture);
+    setMockMetadata("Notes/r2f.md", {
+      blocks: {
+        "block-id": { startLine: 3, endLine: 3 },
+      },
+    });
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r2f.md",
+        operation: "replace",
+        targetType: "block",
+        target: "block-id",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+    const file = app.vault.getAbstractFileByPath("Notes/r2f.md");
+    if (!file) throw new Error("expected file");
+    expect(await app.vault.read(file as never)).toBe(fixture);
+  });
+
+  test("succeeds on block in normal paragraph (control)", async () => {
+    setMockFile(
+      "Notes/r2c.md",
+      "## Section\n\nFirst paragraph.\n^my-block\n\nSecond.\n",
+    );
+    setMockMetadata("Notes/r2c.md", {
+      blocks: {
+        "my-block": { startLine: 2, endLine: 3 },
+      },
+    });
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r2c.md",
+        operation: "replace",
+        targetType: "block",
+        target: "my-block",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("rejects symmetrically on append/prepend (gate runs before op dispatch)", async () => {
+    const fixture =
+      "## Section\n\n| Col | Data |\n| --- | --- |\n| a   | b ^cell-id |\n";
+    setMockFile("Notes/r2a.md", fixture);
+    setMockMetadata("Notes/r2a.md", {
+      blocks: {
+        "cell-id": { startLine: 4, endLine: 4 },
+      },
+    });
+    const app = mockApp();
+    const r = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r2a.md",
+        operation: "append",
+        targetType: "block",
+        target: "cell-id",
+        createTargetIfMissing: false,
+        content: "X",
+      },
+      app,
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/markdown table or fenced code block/i);
+  });
+});

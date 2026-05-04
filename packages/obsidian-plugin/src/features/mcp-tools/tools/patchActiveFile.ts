@@ -3,6 +3,8 @@ import type { App, TFile } from "obsidian";
 import {
   resolveHeadingPath,
   findBlockPositionFromCache,
+  hasParentH1,
+  isInsideTableOrFencedCode,
   normalizeAppendBody,
   planFrontmatterReplace,
   planFrontmatterAppend,
@@ -167,6 +169,27 @@ export async function applyPatch(
       }
     }
 
+    // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
+    // Mirror of the gate in services/patchHelpers.ts:applyPatch — see fork #80,
+    // jacksteamdev/#83. The two applyPatch impls are duplicated; the shared
+    // hasParentH1 helper keeps the policy in one place.
+    if (
+      headingLine !== -1 &&
+      headingLevel >= 2 &&
+      !createIfMissing &&
+      !hasParentH1(lines, headingLine)
+    ) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Heading "${args.target}" is a level-${headingLevel} heading at the root of the file with no level-1 (#) parent. Refusing to patch a root-orphan heading; the section boundary is ambiguous. Add an explicit level-1 heading or pass createTargetIfMissing:true to bypass.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
     // Find end of this heading's section: next heading at same-or-higher level.
     let sectionEnd = lines.length;
     for (let i = headingLine + 1; i < lines.length; i++) {
@@ -242,6 +265,21 @@ export async function applyPatch(
       const normalized = normalizeAppendBody(args.content, args.operation);
       await app.vault.modify(file, fileContent + normalized);
       return { content: [{ type: "text", text: "OK" }] };
+    }
+
+    // 0.3.x parity: reject when block resolves inside a table or fenced code
+    // block. Mirror of the gate in services/patchHelpers.ts:applyPatch —
+    // see fork #81, jacksteamdev/#83.
+    if (isInsideTableOrFencedCode(lines, pos.startLine)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Block "^${args.target}" resolved to line ${pos.startLine + 1} but it is inside a markdown table or fenced code block. Refusing to patch — replacing or splicing this region would corrupt the surrounding structure. Move the block id outside the table/code block to make it patchable.`,
+          },
+        ],
+        isError: true,
+      };
     }
 
     if (args.operation === "append") {

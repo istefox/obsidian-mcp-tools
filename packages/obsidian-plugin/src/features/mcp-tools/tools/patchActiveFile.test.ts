@@ -263,4 +263,91 @@ describe("patch_active_file tool", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/no active file/i);
   });
+
+  // ─── Regression rejects: 0.4.x parity with 0.3.x legacy chain ─────────
+  // Mirrors the gates in services/patchHelpers.ts (used by patch_vault_file).
+  // Both surfaced by folotp during the round-3 retest after the chain
+  // mis-identification was corrected (jacksteamdev/obsidian-mcp-tools#83).
+  // See fork issues #80 (H2-root) and #81 (block-in-table/fenced-code).
+
+  test("#80: rejects level-2 root-orphan heading replace when createTargetIfMissing=false", async () => {
+    setMockFile("a.md", "## RootHeading\n\nBody content.\n");
+    setMockActiveFile("a.md");
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "RootHeading",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app: mockApp(),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/level-2 heading at the root/i);
+  });
+
+  test("#80: succeeds on H2 nested under H1 (control)", async () => {
+    setMockFile("a.md", "# Top\n\n## Sub\n\nBody.\n");
+    setMockActiveFile("a.md");
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "Sub",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app: mockApp(),
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("#81: rejects block-in-table replace and preserves the file", async () => {
+    const fixture =
+      "## Section\n\n| Col | Data |\n| --- | --- |\n| a   | b ^cell-id |\n";
+    setMockFile("a.md", fixture);
+    setMockMetadata("a.md", {
+      blocks: { "cell-id": { startLine: 4, endLine: 4 } },
+    });
+    setMockActiveFile("a.md");
+    const app = mockApp();
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "block",
+        target: "cell-id",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+    const file = app.vault.getAbstractFileByPath("a.md");
+    if (!file) throw new Error("expected file");
+    expect(await app.vault.read(file as never)).toBe(fixture);
+  });
+
+  test("#81: rejects block-in-fenced-code replace symmetrically", async () => {
+    const fixture =
+      "## Section\n\n```\ncode line ^block-id\n```\n\nEnd.\n";
+    setMockFile("a.md", fixture);
+    setMockMetadata("a.md", {
+      blocks: { "block-id": { startLine: 3, endLine: 3 } },
+    });
+    setMockActiveFile("a.md");
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "block",
+        target: "block-id",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app: mockApp(),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+  });
 });

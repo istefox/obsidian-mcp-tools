@@ -120,6 +120,103 @@ export function findBlockReferenceInContent(
 }
 
 /**
+ * Detect whether a level-2-or-deeper heading at the given line has a
+ * level-1 (#) parent above it. Used by the heading branch of `applyPatch`
+ * to reject root-orphan H2+ headings when `createTargetIfMissing=false`,
+ * matching the `0.3.x` legacy chain behavior (Local REST API + markdown-patch
+ * indexer enforced this implicitly; the in-process port missed the gate
+ * on the `0.4.0` rewrite). See fork issue #80 + folotp's round-3 retest on
+ * the actual HTTP-embedded chain.
+ *
+ * Args:
+ *   lines: The file content split on `\n` (already a per-line array).
+ *   headingLine: 0-indexed line where the target heading was resolved.
+ *
+ * Returns:
+ *   true if any line in `lines[0..headingLine-1]` is a level-1 heading
+ *   (matches `/^#\s/`), false otherwise.
+ */
+export function hasParentH1(lines: string[], headingLine: number): boolean {
+  for (let i = 0; i < headingLine; i++) {
+    if (/^#\s/.test(lines[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * Detect whether a given line is inside a markdown table (between a header
+ * row and the surrounding data rows, with a `|---|...|` separator) or
+ * inside a fenced code block (between matching ``` markers). Used by the
+ * block branch of `applyPatch` to reject block references resolved inside
+ * structural contexts that the splice logic cannot safely modify — the
+ * `0.3.x` legacy chain enforced this via markdown-patch's indexer (HTTP
+ * 400 invalid-target); the in-process port missed it on the `0.4.0`
+ * rewrite, leading to silent destruction of the surrounding table when
+ * `^block-id` resolves inside a table cell. See fork issue #81 + folotp's
+ * round-3 retest on the actual HTTP-embedded chain.
+ *
+ * Detection rules:
+ * - **Fenced code**: count ``` markers in `lines[0..lineIdx-1]`. Odd count
+ *   means `lineIdx` is inside an open fence.
+ * - **Table**: `lines[lineIdx]` must itself be a table row (starts with
+ *   `|`, ends with `|`); then walk up and walk down looking for a
+ *   separator row (`|---|...|` shape) without crossing a blank line or
+ *   non-table line. Either direction matching is sufficient — a block
+ *   reference can sit on the header row above the separator, on the
+ *   separator itself (degenerate but possible), or on any data row below.
+ *
+ * False-positive guard: a stray line starting with `|` in plain prose
+ * (e.g. an indented quote) without a separator above or below returns
+ * false — the table check requires the structural separator signature.
+ *
+ * Args:
+ *   lines: The file content split on `\n` (already a per-line array).
+ *   lineIdx: 0-indexed line where the block reference was resolved.
+ *
+ * Returns:
+ *   true if `lineIdx` is structurally inside a table or fenced code block,
+ *   false otherwise.
+ */
+export function isInsideTableOrFencedCode(
+  lines: string[],
+  lineIdx: number,
+): boolean {
+  if (lineIdx < 0 || lineIdx >= lines.length) return false;
+
+  // Fenced code block: count ``` markers up to lineIdx.
+  let inFence = false;
+  for (let i = 0; i < lineIdx; i++) {
+    if (lines[i].trim().startsWith("```")) inFence = !inFence;
+  }
+  if (inFence) return true;
+
+  // Markdown table: target line itself must be a table row.
+  const target = lines[lineIdx].trim();
+  const isTableRow = (s: string) => s.startsWith("|") && s.endsWith("|");
+  // Separator row signature: pipes + dashes + optional colons (alignment),
+  // no other content. Matches `|---|---|`, `| --- | --- |`, `|:--:|---:|`.
+  const isSeparator = (s: string) =>
+    /^\|[\s:|-]+\|$/.test(s) && s.includes("---");
+  if (!isTableRow(target)) return false;
+  // Target is itself the separator row → trivially inside a table.
+  if (isSeparator(target)) return true;
+
+  // Walk up looking for separator (the data-row case: target is below it).
+  for (let i = lineIdx - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (t === "" || !isTableRow(t)) break;
+    if (isSeparator(t)) return true;
+  }
+  // Walk down looking for separator (the header-row case: target is above it).
+  for (let i = lineIdx + 1; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t === "" || !isTableRow(t)) break;
+    if (isSeparator(t)) return true;
+  }
+  return false;
+}
+
+/**
  * Find a block reference position from Obsidian's metadataCache. Preferred
  * over `findBlockReferenceInContent` because it respects the markdown-patch
  * indexer's block detection rules (e.g., does not search inside markdown
@@ -438,6 +535,22 @@ export async function applyPatch(
     // Find the end of this heading's section: the next heading of same or
     // higher level (lower number means higher in hierarchy), or EOF.
     const headingLevel = (lines[headingLine].match(/^(#+)/))?.[1].length ?? 1;
+
+    // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
+    // The legacy LRA chain enforced this via markdown-patch's indexer; the
+    // 0.4.0 in-process port missed the gate (folotp round-3 regression on
+    // the actual HTTP-embedded chain — see fork #80, jacksteamdev/#83).
+    if (headingLevel >= 2 && !createIfMissing && !hasParentH1(lines, headingLine)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Heading "${args.target}" is a level-${headingLevel} heading at the root of the file with no level-1 (#) parent. Refusing to patch a root-orphan heading; the section boundary is ambiguous. Add an explicit level-1 heading or pass createTargetIfMissing:true to bypass.`,
+          },
+        ],
+        isError: true,
+      };
+    }
     let sectionEnd = lines.length; // exclusive index of last section line
     for (let i = headingLine + 1; i < lines.length; i++) {
       const m = lines[i].match(/^(#{1,6})\s/);
@@ -521,6 +634,27 @@ export async function applyPatch(
     const body = normalizeAppendBody(args.content, args.operation);
     await app.vault.modify(file, rawContent + body);
     return { content: [{ type: "text", text: "File patched successfully" }] };
+  }
+
+  // 0.3.x parity: reject when block resolves inside a table or fenced code
+  // block. Legacy LRA chain enforced this via markdown-patch's indexer (HTTP
+  // 400 invalid-target); the 0.4.0 in-process port missed it (folotp round-3
+  // regression — silent destruction of the surrounding section/table when
+  // `^cell-id` is matched inside a `| ... |` row). See fork #81,
+  // jacksteamdev/#83. The check runs after resolution (whether via cache
+  // or regex fallback), before any splice, and applies symmetrically to
+  // append/prepend/replace — `prepend` would inject before a structural
+  // boundary the splice can't honor either.
+  if (isInsideTableOrFencedCode(lines, blockPos.startLine)) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Block "^${args.target}" resolved to line ${blockPos.startLine + 1} but it is inside a markdown table or fenced code block. Refusing to patch — replacing or splicing this region would corrupt the surrounding structure. Move the block id outside the table/code block to make it patchable.`,
+        },
+      ],
+      isError: true,
+    };
   }
 
   // Apply operation to the block region.

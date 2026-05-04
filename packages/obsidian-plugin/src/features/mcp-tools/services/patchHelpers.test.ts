@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  hasParentH1,
+  isInsideTableOrFencedCode,
   resolveHeadingPath,
   normalizeAppendBody,
   findBlockReferenceInContent,
@@ -217,5 +219,133 @@ describe("planFrontmatterAppend", () => {
       kind: "array-push",
       values: ["[unclosed"],
     });
+  });
+});
+
+describe("hasParentH1", () => {
+  test("returns true when an H1 line precedes the heading line", () => {
+    const lines = ["# Top", "", "## Section", ""];
+    expect(hasParentH1(lines, 2)).toBe(true);
+  });
+
+  test("returns false when no H1 precedes (root-orphan H2)", () => {
+    const lines = ["## RootHeading", "", "Body."];
+    expect(hasParentH1(lines, 0)).toBe(false);
+  });
+
+  test("returns false when only deeper headings precede", () => {
+    const lines = ["## Sub1", "", "### Deeper", "", "## Sub2"];
+    expect(hasParentH1(lines, 4)).toBe(false);
+  });
+
+  test("returns true for H3 with H1 grandparent (no H2 parent required)", () => {
+    const lines = ["# Top", "", "### DeepRoot"];
+    expect(hasParentH1(lines, 2)).toBe(true);
+  });
+
+  test("returns false at headingLine=0 (first line is the target)", () => {
+    const lines = ["## RootHeading", "Body."];
+    expect(hasParentH1(lines, 0)).toBe(false);
+  });
+
+  test("ignores `#` characters that are not at column 0 of a heading line", () => {
+    const lines = ["Some prose with # not-a-heading", "## Real"];
+    expect(hasParentH1(lines, 1)).toBe(false);
+  });
+});
+
+describe("isInsideTableOrFencedCode", () => {
+  test("detects line inside a 3-row markdown table (data-row position)", () => {
+    const lines = [
+      "## Section",
+      "",
+      "| Col | Data |",
+      "| --- | --- |",
+      "| a   | b ^cell-id |",
+      "",
+      "End.",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 4)).toBe(true);
+  });
+
+  test("detects line at header-row position above separator", () => {
+    const lines = [
+      "| Col | Data |",
+      "| --- | --- |",
+      "| row | val  |",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 0)).toBe(true);
+  });
+
+  test("detects separator row itself", () => {
+    const lines = [
+      "| Col | Data |",
+      "| --- | --- |",
+      "| row | val  |",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 1)).toBe(true);
+  });
+
+  test("rejects when line is in a normal paragraph (no separator nearby)", () => {
+    const lines = [
+      "## Section",
+      "",
+      "Just prose with ^block-id at the end.",
+      "",
+      "## Other",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 2)).toBe(false);
+  });
+
+  test("rejects when line starts with `|` but no separator above/below (false-positive guard)", () => {
+    const lines = [
+      "## Section",
+      "",
+      "| stray pipe content but not a real table",
+      "",
+      "## Other",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 2)).toBe(false);
+  });
+
+  test("detects line inside a fenced code block", () => {
+    const lines = [
+      "## Section",
+      "",
+      "```",
+      "code line ^block-id",
+      "```",
+      "",
+      "End.",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 3)).toBe(true);
+  });
+
+  test("rejects when fenced code block is closed before the target line", () => {
+    const lines = [
+      "## Section",
+      "",
+      "```",
+      "code line",
+      "```",
+      "",
+      "Plain prose with ^block-id.",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 6)).toBe(false);
+  });
+
+  test("detects table with alignment colons in separator", () => {
+    const lines = [
+      "| Col | Data |",
+      "|:----|----:|",
+      "| a   | b   |",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 2)).toBe(true);
+  });
+
+  test("returns false for out-of-range indices", () => {
+    const lines = ["a", "b"];
+    expect(isInsideTableOrFencedCode(lines, -1)).toBe(false);
+    expect(isInsideTableOrFencedCode(lines, 99)).toBe(false);
   });
 });
