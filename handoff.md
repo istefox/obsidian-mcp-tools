@@ -1,8 +1,43 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-04 tarda sera (response wave: folotp + marcoaperez engagement).** `0.4.0` stable + `0.4.1` patch shipped + 21 upstream outreach comments + first responses landed (1.5h post-outreach window). Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-04 tarda notte (folotp #83 disambig round 2: source verified clean, bundle drift falsificata, runtime-layer hypothesis aperta).** `0.4.0` stable + `0.4.1` patch shipped + 21 upstream outreach comments + first responses landed + #83 disambig round 2 posted. Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-04 tarda notte — folotp #83 disambig round 2 🔍
+
+**Folotp ha risposto su upstream #83** (2026-05-04 17:52Z): bug reproduces on `0.4.1`, fornisce **variant matrix di 4 case** (A canonical / B single-row / C plain prose / D code-span no-table). Variant C decisivo: prose `Original content. This refers to ## Links below.` SENZA tabella né code-span riproduce — orphan `## Links below.` post-replace. Diagnosi tecnica di folotp: regex sta lavorando senza line-start anchor effettivo, tre opzioni concrete (regex sans `^`, `g`-flag senza `m` flag walking forward, input non split su `\n` sul live path).
+
+### Source verification eseguita (option C dalla mia proposta)
+
+**Step 1 — diff source**: `git diff 30ef3c9..HEAD` su `packages/obsidian-plugin/src` **vuoto**. Source 0.4.1 = HEAD per ogni file patch-related. Doc-only commits dal tag.
+
+**Step 2 — code path inventory**: solo **3 occorrenze** della regex `#{1,6}` nel plugin source, tutte in `patchHelpers.ts` (riga 40 `resolveHeadingPath`, riga 417 leaf-name match, riga 443 boundary scan), tutte con anchor `^` su elementi per-line dopo `rawContent.split("\n")`. Nessun compat shim per `PATCH /vault/`, nessun `apiExtension` layer, `patchVaultFileHandler` delega direttamente ad `applyPatch`. **Code path live = code path unit-test**.
+
+**Step 3 — bundle integrity**: rebuild locale di `main.js` da HEAD vs shipped `0.4.1` artifact. Size delta 6 bytes, divergenza unicamente nei `__dirname`/`__filename` strings dentro `onnxruntime-web` (`/Users/stefanoferri/...` locale vs `/home/runner/work/...` CI). Pattern regex critico **bit-identical** in entrambi i bundle: `let C=$[E].match(/^(#{1,6})\s/);if(C&&C[1].length<=D){…`. **H1 (bundle drift) e H4 (different scanner) FALSIFICATE**.
+
+**Step 4 — unit-level repro su HEAD**: scritto test ad-hoc che mirrora variant C decisivo + variant A canonical di folotp byte-exact con tool-call args identici. **Entrambi i test PASS**, output byte-exact pulito (no orphan, no mid-line split). Dump rendering nei log per evidence pubblica. Test temp eliminato dopo run (working tree pulito).
+
+### Riposta su #83 ([comment 4373359535](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4373359535))
+
+Postato findings rigorosi: source verified clean, bundle drift falsificata, regex pattern bit-identical, unit-level repro byte-exact dei suoi 2 fixtures principali → output clean. **Conclusione**: bug è runtime, non source. Tre ipotesi rimaste con probabilità:
+
+- **🔴 H7. Linter (o altro auto-format) plugin attivo nel vault di folotp** — `app.vault.modify()` fires `vault.on('modify', …)`; un handler Linter/Format-on-save che ri-formatta il file producerebbe un re-read post-format invece di post-applyPatch. Variant matrix riproducendo su 4 fixtures = consistente con post-process layer agnostico al syntax shape.
+- **🟡 H8. File-on-disk encoding mismatch** (CRLF, BOM, NBSP, trailing whitespace) tra fixture descritta e bytes effettivi che `app.vault.read()` legge.
+- **🟢 H9. mcp-remote/Cowork chain mutates `content` in transit**.
+
+### Disambig request a folotp (4 step concreti, in qualunque ordine)
+
+1. `cat .obsidian/community-plugins.json` del test vault — Linter/Templater-on-save/Format-on-save sono prime suspects.
+2. Repro variant C **con Linter disabilitato** (e altri auto-formatter), leaving connector + Local REST API only. Se clean → H7 confermata.
+3. Repro variant C **via MCP Inspector** invece di Cowork + `mcp-remote` (bypass dei 3 layer client). Se clean → H9 confermata.
+4. `xxd Tests/fixture-c.md | head -20` — rules out BOM/CRLF/encoding.
+
+Plus offerta di debug build con `vault.on('modify')` listener-instrumentation per labelled trace se Linter-style culprit suspected.
+
+**Stato**: source-side stack exhaustively verified, awaiting folotp runtime evidence per localize layer. **No code action mia required** finché folotp non torna con disambig data.
 
 ---
 
