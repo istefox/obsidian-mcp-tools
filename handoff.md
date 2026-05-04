@@ -29,19 +29,25 @@ Folotp ha **eseguito la mia outreach suggestion** di stamattina su upstream #82 
 
 **Triage**: applicato `enhancement` label. Anche allineato #67/#68 (sue altre RFC) con stesso label per consistenza. Tutti unmilestoned (future scope, no commitment).
 
-### 🟢 Marcoaperez upstream PR #69 — downstream maintainer engagement
+### 🟢 Marcoaperez upstream PR #69 — CHIUSA con commit-to-fork ✅
 
-**Massimo positive outcome della giornata.** Marcoaperez (autore della PR #69 URL-encode non-ASCII headers) ha risposto al mio comment con un **inventory di 5+ tool che ha implementato sul suo downstream fork** (`marcoaperez/obsidian-mcp-tools` 0.3.4, 2026-04-14, in-house use):
+**Massimo positive outcome della giornata, sigillato alle 16:00:05Z.** Marcoaperez (autore della PR #69 URL-encode non-ASCII headers) ha risposto al mio comment con un **inventory di 5+ tool che ha implementato sul suo downstream fork** (`marcoaperez/obsidian-mcp-tools` 0.3.4, 2026-04-14, in-house use):
 
 - **Net-new tools**: `get_recent_files`, `list_tags`, `get_document_map`, `get_periodic_note` family (3 tool), `execute_dataview_query`, `get_vault_files`
 - **Behaviour additions**: auto-truncation per large reads, search-results cap, `OBSIDIAN_PORT` env var
 - **Overlap**: il suo `list_commands`/`execute_command` = nostro `list_obsidian_commands`/`execute_obsidian_command` (shape diverso, semantics simili)
 
-Stated intent: evaluate MCP Connector 0.4.x as replacement for his fork; will read `CONTRIBUTING.md` + open RFCs (#67/#68/#77 in particular); propose small focused PRs for items that fit.
+**Closure comment** (2026-05-04T16:00:05Z): *"Closing as agreed — the underlying issue is resolved by 0.4.x's in-process architecture, and any follow-up work moves to the fork. Thanks @istefox for the detailed roadmap response; **will start with the lightweight tools per your suggested order**."*
 
-**Mio reply substantive postato** ([comment 4371427847](https://github.com/jacksteamdev/obsidian-mcp-tools/pull/69#issuecomment-4371427847)) con per-feature triage in 4 categorie (overlap-shipped / strong-candidate / maybe-scope / architecturally-retired) + workflow guidance + suggested ordering (smallest-wins-first: `get_recent_files` + `list_tags` per familiarizzazione, poi `execute_dataview_query` + `get_document_map`/#77 per high-value).
+**Significato confermato**:
+1. PR upstream **chiusa** come concordato (no patch superficiale, fix strutturale 0.4.x in-process)
+2. **Commit esplicito a fork**: "any follow-up work moves to the fork"
+3. **Accetta ordering smallest-wins-first**: partirà con `get_recent_files` + `list_tags` (1-PR-each leggeri)
+4. **Secondo external contributor maintainer-grade** dopo folotp confermato
 
-**Significato strategico**: secondo external contributor maintainer-grade (dopo folotp). Se converte, 5-10 PR in pipeline + secondo soak surface. Outcome più probabile (~60%): 1-2 PR piccole nelle prossime 1-2 settimane.
+**Mio reply substantive antecedente** ([comment 4371427847](https://github.com/jacksteamdev/obsidian-mcp-tools/pull/69#issuecomment-4371427847)) con per-feature triage in 4 categorie (overlap-shipped / strong-candidate / maybe-scope / architecturally-retired) + workflow guidance + suggested ordering è quello che ha guidato la sua scelta di partire dai due lightweight.
+
+**Pipeline attesa**: 1-2 PR nelle prossime 1-2 settimane (`get_recent_files` o `list_tags` come primo). Probabilità conversione completa (5-10 PR totali): salita da ~60% a ~75% post-closure-commit.
 
 ### Methodology validation
 
