@@ -5,6 +5,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-05-04
+
+### Fixed
+
+- **`patch_vault_file` and `patch_active_file` accepted level-2-or-deeper
+  root-orphan headings silently** when `createTargetIfMissing: false`
+  (#80, reported by @folotp during the 0.4.0-beta.3 round-3 retest after
+  the chain mis-identification was corrected via `jacksteamdev/obsidian-mcp-tools#83`).
+  The 0.3.9 (#16) `detectOrphanRootHeading` reject — enforced implicitly
+  on the 0.3.x line via Local REST API's indexer — did not get ported
+  into the in-process `applyPatch` on the 0.4.0 rewrite, so a `replace`
+  call against a `## RootHeading` with no `# ParentH1` succeeded silently
+  (file body modified, no error). Severity MEDIUM (no data loss; breaking
+  vs. the 0.3.x behavior that callers rely on). Fix gates the heading
+  branch with a new exported helper `hasParentH1(lines, headingLine)` and
+  returns `isError: true` with the legacy chain's message wording
+  (`"Heading X is a level-N heading at the root of the file with no
+  level-1 (#) parent. ..."`). Bypass via `createTargetIfMissing: true`
+  preserved.
+
+- **`patch_vault_file` and `patch_active_file` silently destroyed the
+  surrounding markdown table or fenced code block** when a `block` target
+  resolved to a line inside a table cell or code fence (#81, surfaced in
+  the same retest). The 0.3.x legacy chain rejected this with HTTP 400
+  `invalid-target` via `markdown-patch`'s indexer; the in-process port
+  had no equivalent gate, so a `replace` against `^cell-id` inside a
+  `| ... |` row would splice out the entire surrounding table with no
+  error. 🔴 Severity HIGH — vault-safety. Fix introduces a new exported
+  helper `isInsideTableOrFencedCode(lines, lineIdx)` that detects both
+  fenced code (counted from open ` ``` ` markers) and markdown tables
+  (target row plus a `|---|...|` separator above or below, separated
+  only by other table rows), and gates the block branch before the
+  splice. Symmetric across `append` / `prepend` / `replace` — gate runs
+  before op dispatch.
+
+  Both fixes covered by 33 new tests across `patchHelpers.test.ts` (21
+  unit cases on the two helpers including separator-self, alignment-colon
+  separators, false-positive guards on stray pipes / fenced-code-already-closed)
+  and the two end-to-end test files (8 `patchVaultFile` cases + 4
+  `patchActiveFile` mirrors), reproducing folotp's R1 and R2 fixtures
+  byte-exact and asserting file-content preservation on reject. Both
+  `applyPatch` implementations (`services/patchHelpers.ts` canonical +
+  `tools/patchActiveFile.ts` duplicate) carry the gates; consolidation
+  of the two call sites remains a separate refactor.
+
+### Documentation
+
+- **CLAUDE.md adds a "Soak preflight: chain identification" section**
+  documenting the three discriminators folotp surfaced on
+  `jacksteamdev/obsidian-mcp-tools#83` for distinguishing the legacy
+  0.3.x stdio chain from the 0.4.x in-process HTTP-embedded chain:
+  process inventory (`ps aux | grep -E 'mcp-server|mcp-remote'`),
+  `get_server_info` shape (`apiExtensions[]` present → legacy, absent
+  → HTTP-embedded), and tool namespace prefix
+  (`mcp__obsidian-mcp-tools__*` legacy vs. `mcp__mcp-tools-istefox__*`
+  HTTP-embedded). First-line check for any future soak round so chain-
+  mismatch is caught at the report shape, not three rounds in.
+
 ## [0.4.1] — 2026-05-04
 
 ### Fixed
