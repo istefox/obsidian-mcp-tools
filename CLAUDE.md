@@ -312,6 +312,20 @@ Items resolved and out of "pending":
 - ~~Phase 2 — Tool handler migration — landed in 0.4.0-alpha.2/alpha.3.~~
 - ~~Phase 3 — Native semantic search — landed in 0.4.0-alpha.3 / fixed in alpha.4 (`bun.config.ts` redirect onnxruntime-node→onnxruntime-web for Electron renderer).~~
 
+## Soak preflight: chain identification first
+
+When a soak round comes in (folotp / marcoaperez / grimlor / any external tester), confirm **which MCP path the client is actually exercising before interpreting any verdict**. The fork now ships in two distinct architectures (`0.3.x` legacy stdio binary + Local REST API + `markdown-patch`, vs. `0.4.x` in-process HTTP-embedded), and a tester can have both installed simultaneously: the legacy upstream `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` persists from any pre-fork install unless explicitly deleted, and `claude_desktop_config.json` is not auto-rewritten by the fork install. A tester who BRAT-pinned the fork on top of a `0.3.x` upstream install can have Cowork/Claude Desktop routing through the legacy binary while the fork plugin is concurrently loaded — which makes any verdict about "the fork's behavior" suspect until the chain is identified.
+
+Three discriminators, applied as a first-line check in any soak comment **before** posting verdicts:
+
+1. **Process inventory** — `ps aux | grep -E 'mcp-server|mcp-remote'`. Legacy stdio chain shows the upstream binary process; HTTP-embedded chain shows `npx mcp-remote` (or no bridge process at all if the client speaks streamable-http natively).
+2. **`get_server_info` shape** — call the tool from the client. **Legacy chain returns `apiExtensions[]`** (the LRA extension manifest list); **HTTP-embedded returns no `apiExtensions` field** (the in-process server doesn't expose LRA's manifest concept). Field absence is a positive HTTP-embedded marker.
+3. **Tool namespace prefix on the client side** — `mcp__obsidian-mcp-tools__*` (legacy upstream binary) vs. `mcp__mcp-tools-istefox__*` (HTTP-embedded fork plugin). Visible in the client's tool list before any tool is called.
+
+A soak verdict that doesn't cite at least one of these as confirmed-positive for the intended chain is provisional. The 2026-05-04 round-3 soak by folotp on `0.4.0-beta.3` mis-attributed three of its verdicts (H2-root reject, block-in-table reject, `#74` double-prefix) because the chain identification was inferred from `claude_desktop_config.json` content rather than runtime-checked; the disconnect was traced via `jacksteamdev/obsidian-mcp-tools#83`. Two of the three turned out to be real `0.4.x` regressions (filed as `#80`, `#81`), one was a legacy-chain-only artifact (`#74` resolution). Three lost cycles because the chain wasn't pinned at the start.
+
+When you ask a tester to soak a candidate cut (BRAT-pin or beta tag), include the three discriminator checks as part of the report template. When you read a soak report, scan for chain identification first; if absent, ask before drafting verdicts.
+
 ## Outreach triage methodology
 
 ### Foundational principle: read fully, analyze deeply, take the time
