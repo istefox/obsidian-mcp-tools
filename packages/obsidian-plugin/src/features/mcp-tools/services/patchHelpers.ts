@@ -451,23 +451,30 @@ export async function applyPatch(
     // We want to insert content just before sectionEnd (append) or just after
     // headingLine (prepend) or replace the whole body (replace).
     const body = normalizeAppendBody(args.content, args.operation);
-    // For `replace`, the original section body absorbed the trailing blank
-    // line that visually separated the heading we're patching from the next
-    // sibling/parent heading. When we splice `body` in and concatenate the
-    // tail starting at sectionEnd, that blank line disappears unless we
-    // re-emit it — producing `## A\n<body>\n## B` instead of the expected
-    // `## A\n<body>\n\n## B`. Only matters when the tail starts with another
-    // heading and `body` does not already end with a newline.
+    // For `replace`, the original section body absorbed both the leading
+    // blank line (between the heading and the first body line) and the
+    // trailing blank line (between the last body line and the next sibling
+    // heading) that visually separated the section. Splicing `body` in
+    // between `headingLine + 1` and `sectionEnd` without re-emitting either
+    // separator produces `## A\n<body>\n## B` instead of the expected
+    // `## A\n\n<body>\n\n## B`. We re-emit:
+    //   - a leading blank when the body does not already start with one
+    //     (Linter-correct shape; matches 0.3.x behaviour; closes #76);
+    //   - a trailing blank when the tail is another heading and the body
+    //     does not already end blank (post-beta.1 fix).
     const tailIsHeading =
       sectionEnd < lines.length && /^#{1,6}\s/.test(lines[sectionEnd]);
+    const bodyStartsBlank = body === "" || body.startsWith("\n");
     const bodyEndsBlank = body === "" || body.endsWith("\n");
     let newLines: string[];
     if (args.operation === "replace") {
-      const separator = tailIsHeading && !bodyEndsBlank ? [""] : [];
+      const leadingSeparator = bodyStartsBlank ? [] : [""];
+      const trailingSeparator = tailIsHeading && !bodyEndsBlank ? [""] : [];
       newLines = [
         ...lines.slice(0, headingLine + 1),
+        ...leadingSeparator,
         body,
-        ...separator,
+        ...trailingSeparator,
         ...lines.slice(sectionEnd),
       ];
     } else if (args.operation === "prepend") {

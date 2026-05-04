@@ -187,19 +187,28 @@ export async function applyPatch(
       lines.splice(headingLine + 1, 0, args.content);
     } else {
       // replace: swap out the section body between this heading and the next.
-      // The original body absorbed the blank line that visually separated the
-      // section from the next sibling/parent heading; without re-emitting it
-      // here we'd produce `## A\n<content>\n## B` instead of the expected
-      // `## A\n<content>\n\n## B`. Only relevant when the tail starts with
-      // another heading and `args.content` does not already end blank.
+      // The original body absorbed both the leading blank line (between the
+      // heading and the first body line) and the trailing blank line (between
+      // the last body line and the next sibling/parent heading). Splicing the
+      // new content in without re-emitting either separator produces
+      // `## A\n<content>\n## B` instead of the expected
+      // `## A\n\n<content>\n\n## B`. We re-emit:
+      //   - a leading blank when the content does not already start with one
+      //     (Linter-correct shape; matches 0.3.x behaviour; closes #76);
+      //   - a trailing blank when the tail is another heading and the content
+      //     does not already end blank (post-beta.1 fix).
       const tailIsHeading =
         sectionEnd < lines.length && /^#{1,6}\s/.test(lines[sectionEnd]);
+      const contentStartsBlank =
+        args.content === "" || args.content.startsWith("\n");
       const contentEndsBlank =
         args.content === "" || args.content.endsWith("\n");
-      const replacement =
-        tailIsHeading && !contentEndsBlank
-          ? [args.content, ""]
-          : [args.content];
+
+      const replacement: string[] = [];
+      if (!contentStartsBlank) replacement.push("");
+      replacement.push(args.content);
+      if (tailIsHeading && !contentEndsBlank) replacement.push("");
+
       lines.splice(
         headingLine + 1,
         sectionEnd - headingLine - 1,

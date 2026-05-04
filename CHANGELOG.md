@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-05-04
+
+### Fixed
+
+- **`patch_*_file` heading `replace` consumed the leading blank-line
+  separator between the patched section heading and the new body**
+  (#76, reported by @folotp during the 0.4.0-beta.3 round-3 soak).
+  The post-beta.1 batch had added the trailing-separator re-emission
+  (between the body and the next sibling heading) but missed the
+  symmetric leading separator between the heading line and the body.
+  Result: `## A\n<replacement>\n\n## B` instead of the expected
+  `## A\n\n<replacement>\n\n## B`. Cosmetic only — Linter normalises
+  on UI save — but for MCP-only edit sequences without an
+  intermediate UI save, sections collide visually in raw view and
+  downstream tools that parse by heading boundaries see a different
+  shape than what Linter would produce. Fix re-emits the leading
+  blank symmetric to the trailing one when the body does not already
+  start with one. Idempotent: caller-supplied leading newlines are
+  respected (no double-emission).
+
+  Pinned by 6 new cases across `patchVaultFile.test.ts` and
+  `patchActiveFile.test.ts` (heading replace with input leading
+  blank, without input leading blank — Linter-correct normalisation,
+  caller-supplied leading newline — no double-emit, plus parallel
+  cases on `patchActiveFile`). Both `applyPatch` implementations
+  (`services/patchHelpers.ts` and `tools/patchActiveFile.ts`) carry
+  the fix; consolidation of the two call sites remains a separate
+  refactor.
+
 ## [0.4.0] — 2026-05-04
 
 The HTTP-embedded pivot. The plugin now hosts the MCP server in-process inside Obsidian and exposes Streamable HTTP on `127.0.0.1:27200`. **No native binary shipped from this repository** — closes the supply-chain attack surface that prompted upstream's official unmaintained declaration on 2026-04-24.

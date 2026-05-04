@@ -239,9 +239,37 @@ describe("patch_vault_file tool", () => {
     expect(cache?.frontmatter?.status).toBe("draft");
   });
 
-  // ── Heading-replace blank-line preservation ───────────────────────────
+  // ── Heading-replace blank-line preservation (issue #76) ───────────────
+  //
+  // Symmetric blank-line emission on the `replace` branch: both the leading
+  // separator (between the heading line and the new body) and the trailing
+  // separator (between the new body and the next sibling heading) are
+  // re-emitted unless the content already supplies them. Matches 0.3.x
+  // behaviour and the Linter-normalised shape, so that MCP-driven edits do
+  // not diverge from UI-driven edits in raw view.
 
-  test("regression: replace on heading section preserves blank line before next heading", async () => {
+  test("issue #76: replace on heading section emits leading blank between heading and new body", async () => {
+    setMockFile("Notes/h.md", "## A\n\nold\n\n## B\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/h.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "A",
+        content: "new",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.vault.getAbstractFileByPath("Notes/h.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    // Must keep blank lines on BOTH sides of the patched body.
+    expect(final).toContain("## A\n\nnew\n\n## B");
+  });
+
+  test("issue #76: replace on heading section emits leading blank even when input has none (normalises to Linter shape)", async () => {
     setMockFile("Notes/h.md", "## A\nold\n\n## B\n");
     const app = mockApp();
     const result = await patchVaultFileHandler({
@@ -258,8 +286,33 @@ describe("patch_vault_file tool", () => {
     const file = app.vault.getAbstractFileByPath("Notes/h.md");
     if (!file) throw new Error("expected file");
     const final = await app.vault.read(file as never);
-    // Must keep the blank line between the patched section and ## B.
-    expect(final).toContain("## A\nnew\n\n## B");
+    // Even when the input had heading and body adjacent, the replace emits
+    // the Linter-correct shape — symmetric with the trailing-separator fix
+    // which already normalises regardless of input shape.
+    expect(final).toContain("## A\n\nnew\n\n## B");
+  });
+
+  test("issue #76: replace on heading section does NOT double-emit when content already starts with blank", async () => {
+    setMockFile("Notes/h.md", "## A\n\nold\n\n## B\n");
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/h.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "A",
+        content: "\nnew",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.vault.getAbstractFileByPath("Notes/h.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    // Caller-supplied leading newline is respected: do not produce
+    // `## A\n\n\nnew` (which would render as two consecutive blanks).
+    expect(final).toContain("## A\n\nnew\n\n## B");
+    expect(final).not.toContain("## A\n\n\nnew");
   });
 
   test("regression: block target with createTargetIfMissing=false on table-located block fails loud", async () => {

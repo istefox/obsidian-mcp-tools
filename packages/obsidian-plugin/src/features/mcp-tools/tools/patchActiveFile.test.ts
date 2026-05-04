@@ -184,7 +184,28 @@ describe("patch_active_file tool", () => {
     expect(cache?.frontmatter?.tags).toEqual(["existing", "new-tag"]);
   });
 
-  test("regression: heading replace preserves blank line before next heading", async () => {
+  test("issue #76: heading replace emits leading + trailing blank lines (input has leading blank)", async () => {
+    setMockFile("a.md", "## A\n\nold\n\n## B\n");
+    setMockActiveFile("a.md");
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "A",
+        content: "new",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.workspace.getActiveFile()!;
+    const final = await app.vault.read(file);
+    // Both leading and trailing blank lines preserved.
+    expect(final).toContain("## A\n\nnew\n\n## B");
+  });
+
+  test("issue #76: heading replace emits leading blank even when input has none (Linter-correct shape)", async () => {
     setMockFile("a.md", "## A\nold\n\n## B\n");
     setMockActiveFile("a.md");
     const app = mockApp();
@@ -201,7 +222,31 @@ describe("patch_active_file tool", () => {
     expect(result.isError).toBeUndefined();
     const file = app.workspace.getActiveFile()!;
     const final = await app.vault.read(file);
-    expect(final).toContain("## A\nnew\n\n## B");
+    // Symmetric with the trailing-separator fix: replace normalises
+    // regardless of input shape.
+    expect(final).toContain("## A\n\nnew\n\n## B");
+  });
+
+  test("issue #76: heading replace does NOT double-emit when content already starts with blank", async () => {
+    setMockFile("a.md", "## A\n\nold\n\n## B\n");
+    setMockActiveFile("a.md");
+    const app = mockApp();
+
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "A",
+        content: "\nnew",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.workspace.getActiveFile()!;
+    const final = await app.vault.read(file);
+    // Caller-supplied leading newline is respected.
+    expect(final).toContain("## A\n\nnew\n\n## B");
+    expect(final).not.toContain("## A\n\n\nnew");
   });
 
   test("returns error when no active file", async () => {
