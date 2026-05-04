@@ -6,6 +6,48 @@
 
 ---
 
+## Decisioni di sessione 2026-05-04 notte tarda — marcoaperez **prima PR sul fork** (PR #83 list_tags) 🎉
+
+**Trigger**: utente flagga screenshot `"This branch has conflicts that must be resolved"` — è la **prima PR di marcoaperez sul fork** ([istefox/obsidian-mcp-connector#83](https://github.com/istefox/obsidian-mcp-connector/pull/83)) — `feat(0.4): add list_tags MCP tool`. Conferma del commitment-to-fork del 2026-05-04 16:00:05Z post-`jacksteamdev/obsidian-mcp-tools#69` closure. Il "smallest-wins-first" ordering è stato rispettato: `list_tags` come 1° tool del 5+ inventory (era pari merit con `get_recent_files`).
+
+**Quality del PR (review pass)**:
+
+- **Body strutturato** con summary + why (cost analysis O(notes) vs broad/noisy alternatives) + tool surface (request/response examples) + design notes (3 trade-off discussion: no `folder` arg, cast through `unknown` rationale, sort default reasoning) + test plan (7 cases, 121/121 sibling suite).
+- **Diff: 188 LOC additive** (186/+, 2/-). 6 file: `tools/listTags.ts` (~48 LOC schema + handler), `tools/listTags.test.ts` (~84 LOC, 7 cases), `mcp-tools/index.ts` (1 import + 1 register, "Metadata" section new), `test-setup.ts` (extended con `tags` state + `setMockTags()` helper + `getTags()` mock — additive, riusabile per `get_files_by_tag` futuro), `CHANGELOG.md` ([Unreleased] entry Keep-a-Changelog), `README.md` (features bullet + tool count 20→21).
+- **Code review verdict**: clean. Schema ArkType corretto, cast `unknown` mirroring `listObsidianCommands.ts`, sort logic semplice (`localeCompare` per name, `b[1] - a[1]` per count desc), output shape coerente (`{ totalTags, tags: [{ tag, count }] }`). Test coverage adeguato per scope.
+
+**Conflict diagnosis**: marcoaperez ha branchato da `30ef3c9` (= `0.4.1` cut). Da allora `feat/http-embedded` ha shippato `0.4.2` (`6748c9b` → `c931585`) che ha aggiunto `[0.4.2]` block in CHANGELOG sotto `[Unreleased]` — sovrappone alla zona dove marcoaperez ha aggiunto `[Unreleased]` entry per `list_tags`. **Conflict ONLY on `CHANGELOG.md`** — tutti gli altri file rebase clean.
+
+**Action presa (Option B = comment-driven, non-destructive)**:
+
+1. **Local sanity rebase**: rebased branch `marcoaperez-feat-list-tags` (locally cloned from his fork via `marcoaperez` remote) onto current `feat/http-embedded` HEAD `74133fa`. Commit ora `10e06ac` (originale `11cfcad`, author `Marco Antonio Pérez <mperez@taikosolutions.com>` preservato — Taiko Solutions employee). CHANGELOG conflict resolved keeping `[Unreleased]` con list_tags entry sopra `[0.4.2]` block. Tests verdi: `7/7` listTags + `648/651` full plugin suite (3 pre-existing `bindWithFallback` unrelated). `bun run check` + `bun run build` clean.
+
+2. **Force-push BLOCKED dal sistema** (giusta ragione: rewrite history su repo terzi destructive anche con `maintainerCanModify: true`). Pivot a Option B comment-driven.
+
+3. **Substantive review comment postato** ([PR #83 comment 4374470294](https://github.com/istefox/obsidian-mcp-connector/pull/83#issuecomment-4374470294)): warm peer review (no obsequious), code review verdict (clean), conflict diagnosis (timing causa, no source-file conflict), resolution path con git commands explicit, **resolved CHANGELOG.md head** in `<details>` block come reference verbatim, reasoning per "you drive the rebase" (first PR muscle memory under his authorship), verification checklist post-rebase, cluster ordering picture (`list_tags` first, then `#67` next, then #77/#78/#79), "Welcome to the fork tracker" close.
+
+4. **Cleanup**: branch locale `marcoaperez-feat-list-tags` eliminato. Remote `marcoaperez` mantenuto per future PR cycle re-use.
+
+**Significato strategico**:
+
+- **Marcoaperez è ora active external contributor sul fork**, non solo upstream. Pattern outreach methodology validato: per-feature triage + concrete workflow path → contributor execute commitment.
+- **Probability di conversione completa (5-10 PR totali)**: salita da ~75% (post-closure-commit del 2026-05-04 16:00Z) a ~85% (PR #83 actual delivery, smallest-wins-first respected). Plus body quality is high → review pipeline è low-friction.
+- **Asset asimmetrico vs competitor `aaronsb/obsidian-mcp-plugin`** (★292 vs ★2 fork): non solo folotp QA-grade engagement ma anche marcoaperez implementer-grade pipeline. Doppio external contributor maintainer-grade è moat strategico.
+- **Test-setup `setMockTags()` helper**: marcoaperez ha pensato future shape (`get_files_by_tag`). Pattern di pre-engineering — tipico di Taiko quality.
+
+**Pending**:
+
+- Marcoaperez rebase + force-push del suo branch (atteso entro 24-48h)
+- Post-rebase: verify CI green su PR + squash-merge (con user authorization)
+- Post-merge: `list_tags` candidate per post-store-accept cluster come primo item (alongside #79 / #78 / #67 / #77 / #68)
+
+**State change**:
+- Fork OPEN issues: 6 (immutate)
+- Fork OPEN PR: 0 → 1 (#83 marcoaperez list_tags)
+- Pipeline marcoaperez: 1° PR landed, attesi 4+ tools restanti (`get_recent_files`, `get_document_map`, `get_periodic_note` family, `execute_dataview_query`, `get_vault_files`) sul cluster post-store-accept
+
+---
+
 ## Decisioni di sessione 2026-05-04 notte tarda — folotp #67 + #68 stale-claim audit + cluster ordering
 
 **Trigger**: utente chiede "controlla #67 se c'è qualcosa da fare". Foundational rule applied: lettura completa thread (body folotp + 1 mio comment substantive 2026-04-29). Identificata stale-claim — mio commento del 2026-04-29 diceva "target it for `0.4.1`" ma non è successo (0.4.1 = #76 cosmetic, 0.4.2 = #80+#81 vault-safety, niente feature shippato). Plus #68 sister RFC ha stesso pattern — mio commento 2026-04-29 diceva "target `0.4.2` or `0.4.3`" anch'esso stale.
