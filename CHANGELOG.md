@@ -37,6 +37,97 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   `metadataCache.getTags()` mock; reusable by future tag-related tools
   without further bootstrap.
 
+- **`get_files_by_tag` tool** — sibling of `list_tags`. Takes a tag
+  (with or without leading `#`, case-insensitive) and returns every
+  vault file containing it, with per-file occurrence count for
+  relevance ranking. Counts inline and frontmatter occurrences as
+  separate hits (a `getAllTags()`-based dedupe would have collapsed
+  `count` to a binary present/absent and lost the search-relevance
+  signal). Optional `includeNested` (default `"true"`) makes
+  `tag="#project"` match `#project`, `#project/active`,
+  `#project/archived`, etc., mirroring Obsidian's tag pane. Empty or
+  `#`-only input is rejected with `isError: true`. Sort: count desc,
+  path-asc tiebreaker. Output shape:
+
+  ```json
+  {
+    "tag": "#project",
+    "includeNested": true,
+    "totalFiles": 2,
+    "files": [
+      { "path": "notes/active-roadmap.md", "count": 5 },
+      { "path": "archive/old-plan.md", "count": 1 }
+    ]
+  }
+  ```
+
+  Pinned by 13 cases in `getFilesByTag.test.ts` (schema name, empty
+  vault, inline match, with/without `#`, frontmatter array form,
+  inline+frontmatter combined, nested with `includeNested:true`,
+  exact-only with `includeNested:false`, case-insensitive match,
+  count-desc + path-asc tiebreaker, empty-tag rejected, `#`-only
+  rejected, non-markdown files ignored).
+
+- **`get_outgoing_links` tool** — first member of the new "Links"
+  section. Returns every link emanating from the given file across
+  three layers: body links (`[[wikilink]]`, `[md](path)`), body
+  embeds (`![[…]]`), and frontmatter links (e.g. `parent: [[Other]]`).
+  Each entry carries `link`, `original`, optional `displayText`,
+  `source: "body" | "frontmatter"`, `embed: boolean`,
+  `resolved: boolean`, and `targetPath: string | null`. Resolution
+  uses the documented public `metadataCache.getFirstLinkpathDest()`
+  so callers don't need a round-trip to a separate tool to resolve
+  linkpaths into vault paths. Optional `includeEmbeds` (default
+  `"true"`) and `includeUnresolved` (default `"true"`). Source file
+  not found returns `isError: true`. Order: body → embeds →
+  frontmatter, no sort (document position is semantic).
+
+  Pinned by 13 cases in `getOutgoingLinks.test.ts` (schema name,
+  source-not-found error, empty file, body links resolved, body
+  links unresolved with `targetPath:null`, exclude-unresolved, embeds
+  by default, exclude-embeds, frontmatter links resolved, displayText
+  preservation, order preservation, all-flags-off minimal subset,
+  unresolved frontmatter link).
+
+- **`get_backlinks` tool** — completes the bootstrap of the "Links"
+  section. Returns every file that links to the given target, with
+  per-source link count. Aggregates resolved backlinks via reverse
+  iteration of `metadataCache.resolvedLinks`; opt-in
+  `includeUnresolved` (default `"false"`) extends with broken-link
+  sources matched by full path, by path without `.md`, or by basename.
+  Resolved + unresolved counts from the same source aggregate into a
+  single per-source count. Does NOT error if the target file doesn't
+  currently exist on disk — backlinks routinely outlive their target
+  after delete or rename, and surfacing them is the use case (audit /
+  recovery / fix-up). Sort: count desc, path-asc tiebreaker. The
+  schema description points callers wanting per-link context
+  (`displayText`, raw syntax) at `get_outgoing_links` from each
+  source — `resolvedLinks` aggregates per-file so it can't carry
+  that detail.
+
+  Pinned by 12 cases in `getBacklinks.test.ts` (schema name, no
+  backlinks, single, multiple sources, ignores zero-count, self-link,
+  target file missing on disk → no error, default excludes
+  unresolved, includeUnresolved basename match, includeUnresolved
+  exact-path match, resolved+unresolved aggregation from same source,
+  count-desc + path-asc tiebreaker).
+
+- **Mock surface extended in `test-setup.ts`** — supports the three
+  new tools and any future link/graph queries:
+  - `MockVaultState.metadataCache` per-file: + `tags` / `links` /
+    `embeds` / `frontmatterLinks` arrays
+  - `MockVaultState`: + `resolvedLinks` / `unresolvedLinks` maps
+    (live references; `resetMockVault()` mutates in place to keep
+    `mockApp().metadataCache` bindings valid across tests)
+  - `setMockMetadata`: extended with `tags` / `links` / `embeds` /
+    `frontmatterLinks`
+  - new helpers: `setMockResolvedLinks`, `setMockUnresolvedLinks`
+  - `mockApp().metadataCache`: + `resolvedLinks` getter,
+    `unresolvedLinks` getter, `getFirstLinkpathDest` mock (exact path
+    → `+.md` → basename)
+  - `mock.module("obsidian")`: + `getAllTags` exported helper
+    (kept for future consumers)
+
 ## [0.4.3] — 2026-05-05
 
 ### Fixed
