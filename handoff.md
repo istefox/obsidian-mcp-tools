@@ -1,8 +1,68 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-04 tarda notte (folotp #83 disambig round 2: source verified clean, bundle drift falsificata, runtime-layer hypothesis aperta).** `0.4.0` stable + `0.4.1` patch shipped + 21 upstream outreach comments + first responses landed + #83 disambig round 2 posted. Documento di passaggio di consegne. Self-contained: dal clone iniziale al primo prompt da mandare a Claude Code, qui c'è tutto.
+> **Aggiornato 2026-05-05 mattina (0.4.3 patch shipped <8h dopo folotp round-042: #84 fenced-code silent destruction fixed; #20 + #74 + #81 closure batch + substantive multi-point reply su #54 posted).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-05 mattina — `0.4.3` patch + closure batch + #54 reply ⚡
+
+**Trigger**: folotp round-042 soak (2026-05-04 23:51Z) verificato 4 closures + filed #84 (silent data destruction su block-id in fenced code, sibling regression a #81 con xxd-pinned bytes).
+
+### Diagnosi globale (post deep-analysis end-to-end di #54/20/74/81/84 + source hand-trace)
+
+**Root cause #84**: il 0.4.2 fix `isInsideTableOrFencedCode` gated correttamente il table branch ma non il fence branch. Production path: cache miss → regex fallback `findBlockReferenceInContent` walks back stopping at blank lines → captures opening fence as `startLine`. Helper's count loop iterates `lines[0..lineIdx-1]` strictly, quindi il fence AT `lineIdx` non era counted (`inFence=false`), and the line itself wasn't checked for being a fence delimiter. Net: helper return false → splice corrupts file.
+
+**Why the 0.4.2 test passed**: il test `patchVaultFile.test.ts:460-486` mockava cache returning in-fence content line directly. Cache-miss + regex-fallback path mai esercitato. Test-fixture realism gap.
+
+### Fix shipped come 0.4.3 (commit `36ebdfe`, tag `0.4.3`)
+
+**PR #85** ([squash-merged commit `0b1505b`](https://github.com/istefox/obsidian-mcp-connector/pull/85)) con due compounding fixes:
+
+1. **Boundary case in `isInsideTableOrFencedCode`**: line that itself is fence delimiter returns true. Symmetric to existing `isSeparator(target)→return true` table case.
+2. **New `isBlockRangeStructurallyUnsafe` wrapper**: block branch checks every line in `[startLine, endLine]` not just startLine. Defense-in-depth.
+
+Both `applyPatch` impls (`patchHelpers.ts` canonical + `patchActiveFile.ts` duplicate) updated symmetrically.
+
+**Tests**: 13 new cases:
+- `patchHelpers.test.ts` +8 (3 fence-delimiter-line boundary + new `isBlockRangeStructurallyUnsafe` describe with 5 cases)
+- `patchVaultFile.test.ts` +3 (#84 byte-exact regex-fallback **without setMockMetadata** — closes the realism gap; append symmetric; paragraph-before-fence control as regression sentinel)
+- `patchActiveFile.test.ts` +1 (cache-only mirror with mocked `startLine` at opening fence)
+
+**Plugin suite**: 656/656 green (delta +13 vs 0.4.2 baseline; bindWithFallback environmental fails risolti naturalmente).
+
+**Cycle stats**: report 2026-05-04 23:56Z → tag 2026-05-05 05:34Z → CI green run [`25359754361`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25359754361) = **<8h end-to-end**. Quarto cycle iterativo (`0.4.0-beta.3 → 0.4.1 → 0.4.2 → 0.4.3`).
+
+### Closure batch posted
+
+- **#84** ([comment 4376796404](https://github.com/istefox/obsidian-mcp-connector/issues/84#issuecomment-4376796404)): warm-technical close con root cause + diagnostic hint ack ("aware of fences in messaging" load-bearing per la fix).
+- **#20** ([comment 4376797046](https://github.com/istefox/obsidian-mcp-connector/issues/20#issuecomment-4376797046)): housekeeping — issue era già closed da 0.3.12 ship, comment posted comunque per round-042 first-empirical-on-HTTP-embedded ack + `tp.file.move()` rationale anchor.
+- **#74** ([comment 4376797753](https://github.com/istefox/obsidian-mcp-connector/issues/74#issuecomment-4376797753)): housekeeping — issue era già closed, comment ack del "discriminating tree" prediction-grade del round-3, residual legacy-chain double-prefix tracked under #78 migration UX.
+
+### Substantive reply su #54 ([comment 4376799772](https://github.com/istefox/obsidian-mcp-connector/issues/54#issuecomment-4376799772))
+
+Multi-point ack rule applicata in versione compatta (~50% del draft originale): preamble di 3 layer compresso in singolo paragraph (chain-id rigor / xxd-bytes + diagnostic hint / per-issue empirical confirmation pattern), per-point ack 5 punti in stesso ordine, round-5 verify request 5 step. CLAUDE.md outreach methodology rules tutte applicate.
+
+### State change
+
+- **Tag**: 0.4.2 → **0.4.3** (latest stable)
+- **Fork OPEN issues**: 7 → 5 (closed #84; #20 + #74 confirm housekeeping ack; restanti: #54, #67, #68, #77, #78, #79 — wait, that's 6. Let me recount: #54, #67, #68, #77, #78, #79 = **6 OPEN**. #20/#74/#84 closed.)
+- **Fork OPEN PR**: 1 (#83 marcoaperez list_tags, awaiting rebase, immutato)
+- Branch `feat/http-embedded` HEAD `36ebdfe`
+
+### Awaiting
+
+- **Folotp round-5 verify** su 0.4.3 (5 step proposed, atteso 24-72h del BRAT auto-update). Se conferma → famiglia #80/#81/#84 strutturalmente chiusa.
+- **Marcoaperez rebase #83** (immutato, atteso 24-48h)
+- **Store PR #11919** week 3 (silent monitor)
+
+### Methodology validation
+
+- **Foundational rule "read fully + analyze deeply"** applicata explicitly: prima di entrare in plan mode ho confermato lettura end-to-end di 4 thread (#54 33-comment, #20, #74, #81) + source files + esistenti tests + hand-trace della fixture. User flagged "se hai letto approfonditamente" come gate condition; honest answer "non ancora, leggo ora" → gate passed via lettura.
+- **Multi-point offer ack rule** applicata sia per draft che per posted reply (preamble explicit thanks + per-point in stesso ordine).
+- **Authority disambiguation rule** rimasta dormant (no domain authority involved questa volta).
+- **Soak preflight rule** validated: folotp ha applicato 5 discriminators converged, no chain-mismatch this round.
 
 ---
 
