@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **`list_tags` tool** — lists all tags used across the vault with their
+  aggregated usage counts. Backed directly by
+  `app.metadataCache.getTags()`, so it includes both inline `#tags` and
+  frontmatter tags, deduplicated per file, with no plugin dependency
+  (Dataview is not required). Optional `sort` argument:
+  `"count"` (default, descending) or `"name"` (alphabetical). Output
+  shape:
+
+  ```json
+  {
+    "totalTags": 3,
+    "tags": [
+      { "tag": "#project", "count": 23 },
+      { "tag": "#daily", "count": 19 },
+      { "tag": "#idea", "count": 1 }
+    ]
+  }
+  ```
+
+  Useful for agents discovering content categories before deciding what
+  to read or query. Always read-only.
+
+  Pinned by 7 cases in `listTags.test.ts` (schema name, empty vault,
+  default count-desc sort, name-asc sort, explicit count sort, nested
+  tag paths preserved verbatim).
+
+  Mock surface extended in `test-setup.ts`: `setMockTags()` helper +
+  `metadataCache.getTags()` mock; reusable by future tag-related tools
+  without further bootstrap.
+
 ## [0.4.3] — 2026-05-05
 
 ### Fixed
@@ -132,7 +164,6 @@ post-store-accept.
   (`mcp__obsidian-mcp-tools__*` legacy vs. `mcp__mcp-tools-istefox__*`
   HTTP-embedded). First-line check for any future soak round so chain-
   mismatch is caught at the report shape, not three rounds in.
-
 ## [0.4.1] — 2026-05-04
 
 ### Fixed
