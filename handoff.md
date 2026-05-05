@@ -1,8 +1,82 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-05 pomeriggio (PR #83 marcoaperez `list_tags` merged 16:18Z post-rebase — primo tool external-contributor landed sul fork, tools 20→21; `0.4.3` patch già shipped la mattina).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
+> **Aggiornato 2026-05-05 sera (Links section bootstrap — 3 nuovi tool atomici aggiunti dopo PR #83: `get_files_by_tag` (Metadata), `get_outgoing_links` + `get_backlinks` (nuova sezione Links). Tools 21→24. Plugin tools suite 140/140 → 178/178. Tutto in [Unreleased] per `0.4.4`).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-05 sera — Links section bootstrap (3 nuovi tool) 🔗
+
+**Trigger**: dopo merge PR #83 di marcoaperez (`list_tags`), utente ha chiesto cosa altro aggiungere al connettore. Recommendation top-3: `get_backlinks` + `get_outgoing_links` (graph navigation, capability più mancante oggi) + `get_files_by_tag` (sibling naturale di `list_tags`). Approvazione esplicita: "procedi con 1 e 2".
+
+### Workflow rispettato
+
+Plan mode + multi-agent discovery (3 Explore in parallelo: API Obsidian + pattern fork + external landscape). 1 Plan agent di validation (ha flagged 8 modifiche specifiche al design tree iniziale, tutte incorporate). Plan file: `~/.claude/plans/wobbly-rolling-aurora.md`. Approvato da Stefano via ExitPlanMode.
+
+### Decisioni architetturali chiave
+
+- **Granularità**: 3 tool atomici (NON un tool consolidato `graph` con action enum come `aaronsb/obsidian-mcp-plugin`). Coerente col pattern del fork (24 tool unitari ora), `tools/list` MCP guadagna 3 entry `.describe()` model-facing dedicate.
+- **Taxonomy**: nuova sezione **"Links"** in `mcp-tools/index.ts` (tra "Metadata" e "Search"). Future tool candidates: `find_orphan_files`, `find_broken_links`, `get_graph_neighbors`.
+- **Boolean as strings** (`'"true"|"false"'`) per compat con vecchi MCP client (CLAUDE.md rule).
+- **Determinism**: tutti gli ordering usano `Intl.Collator("en", { sensitivity: "variant" })` per cross-platform consistency, mirroring il contratto di `list_tags` (commit `396e4ca`).
+
+### Sequenza di commit (5 phase, tutti su `feat/http-embedded`)
+
+| Commit | Phase | Effect |
+|---|---|---|
+| [`b15fe19`](https://github.com/istefox/obsidian-mcp-connector/commit/b15fe19) | A | mock infra + `get_files_by_tag` (`Metadata` section) — 13 test, 140→153 |
+| [`44a4d76`](https://github.com/istefox/obsidian-mcp-connector/commit/44a4d76) | B | `get_outgoing_links` + nuova `Links` section — 13 test, 153→166 |
+| [`6a90ef8`](https://github.com/istefox/obsidian-mcp-connector/commit/6a90ef8) | C | `get_backlinks` — 12 test, 166→178 |
+| [`c3d5136`](https://github.com/istefox/obsidian-mcp-connector/commit/c3d5136) | D | docs (CHANGELOG `[Unreleased]/Added` + README features + tool count 21→24) |
+| (this commit) | E | handoff update |
+
+### Tool design key
+
+- **`get_files_by_tag`**: tag con/senza `#`, case-insensitive. `includeNested` default `"true"` (matcha `#project/active`). Counta inline + frontmatter come occorrenze separate (relevance signal — `getAllTags()` deduplica e perde count). Empty/`#`-only input rejected con `isError: true`.
+- **`get_outgoing_links`**: 3 layers (body / embeds / frontmatterLinks). Resolution via `metadataCache.getFirstLinkpathDest()` per popolare `targetPath: string|null`. Order preserva document position. File not found → `isError: true`.
+- **`get_backlinks`**: reverse-iterate `resolvedLinks`. `includeUnresolved` default `"false"` (broken backlinks = noise opt-in). Match unresolved by full path / path-without-`.md` / basename. Resolved + unresolved aggregano nella stessa source count. NO error se target file non esiste — backlinks survive la cancellazione.
+
+### Mock infrastructure (Phase A, in `test-setup.ts`)
+
+Estensione live-references in place mutation per non rompere `mockApp().metadataCache` bindings dopo `resetMockVault()`:
+- `MockVaultState.metadataCache` per-file: + `tags` / `links` / `embeds` / `frontmatterLinks` arrays
+- `MockVaultState`: + `resolvedLinks` / `unresolvedLinks` maps
+- `setMockMetadata`: extended con tutti i 4 nuovi field
+- New helpers: `setMockResolvedLinks`, `setMockUnresolvedLinks`
+- `mockApp().metadataCache`: + `resolvedLinks` getter, `unresolvedLinks` getter, `getFirstLinkpathDest` mock (exact path → `+.md` → basename)
+- `mock.module("obsidian")`: + `getAllTags` exported helper
+
+### Plan-agent design changes incorporated (8/8)
+
+1. ✅ `targetPath: string|null` in `get_outgoing_links` (load-bearing — caller altrimenti needs round-trip per resolve linkpath)
+2. ✅ `frontmatterLinks` con `source: "body"|"frontmatter"` discriminator
+3. ✅ Drop `displayText` da `get_backlinks` (resolvedLinks aggregato per file, non per link)
+4. ✅ `get_outgoing_links` source-not-found → `isError: true` (mirror `getVaultFile.ts:113-119`)
+5. ✅ `get_files_by_tag` empty/`#`-only input rejected con error
+6. ⚠️ `getAllTags()` helper rimosso dal handler `get_files_by_tag` durante implementation — Plan agent suggeriva di usarlo, ma deduplica e collassa il count a binary present/absent. Re-design ha contato direttamente da `cache.tags` + `cache.frontmatter.tags` per preservare relevance signal. Helper resta esposto nel mock per consumer futuri.
+7. ✅ Mock infra: derived-consistency (single `setMockResolvedLinks` mantiene reference invariant via in-place mutation in reset)
+8. ✅ Test count: 12-13 per outgoing (per matrix layer × resolved-state), 12-13 per altri
+
+### State change
+
+- Tools: 21 → **24** (registered: `get_files_by_tag` in Metadata; `get_outgoing_links` + `get_backlinks` in nuova sezione "Links")
+- Branch `feat/http-embedded` HEAD: `c3d5136` → (this commit)
+- Plugin tools suite: 140/140 → **178/178** (+38 cases)
+- `[Unreleased]` in CHANGELOG.md: ora collects 4 entry (`list_tags` + 3 nuovi) per `0.4.4` cut
+
+### Pending
+
+- Push remote (5 commit ahead di origin)
+- Folotp round-5 verify su 0.4.3 (BRAT auto-update 24-72h) — può anticipare 0.4.4 cut se conferma o emerge nuova issue
+- Marcoaperez next PR (atteso 1-2 settimane)
+- Store PR #11919 monitor (week 3, silent)
+
+### Methodology validation
+
+- **Plan mode + multi-agent discovery**: 3 Explore paralleli (Obsidian API / fork patterns / external landscape) + 1 Plan agent validation. Pattern di workflow standard per task non-trivial.
+- **Foundational read-fully-analyze rule**: Plan agent ha catturato 8 design issue che non sarebbero emersi da pattern-following meccanico.
+- **Reject Plan agent suggestion when wrong**: il `getAllTags()` recommendation è stato re-evaluated durante implementation perché collide con count semantic. Honest re-assessment > deferenza.
 
 ---
 
