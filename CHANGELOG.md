@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-05-05
+
 ### Added
 
 - **`list_tags` tool** — lists all tags used across the vault with their
