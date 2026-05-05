@@ -41,6 +41,16 @@ Active branches as of 2026-04-25:
 
 If a request seems likely to compromise `main`'s functionality, stop and ask before acting.
 
+**These hard rules are also enforced as GitHub Rulesets (since 2026-05-05)** — three rulesets active on `istefox/obsidian-mcp-connector`:
+
+- **`General`** (branch): targets `main` + `feat/http-embedded`, rules: Restrict deletions + Block force pushes. Enforces rule 2.
+- **`main-strict`** (branch): targets `main` only, rule: Require pull request before merging (0 approvals). Enforces rule 1 — direct `git push origin main` without PR will be REJECTED.
+- **`tags-protection`** (tag): targets pattern `0.*` (covers 0.1.x through 0.9.x), rules: Restrict updates + Restrict deletions + Block force pushes. Enforces rules 3 + 4.
+
+Bypass list is empty on all three — admin (Stefano) is also subject to the rules. In a true emergency, the path is: temporarily disable the ruleset → perform the operation → re-enable. This adds friction = explicit awareness of destructive intent. Manage at https://github.com/istefox/obsidian-mcp-connector/settings/rules.
+
+If you ever encounter a "GH013: Repository rule violations" error, the operation you attempted is structurally blocked because it violates one of these rules — investigate why before disabling protection. Don't disable rulesets to "make it work" without confirming the action is intended.
+
 ## Stack
 
 | Layer | Tech |

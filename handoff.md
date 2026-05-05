@@ -1,8 +1,40 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-05 mattina (0.4.3 patch shipped <8h dopo folotp round-042: #84 fenced-code silent destruction fixed; #20 + #74 + #81 closure batch + substantive multi-point reply su #54 posted).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
+> **Aggiornato 2026-05-05 mattina (0.4.3 patch shipped <8h dopo folotp round-042: #84 fenced-code silent destruction fixed; #20 + #74 + #81 closure batch + substantive multi-point reply su #54 posted; GitHub Rulesets attivati come enforcement strutturale delle CLAUDE.md hard rules).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-05 mattina — GitHub Rulesets attivati 🔒
+
+**Trigger**: GitHub UI banner "Your main branch isn't protected" su `obsidian-mcp-connector`. CLAUDE.md aveva già le 4 hard rules come policy testuale ma non erano enforcement strutturale.
+
+**Setup completato** — 3 ruleset attivi su `istefox/obsidian-mcp-connector`:
+
+| Ruleset | Tipo | Target | Rules attive | CLAUDE.md hard rule coperta |
+|---|---|---|---|---|
+| **General** | Branch | `main` + `feat/http-embedded` | Restrict deletions + Block force pushes | Rule 2 (no force-push/reset) |
+| **main-strict** | Branch | `main` only | Require PR before merging (0 approvals) | Rule 1 (no merge senza auth) |
+| **tags-protection** | Tag | pattern `0.*` | Restrict updates + Restrict deletions + Block force pushes | Rules 3 + 4 (no delete/overwrite tag, no delete release) |
+
+**Effetti pratici**:
+- `git push --force` su `main` o `feat/http-embedded` → REJECTED ("Cannot update this protected branch")
+- `git push origin :main` (delete branch) → REJECTED
+- Direct `git push origin main` (no PR) → REJECTED ("Changes must be made through a pull request")
+- `git tag -d 0.4.3 && git push origin :0.4.3` → REJECTED su remote
+- `git push --force origin 0.4.3` → REJECTED
+- 0.3.x bug fix flow (CLAUDE.md): branch from main → PR → squash-merge → ancora valido
+- Direct commit a `feat/http-embedded` (version bumps, handoff) → ancora consentito (no PR requirement su questo branch)
+- New tag creation (es. futuro `0.4.4`) → consentito (Restrict creations NON checkato)
+
+**Pattern `0.*`**: copre tutta la storia tag del fork (0.1.1 → 0.4.3) + tutto futuro 0.4.x/0.5.x/.../0.9.x. Quando un giorno passerai a 1.0.0, dovrai aggiornare il pattern a `0.*` + `1.*` o usare `**`.
+
+**Bypass list**: vuota su tutti e 3. Anche admin (te) deve passare attraverso il flow PR su `main`. Friction = consapevolezza azione distruttiva. In emergenza puoi disabilitare temporaneamente il ruleset → fare l'op → riabilitare.
+
+**Costo**: zero per il workflow attuale. Per i bug fix 0.3.x il pattern PR-flow era già policy CLAUDE.md, ora è enforcement.
+
+**Confidence**: alta. Validate via test push attempt diretto su un branch protetto = REJECTED come atteso (UI banner di conferma).
 
 ---
 
