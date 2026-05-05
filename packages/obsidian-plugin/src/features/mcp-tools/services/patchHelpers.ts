@@ -183,6 +183,16 @@ export function isInsideTableOrFencedCode(
 ): boolean {
   if (lineIdx < 0 || lineIdx >= lines.length) return false;
 
+  // Boundary case: the line itself is a fence delimiter. The splice would
+  // either consume the opener (orphaning the closer) or vice versa, leaving
+  // the file structurally invalid. Treat as "inside" for gating purposes.
+  // Surfaced by fork #84 where the regex fallback findBlockReferenceInContent
+  // walks back from `^block-id` and captures the opening fence as startLine
+  // — the count-up-to-lineIdx loop below misses it because the toggle would
+  // happen AT lineIdx, not before. Symmetric to the table separator-row
+  // handling at the bottom of this function.
+  if (lines[lineIdx].trim().startsWith("```")) return true;
+
   // Fenced code block: count ``` markers up to lineIdx.
   let inFence = false;
   for (let i = 0; i < lineIdx; i++) {
@@ -212,6 +222,41 @@ export function isInsideTableOrFencedCode(
     const t = lines[i].trim();
     if (t === "" || !isTableRow(t)) break;
     if (isSeparator(t)) return true;
+  }
+  return false;
+}
+
+/**
+ * Defense-in-depth wrapper around `isInsideTableOrFencedCode` for the block
+ * branch of `applyPatch`: checks every line in the resolved block range
+ * `[startLine, endLine]` (inclusive). Even if `startLine` lands on a line
+ * the per-line helper considers safe, any unsafe line within the range
+ * triggers the reject.
+ *
+ * Why a range check matters: `findBlockReferenceInContent` walks backward
+ * from the `^id` line stopping at blank lines, which can capture an opening
+ * fence delimiter as `startLine` when the block lives inside a fenced code
+ * block (fork #84). With the boundary-case extension to
+ * `isInsideTableOrFencedCode` (fence-delimiter line itself returns true),
+ * `startLine` alone is enough for #84's specific shape — but the range
+ * check adds protection against future cache-resolution shapes where the
+ * resolved block spans a fence boundary in a different layout.
+ *
+ * Args:
+ *   lines: The file content split on `\n`.
+ *   startLine, endLine: Inclusive 0-indexed range from the block resolver.
+ *
+ * Returns:
+ *   true if any line in `[startLine, endLine]` is structurally unsafe to
+ *   splice, false otherwise.
+ */
+export function isBlockRangeStructurallyUnsafe(
+  lines: string[],
+  startLine: number,
+  endLine: number,
+): boolean {
+  for (let i = startLine; i <= endLine; i++) {
+    if (isInsideTableOrFencedCode(lines, i)) return true;
   }
   return false;
 }
@@ -645,7 +690,17 @@ export async function applyPatch(
   // or regex fallback), before any splice, and applies symmetrically to
   // append/prepend/replace — `prepend` would inject before a structural
   // boundary the splice can't honor either.
-  if (isInsideTableOrFencedCode(lines, blockPos.startLine)) {
+  //
+  // 0.4.3 fix for fork #84: range check `[startLine, endLine]`, not just
+  // startLine. The 0.4.2 fix gated correctly when the cache returned the
+  // in-fence content line, but missed cache-miss + regex-fallback shapes
+  // where `findBlockReferenceInContent` walks back to the opening fence
+  // and captures it as startLine. The boundary-case extension to
+  // `isInsideTableOrFencedCode` (fence-delimiter line itself returns true)
+  // plus the range check together cover both shapes.
+  if (
+    isBlockRangeStructurallyUnsafe(lines, blockPos.startLine, blockPos.endLine)
+  ) {
     return {
       content: [
         {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   hasParentH1,
   isInsideTableOrFencedCode,
+  isBlockRangeStructurallyUnsafe,
   resolveHeadingPath,
   normalizeAppendBody,
   findBlockReferenceInContent,
@@ -347,5 +348,71 @@ describe("isInsideTableOrFencedCode", () => {
     const lines = ["a", "b"];
     expect(isInsideTableOrFencedCode(lines, -1)).toBe(false);
     expect(isInsideTableOrFencedCode(lines, 99)).toBe(false);
+  });
+
+  test("detects opening fence delimiter line itself (#84 boundary case)", () => {
+    // The regex fallback findBlockReferenceInContent can return startLine
+    // pointing AT the opening fence when ^block-id lives inside a fenced
+    // code block. Helper must recognize the fence-delimiter line itself as
+    // structural to avoid the splice-orphans-closer corruption.
+    const lines = [
+      "## Section",
+      "",
+      "```",
+      "code",
+      "^block-id",
+      "```",
+      "",
+      "End.",
+    ];
+    expect(isInsideTableOrFencedCode(lines, 2)).toBe(true);
+  });
+
+  test("detects closing fence delimiter line itself", () => {
+    const lines = ["```", "code", "```", "", "End."];
+    expect(isInsideTableOrFencedCode(lines, 2)).toBe(true);
+  });
+
+  test("detects indented fence delimiter (still starts with ``` after trim)", () => {
+    const lines = ["  ```", "code", "  ```"];
+    expect(isInsideTableOrFencedCode(lines, 0)).toBe(true);
+  });
+});
+
+describe("isBlockRangeStructurallyUnsafe", () => {
+  test("rejects range whose start is opening fence (#84 regex-fallback shape)", () => {
+    // Mirrors folotp's #84 fixture after findBlockReferenceInContent walks
+    // back from `^block-id` and captures the opening fence as startLine.
+    const lines = [
+      "para",
+      "",
+      "```", // 2: opening fence (regex-fallback startLine)
+      "echo",
+      "^id", // 4: endLine
+      "```",
+    ];
+    expect(isBlockRangeStructurallyUnsafe(lines, 2, 4)).toBe(true);
+  });
+
+  test("accepts safe range in normal paragraph", () => {
+    const lines = ["para 1", "^id", "", "para 2"];
+    expect(isBlockRangeStructurallyUnsafe(lines, 0, 1)).toBe(false);
+  });
+
+  test("rejects single-line range when line is in table", () => {
+    const lines = ["| h |", "| --- |", "| ^id |"];
+    expect(isBlockRangeStructurallyUnsafe(lines, 2, 2)).toBe(true);
+  });
+
+  test("rejects multi-line range crossing a fence boundary", () => {
+    // Defense-in-depth: a hypothetical cache shape where startLine is safe
+    // but endLine is inside a fence.
+    const lines = ["safe", "```", "in-fence", "```"];
+    expect(isBlockRangeStructurallyUnsafe(lines, 0, 2)).toBe(true);
+  });
+
+  test("rejects when the resolved range covers a fence-delimiter line only", () => {
+    const lines = ["before", "```", "after"];
+    expect(isBlockRangeStructurallyUnsafe(lines, 1, 1)).toBe(true);
   });
 });
