@@ -164,6 +164,7 @@ post-store-accept.
   (`mcp__obsidian-mcp-tools__*` legacy vs. `mcp__mcp-tools-istefox__*`
   HTTP-embedded). First-line check for any future soak round so chain-
   mismatch is caught at the report shape, not three rounds in.
+
 ## [0.4.1] — 2026-05-04
 
 ### Fixed
