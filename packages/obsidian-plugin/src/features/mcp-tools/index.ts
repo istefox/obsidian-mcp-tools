@@ -76,6 +76,10 @@ import {
   getOutgoingLinksHandler,
   getOutgoingLinksSchema,
 } from "./tools/getOutgoingLinks";
+import {
+  getBacklinksHandler,
+  getBacklinksSchema,
+} from "./tools/getBacklinks";
 
 export type RegisterToolsContext = {
   app: App;
@@ -143,6 +147,9 @@ export async function registerTools(
   // Links
   registry.register(getOutgoingLinksSchema, async ({ arguments: args }) =>
     getOutgoingLinksHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(getBacklinksSchema, async ({ arguments: args }) =>
+    getBacklinksHandler({ arguments: args, app: ctx.app }),
   );
 
   // Search
