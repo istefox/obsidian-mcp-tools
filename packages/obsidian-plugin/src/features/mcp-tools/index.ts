@@ -72,6 +72,10 @@ import {
   getFilesByTagHandler,
   getFilesByTagSchema,
 } from "./tools/getFilesByTag";
+import {
+  getOutgoingLinksHandler,
+  getOutgoingLinksSchema,
+} from "./tools/getOutgoingLinks";
 
 export type RegisterToolsContext = {
   app: App;
@@ -134,6 +138,11 @@ export async function registerTools(
   );
   registry.register(getFilesByTagSchema, async ({ arguments: args }) =>
     getFilesByTagHandler({ arguments: args, app: ctx.app }),
+  );
+
+  // Links
+  registry.register(getOutgoingLinksSchema, async ({ arguments: args }) =>
+    getOutgoingLinksHandler({ arguments: args, app: ctx.app }),
   );
 
   // Search
