@@ -33,9 +33,22 @@ export async function listTagsHandler(
   ).getTags();
 
   const sortMode = ctx.arguments.sort ?? "count";
-  const sorted = Object.entries(tagCounts).sort((a, b) =>
-    sortMode === "name" ? a[0].localeCompare(b[0]) : b[1] - a[1],
-  );
+
+  // Pin locale + sensitivity so the order is identical across platforms;
+  // the default `Intl.Collator` reads the OS locale, which can shift
+  // Unicode ordering between macOS / Linux / Windows test runs.
+  const compareName = (a: string, b: string): number =>
+    a.localeCompare(b, "en", { sensitivity: "variant" });
+
+  const sorted = Object.entries(tagCounts).sort((a, b) => {
+    if (sortMode === "name") return compareName(a[0], b[0]);
+    // Count desc with name-asc tiebreaker. Engine sort-stability is
+    // guaranteed by ES2019 (V8/Bun honour it), but an explicit
+    // tiebreaker keeps the contract independent of that guarantee
+    // and gives equal-count tags a deterministic, alphabetical order.
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return compareName(a[0], b[0]);
+  });
 
   const output = {
     totalTags: sorted.length,

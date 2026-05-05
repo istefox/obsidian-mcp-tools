@@ -81,4 +81,59 @@ describe("list_tags tool", () => {
       "#project/archived",
     ]);
   });
+
+  test("count desc applies a name-ascending tiebreaker on equal counts", async () => {
+    setMockTags({ "#zebra": 5, "#apple": 5, "#mango": 5, "#banana": 1 });
+    const r = await listTagsHandler({ arguments: {}, app: mockApp() });
+    const data = JSON.parse(r.content[0].text as string);
+    expect(data.tags).toEqual([
+      { tag: "#apple", count: 5 },
+      { tag: "#mango", count: 5 },
+      { tag: "#zebra", count: 5 },
+      { tag: "#banana", count: 1 },
+    ]);
+  });
+
+  test("preserves special characters in tag names verbatim", async () => {
+    setMockTags({
+      "#tag-with-dash": 3,
+      "#tag_with_underscore": 2,
+      "#numeric-2026": 1,
+    });
+    const r = await listTagsHandler({
+      arguments: { sort: "name" },
+      app: mockApp(),
+    });
+    const data = JSON.parse(r.content[0].text as string);
+    // `Intl.Collator("en", { sensitivity: "variant" })` orders `_` before
+    // `-` (Unicode-aware punctuation order, not ASCII byte-wise). Pinned
+    // here so the cross-platform sort contract stays observable.
+    expect(data.tags.map((t: { tag: string }) => t.tag)).toEqual([
+      "#numeric-2026",
+      "#tag_with_underscore",
+      "#tag-with-dash",
+    ]);
+  });
+
+  test("count sort orders nested + root tags deterministically on ties", async () => {
+    setMockTags({
+      "#project/active": 1,
+      "#project": 1,
+      "#area/work": 1,
+      "#area": 1,
+    });
+    const r = await listTagsHandler({
+      arguments: { sort: "count" },
+      app: mockApp(),
+    });
+    const data = JSON.parse(r.content[0].text as string);
+    // All counts equal → tiebreaker by name asc; root before nested
+    // because the bare prefix sorts before its `/`-extended descendants.
+    expect(data.tags.map((t: { tag: string }) => t.tag)).toEqual([
+      "#area",
+      "#area/work",
+      "#project",
+      "#project/active",
+    ]);
+  });
 });
