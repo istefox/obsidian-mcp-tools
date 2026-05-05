@@ -1,8 +1,50 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-05 mattina (0.4.3 patch shipped <8h dopo folotp round-042: #84 fenced-code silent destruction fixed; #20 + #74 + #81 closure batch + substantive multi-point reply su #54 posted; GitHub Rulesets attivati come enforcement strutturale delle CLAUDE.md hard rules).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
+> **Aggiornato 2026-05-05 pomeriggio (PR #83 marcoaperez `list_tags` merged 16:18Z post-rebase — primo tool external-contributor landed sul fork, tools 20→21; `0.4.3` patch già shipped la mattina).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-05 pomeriggio — PR #83 marcoaperez merged 🎉
+
+**Trigger**: marcoaperez (2026-05-05 15:44Z) ha completato il rebase richiesto su PR #83 `list_tags`. New head `35f1438` (was `11cfcad`), mergeable, checklist self-validation OK nel suo follow-up comment (`bun test listTags 7/7`, `bun run check` 0 errors 0 warnings, `bun run build` Build successful).
+
+**Validation locale post-rebase** (no `bun run build`, vault TEST symlink al repo root preservato): `bun run check` 0 errors 0 warnings su 4 package; `bun test src/features/mcp-tools/tools/listTags.test.ts` 7/7 pass; `bun test src/features/mcp-tools/tools/` full suite 137/137 pass (delta +16 vs baseline 121/121 dichiarata da marcoaperez = consistente con +13 test 0.4.3 + 3 pre-existing). No CI cross-fork PR check (atteso, GitHub Actions security model).
+
+**Squash-merged** ([commit `dbea8d8`](https://github.com/istefox/obsidian-mcp-connector/commit/dbea8d8), 2026-05-05 16:18:46Z) con authorship `marcoaperez <mperez@taikosolutions.com>` preservata, subject `feat(0.4): add list_tags MCP tool (#83)`, body originale di marcoaperez verbatim + reference a `jacksteamdev/obsidian-mcp-tools#69` (comment-4371427847). Local pull fast-forward allineato, working tree clean.
+
+**Close-out comment** ([PR #83 comment 4381070560](https://github.com/istefox/obsidian-mcp-connector/pull/83#issuecomment-4381070560)): merge confirmation + ship-target `0.4.4` + cluster pointer a `#67` (`rename_vault_file`) come prossimo item. Tono peer-dev, no filler.
+
+**Code review formale post-merge** (eseguita inline su 6 file +186/-3, no agent dispatch causa API error transitorio): VERDICT **CLEAN** con un follow-up MEDIUM cosmetic.
+
+- **Strengths**: schema ArkType con `.describe()` su top-level + field; cast `as unknown as { ... }` mirrora `listObsidianCommands.ts:27-31`; output shape `{ content: [{ type: "text", text: ... }] }` matches CLAUDE.md mandated; `JSON.stringify(..., null, 2)` pretty-print coerente; `setMockTags()` con docstring + spread defensive copy; `resetMockVault()` resetta correttamente `_mockState.tags`; nuova sezione "Metadata" in `mcp-tools/index.ts` (`listTags` registrata correttamente tra "Vault file ops" e "Search"); README tool count 20→21 in due posti.
+- **🟡 MEDIUM (1)** — **SHIPPED** in commit [`91bd242`](https://github.com/istefox/obsidian-mcp-connector/commit/91bd242) (`docs(changelog): restore blank line between [0.4.3] and [0.4.1] sections`): glitch tipografico in `CHANGELOG.md` post-rebase — blank line mancante tra `## [0.4.3]` block e `## [0.4.1]` (collateral damage del merge resolution di marcoaperez, riga vuota rimossa). Fix = 1 newline aggiunta.
+- **🟢 LOW (3 follow-up)** — **SHIPPED** in commit [`396e4ca`](https://github.com/istefox/obsidian-mcp-connector/commit/396e4ca) (`refactor(list_tags): pin sort locale + add count tiebreaker, extend tests`):
+  1. Sort by name ora usa `Intl.Collator("en", { sensitivity: "variant" })` esplicito — output cross-platform deterministic (prima locale-default-dependent).
+  2. Sort by count desc ora applica tiebreaker su name asc per ties — contratto indipendente da ES2019 stable-sort guarantee.
+  3. Test coverage 7 → **10 cases** (count-desc tiebreaker, special-character tag names dash/underscore/numeric, nested+root combined-ties). Special-char test pinna l'ordine Unicode-aware (`_` < `-`, controintuitivo vs ASCII byte-wise) per observability cross-platform.
+  4. Plugin tools suite: 137/137 → **140/140** verde.
+
+**State change**:
+- Tools: 20 → **21** (registered in nuova sezione "Metadata" di `mcp-tools/index.ts`)
+- Fork OPEN PR: 1 → **0**
+- `[Unreleased]` in CHANGELOG.md ha `list_tags` entry pronta per next `0.4.4` cut
+- Pipeline marcoaperez: 1° tool delivered → probability di completion del 5-10 PR inventory ~**90%** (era ~85% post-rebase posted)
+- Branch `feat/http-embedded` HEAD `dbea8d8`
+
+**Upstream cross-link su `jacksteamdev/obsidian-mcp-tools#69`**: postato per chiudere il loop pubblicamente sul thread di marcoaperez (visibility a future contributors, validated-contributor pipeline confermata in pratica). Tono peer-dev breve.
+
+**Pending**:
+- Decisione su fix MEDIUM CHANGELOG (1 commit chirurgico ~1 minuto, o attendere)
+- Marcoaperez next PR (atteso 1-2 settimane: candidate `get_recent_files`/`get_document_map`/`get_periodic_note`/`execute_dataview_query`/`get_vault_files`)
+- Folotp round-5 verify su 0.4.3 (BRAT auto-update 24-72h)
+- Store PR #11919 monitor (week 3, silent)
+
+**Methodology validation**:
+- **Validated-contributor engagement rule** applicata: substantive close-out comment con cluster pointer, non solo merge confirm.
+- **Foundational rule "read fully + analyze deeply"** applicata al code review: non solo type-check + test, ma source read end-to-end + comparison anchor (`listObsidianCommands.ts`) + Keep-a-Changelog format check.
+- **Authority preservation rule** soddisfatta: squash commit ha `marcoaperez` come author originale, my role = merger.
 
 ---
 
@@ -80,7 +122,7 @@ Multi-point ack rule applicata in versione compatta (~50% del draft originale): 
 
 - **Tag**: 0.4.2 → **0.4.3** (latest stable)
 - **Fork OPEN issues**: 7 → 5 (closed #84; #20 + #74 confirm housekeeping ack; restanti: #54, #67, #68, #77, #78, #79 — wait, that's 6. Let me recount: #54, #67, #68, #77, #78, #79 = **6 OPEN**. #20/#74/#84 closed.)
-- **Fork OPEN PR**: 1 (#83 marcoaperez list_tags, awaiting rebase, immutato)
+- **Fork OPEN PR**: 1 (#83 marcoaperez list_tags, awaiting rebase) → **MERGED 2026-05-05 16:18Z** (vedi sezione successiva)
 - Branch `feat/http-embedded` HEAD `36ebdfe`
 
 ### Awaiting
