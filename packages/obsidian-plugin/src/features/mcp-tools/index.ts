@@ -68,6 +68,10 @@ import {
   executeTemplateSchema,
 } from "./tools/executeTemplate";
 import { listTagsHandler, listTagsSchema } from "./tools/listTags";
+import {
+  getFilesByTagHandler,
+  getFilesByTagSchema,
+} from "./tools/getFilesByTag";
 
 export type RegisterToolsContext = {
   app: App;
@@ -127,6 +131,9 @@ export async function registerTools(
   // Metadata
   registry.register(listTagsSchema, async ({ arguments: args }) =>
     listTagsHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(getFilesByTagSchema, async ({ arguments: args }) =>
+    getFilesByTagHandler({ arguments: args, app: ctx.app }),
   );
 
   // Search

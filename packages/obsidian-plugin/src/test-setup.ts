@@ -96,6 +96,41 @@ void mock.module("obsidian", () => {
     }
   }
 
+  /**
+   * Mock of Obsidian's exported `getAllTags(cache)` helper. Mirrors
+   * the real behaviour: merges inline tag entries (`cache.tags[].tag`)
+   * with frontmatter tags (`cache.frontmatter.tags`, supports array
+   * or single-string forms), normalises every entry to include the
+   * leading `#`, dedupes, and returns `null` when the cache is null
+   * or yields no tags at all.
+   */
+  function getAllTags(
+    cache:
+      | {
+          tags?: Array<{ tag: string }>;
+          frontmatter?: Record<string, unknown>;
+        }
+      | null
+      | undefined,
+  ): string[] | null {
+    if (!cache) return null;
+    const out: string[] = [];
+    for (const t of cache.tags ?? []) {
+      out.push(t.tag.startsWith("#") ? t.tag : `#${t.tag}`);
+    }
+    const fmTags = cache.frontmatter?.tags;
+    if (Array.isArray(fmTags)) {
+      for (const t of fmTags) {
+        if (typeof t === "string") {
+          out.push(t.startsWith("#") ? t : `#${t}`);
+        }
+      }
+    } else if (typeof fmTags === "string") {
+      out.push(fmTags.startsWith("#") ? fmTags : `#${fmTags}`);
+    }
+    return out.length === 0 ? null : Array.from(new Set(out));
+  }
+
   return {
     Notice,
     Plugin,
@@ -104,6 +139,7 @@ void mock.module("obsidian", () => {
     PluginSettingTab,
     App,
     Modal,
+    getAllTags,
     requestUrl: async (req: { url: string } | string) => {
       const url = typeof req === "string" ? req : req.url;
       const r = _mockState.requestUrlResponses.get(url);
@@ -188,11 +224,35 @@ type MockVaultState = {
         { position: { start: { line: number }; end: { line: number } } }
       >;
       frontmatter: Record<string, unknown>;
+      tags: Array<{
+        tag: string;
+        position: { start: { line: number } };
+      }>;
+      links: Array<{
+        link: string;
+        original: string;
+        displayText?: string;
+        position: { start: { line: number } };
+      }>;
+      embeds: Array<{
+        link: string;
+        original: string;
+        displayText?: string;
+        position: { start: { line: number } };
+      }>;
+      frontmatterLinks: Array<{
+        link: string;
+        original: string;
+        displayText?: string;
+        key: string;
+      }>;
     }
   >;
   commands: Array<{ id: string; name: string }>;
   executedCommands: string[];
   tags: Record<string, number>;
+  resolvedLinks: Record<string, Record<string, number>>;
+  unresolvedLinks: Record<string, Record<string, number>>;
   requestUrlResponses: Map<
     string,
     {
@@ -211,6 +271,8 @@ const _mockState: MockVaultState = {
   commands: [],
   executedCommands: [],
   tags: {},
+  resolvedLinks: {},
+  unresolvedLinks: {},
   requestUrlResponses: new Map(),
 };
 
@@ -221,6 +283,14 @@ export function resetMockVault(): void {
   _mockState.commands = [];
   _mockState.executedCommands = [];
   _mockState.tags = {};
+  // Mutate in place rather than reassign so references captured by
+  // mockApp().metadataCache stay valid across tests.
+  for (const k of Object.keys(_mockState.resolvedLinks)) {
+    delete _mockState.resolvedLinks[k];
+  }
+  for (const k of Object.keys(_mockState.unresolvedLinks)) {
+    delete _mockState.unresolvedLinks[k];
+  }
   _mockState.requestUrlResponses.clear();
 }
 
@@ -238,6 +308,25 @@ export function setMockMetadata(
     headings?: Array<{ heading: string; level: number; line: number }>;
     blocks?: Record<string, { startLine: number; endLine: number }>;
     frontmatter?: Record<string, unknown>;
+    tags?: Array<{ tag: string; line?: number }>;
+    links?: Array<{
+      link: string;
+      original?: string;
+      displayText?: string;
+      line?: number;
+    }>;
+    embeds?: Array<{
+      link: string;
+      original?: string;
+      displayText?: string;
+      line?: number;
+    }>;
+    frontmatterLinks?: Array<{
+      link: string;
+      original?: string;
+      displayText?: string;
+      key: string;
+    }>;
   },
 ): void {
   _mockState.metadataCache.set(path, {
@@ -255,6 +344,28 @@ export function setMockMetadata(
       ]),
     ),
     frontmatter: metadata.frontmatter ?? {},
+    tags: (metadata.tags ?? []).map((t) => ({
+      tag: t.tag,
+      position: { start: { line: t.line ?? 0 } },
+    })),
+    links: (metadata.links ?? []).map((l) => ({
+      link: l.link,
+      original: l.original ?? `[[${l.link}]]`,
+      displayText: l.displayText,
+      position: { start: { line: l.line ?? 0 } },
+    })),
+    embeds: (metadata.embeds ?? []).map((e) => ({
+      link: e.link,
+      original: e.original ?? `![[${e.link}]]`,
+      displayText: e.displayText,
+      position: { start: { line: e.line ?? 0 } },
+    })),
+    frontmatterLinks: (metadata.frontmatterLinks ?? []).map((f) => ({
+      link: f.link,
+      original: f.original ?? `[[${f.link}]]`,
+      displayText: f.displayText,
+      key: f.key,
+    })),
   });
 }
 
@@ -275,6 +386,32 @@ export function getExecutedCommands(): string[] {
  */
 export function setMockTags(tags: Record<string, number>): void {
   _mockState.tags = { ...tags };
+}
+
+/**
+ * Populate the entry in `metadataCache.resolvedLinks` for a single
+ * source file. `targets` maps target file path → link count, matching
+ * Obsidian's `Record<string, Record<string, number>>` shape. Mutates
+ * the existing object so references captured by `mockApp()` stay
+ * valid across tests.
+ */
+export function setMockResolvedLinks(
+  source: string,
+  targets: Record<string, number>,
+): void {
+  _mockState.resolvedLinks[source] = { ...targets };
+}
+
+/**
+ * Populate `metadataCache.unresolvedLinks` for a single source. Same
+ * shape as `setMockResolvedLinks` but the keys are unresolved
+ * linkpaths (link target text that doesn't resolve to a real file).
+ */
+export function setMockUnresolvedLinks(
+  source: string,
+  targets: Record<string, number>,
+): void {
+  _mockState.unresolvedLinks[source] = { ...targets };
 }
 
 export function setMockRequestUrl(
@@ -431,6 +568,40 @@ export function mockApp(): App {
       return _mockState.metadataCache.get(path) ?? null;
     },
     getTags: (): Record<string, number> => ({ ..._mockState.tags }),
+    // Live references — `resetMockVault()` mutates these in place so
+    // the bindings stay valid across tests without re-creating the App.
+    get resolvedLinks(): Record<string, Record<string, number>> {
+      return _mockState.resolvedLinks;
+    },
+    get unresolvedLinks(): Record<string, Record<string, number>> {
+      return _mockState.unresolvedLinks;
+    },
+    /**
+     * Mock implementation of Obsidian's `getFirstLinkpathDest`. Resolves
+     * a linkpath against the mock vault using a small subset of the
+     * real algorithm: exact path match → path with `.md` appended →
+     * basename match (with or without extension).
+     */
+    getFirstLinkpathDest: (
+      linkpath: string,
+      _sourcePath: string,
+    ): TFile | null => {
+      if (_mockState.files.has(linkpath)) {
+        return fileFromPath(linkpath) as unknown as TFile | null;
+      }
+      const withMd = linkpath.endsWith(".md") ? linkpath : `${linkpath}.md`;
+      if (_mockState.files.has(withMd)) {
+        return fileFromPath(withMd) as unknown as TFile | null;
+      }
+      for (const path of _mockState.files.keys()) {
+        const name = path.split("/").pop() ?? path;
+        const base = name.replace(/\.md$/, "");
+        if (base === linkpath || name === linkpath) {
+          return fileFromPath(path) as unknown as TFile | null;
+        }
+      }
+      return null;
+    },
   };
 
   const fileManager = {
@@ -443,6 +614,10 @@ export function mockApp(): App {
         headings: [],
         blocks: {},
         frontmatter: {},
+        tags: [],
+        links: [],
+        embeds: [],
+        frontmatterLinks: [],
       };
       const fm = { ...cache.frontmatter };
       fn(fm);
