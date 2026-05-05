@@ -4,7 +4,7 @@ import {
   resolveHeadingPath,
   findBlockPositionFromCache,
   hasParentH1,
-  isInsideTableOrFencedCode,
+  isBlockRangeStructurallyUnsafe,
   normalizeAppendBody,
   planFrontmatterReplace,
   planFrontmatterAppend,
@@ -269,8 +269,9 @@ export async function applyPatch(
 
     // 0.3.x parity: reject when block resolves inside a table or fenced code
     // block. Mirror of the gate in services/patchHelpers.ts:applyPatch —
-    // see fork #81, jacksteamdev/#83.
-    if (isInsideTableOrFencedCode(lines, pos.startLine)) {
+    // see fork #81, jacksteamdev/#83. 0.4.3 fork #84: full block range
+    // check, not just startLine — see range wrapper in patchHelpers.ts.
+    if (isBlockRangeStructurallyUnsafe(lines, pos.startLine, pos.endLine)) {
       return {
         content: [
           {

@@ -350,4 +350,37 @@ describe("patch_active_file tool", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
   });
+
+  test("#84: rejects when cache returns startLine at the opening fence line", async () => {
+    // patchActiveFile uses cache-only resolution (no regex fallback). This
+    // simulates a defensible cache shape — if Obsidian's metadataCache ever
+    // reports a multi-line block whose startLine lands on the opening fence
+    // delimiter, the helper boundary-case extension + range check must
+    // still reject. See fork #84 + the symmetric regex-fallback test in
+    // patchVaultFile.test.ts.
+    const fixture =
+      '# Document\n\n## Section\n\nSome text inside.\n\n```\necho "hello"\n^block-id\n```\n\nEnd of section.\n';
+    setMockFile("a.md", fixture);
+    setMockMetadata("a.md", {
+      blocks: { "block-id": { startLine: 6, endLine: 8 } },
+    });
+    setMockActiveFile("a.md");
+    const app = mockApp();
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "block",
+        target: "block-id",
+        createTargetIfMissing: false,
+        content: "REPLACEMENT fenced block.",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+    // Vault-safety property: file untouched byte-exact.
+    const file = app.vault.getAbstractFileByPath("a.md");
+    if (!file) throw new Error("expected file");
+    expect(await app.vault.read(file as never)).toBe(fixture);
+  });
 });

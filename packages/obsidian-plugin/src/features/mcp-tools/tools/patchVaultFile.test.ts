@@ -535,3 +535,86 @@ describe("patch_vault_file — block-in-table / fenced-code reject (#81)", () =>
     expect(r.content[0].text).toMatch(/markdown table or fenced code block/i);
   });
 });
+
+describe("patch_vault_file — block-in-fenced-code via regex-fallback (#84)", () => {
+  test("rejects #84 fixture byte-exact via regex-fallback (no cache mock)", async () => {
+    // Folotp's #84 fixture verbatim. Critical: NO setMockMetadata — this
+    // forces findBlockPositionFromCache to miss, exercising the regex
+    // fallback findBlockReferenceInContent. That walk-back stops at blank
+    // lines and captures the opening fence as startLine, which the 0.4.2
+    // single-line check on isInsideTableOrFencedCode missed (because the
+    // count-up-to-lineIdx loop hadn't toggled `inFence` yet at line=fence).
+    // 0.4.3 fixes this via (a) helper boundary case (fence-delimiter line
+    // returns true) plus (b) range check across [startLine, endLine].
+    const fixture =
+      '# Document\n\n## Section\n\nSome text inside.\n\n```\necho "hello"\n^block-id\n```\n\nEnd of section.\n';
+    setMockFile("Notes/r84.md", fixture);
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r84.md",
+        operation: "replace",
+        targetType: "block",
+        target: "block-id",
+        createTargetIfMissing: false,
+        content: "REPLACEMENT fenced block.",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/markdown table or fenced code block/i);
+    // Vault-safety property: file untouched byte-exact.
+    const file = app.vault.getAbstractFileByPath("Notes/r84.md");
+    if (!file) throw new Error("expected file");
+    expect(await app.vault.read(file as never)).toBe(fixture);
+  });
+
+  test("rejects on append op symmetrically (regex-fallback path)", async () => {
+    const fixture =
+      "## Section\n\n```\nx\n^id\n```\n\nEnd.\n";
+    setMockFile("Notes/r84a.md", fixture);
+    const app = mockApp();
+    const r = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r84a.md",
+        operation: "append",
+        targetType: "block",
+        target: "id",
+        createTargetIfMissing: false,
+        content: "X",
+      },
+      app,
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/markdown table or fenced code block/i);
+  });
+
+  test("control: paragraph immediately before a fence still patches cleanly", async () => {
+    // Regression sentinel: a block id in a normal paragraph that happens
+    // to sit just before a fenced code block must still patch successfully.
+    // The walk-back stops at the blank line before the fence — startLine
+    // points inside the safe paragraph, not at the fence. No false-positive
+    // reject from the 0.4.3 boundary extension.
+    const fixture = "## Section\n\nFirst paragraph.\n^my-block\n\n```\ncode\n```\n";
+    setMockFile("Notes/r84c.md", fixture);
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/r84c.md",
+        operation: "replace",
+        targetType: "block",
+        target: "my-block",
+        createTargetIfMissing: false,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.vault.getAbstractFileByPath("Notes/r84c.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    expect(final).toContain("REPLACED.");
+    expect(final).toContain("```");
+    expect(final).toContain("code");
+  });
+});
