@@ -1,8 +1,47 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-05 sera (Links section bootstrap — 3 nuovi tool atomici aggiunti dopo PR #83: `get_files_by_tag` (Metadata), `get_outgoing_links` + `get_backlinks` (nuova sezione Links). Tools 21→24. Plugin tools suite 140/140 → 178/178. Tutto in [Unreleased] per `0.4.4`).** `0.4.0` stable + `0.4.1` + `0.4.2` + **`0.4.3`** shipped consecutivamente, 4 cycle iterativi soak-driven. Documento di passaggio di consegne. Self-contained.
+> **Aggiornato 2026-05-05 sera tarda (`0.4.4` SHIPPED — cycle 5 closed: list_tags + get_files_by_tag + get_outgoing_links + get_backlinks; tools 20→24; folotp round-5 clean su 0.4.3 ack-ed; CI [run 25393505832](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832) green; commit `5405716`, tag `0.4.4`, prerelease:false).** `0.4.0` → `0.4.1` → `0.4.2` → `0.4.3` → **`0.4.4`** shipped consecutivamente, 5 cycle iterativi (4 soak-driven + 1 feature batch). Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-05 sera tarda — `0.4.4` SHIPPED 🚀
+
+**Trigger**: folotp ha postato 2026-05-05 16:32Z su #54 il **round-5 verify clean** su `0.4.3`: tutti i 5 ask items PASS (R3-fenced #84 closure + R3-fenced control + R1 #80 H2-root + R2 #81 block-in-table + R3 #76 blank-line), chain-id discipline applicata (3 discriminators converged), sha256 byte-exact pre/post su ogni fixture, control fixture proof contro false-positive di `isInsideTableOrFencedCode`, triangulation bonus su #74 (zero prefix layers su 3 throwing tools cross-checked). **Verdict folotp**: "the #80 / #81 / #84 family is structurally closed on HTTP-embedded. Carryover regression-free. No new issues to file." Plus folotp ha flagged **una usability observation** (NON un bug): default `createTargetIfMissing: true` causa silent landing per H2-root in vaults frontmatter-title, non documented nel `tools/list` model-facing surface.
+
+### Sequence
+
+1. **Reply substantive su #54** ([comment 4381707206](https://github.com/istefox/obsidian-mcp-connector/issues/54#issuecomment-4381707206)): multi-point ack rule applicata in versione strutturata. Preamble explicit articulando WHAT è load-bearing del round-5 shape (chain-id discipline preflight, sha256 byte-exact verification, control fixture per false-positive, triangulation bonus su #74 unprompted). Per-point ack 5+1 in ordine. Acknowledge usability observation: NON flip default (backwards-compat trumps edge case), MA promessa di re-emphasise il caveat nello schema `.describe()`.
+
+2. **Schema caveat shipped** ([commit `305daa7`](https://github.com/istefox/obsidian-mcp-connector/commit/305daa7)): `patch_vault_file` `createTargetIfMissing` `.describe()` re-emphasises il silent-create branch per H2-root, surface upfront via `tools/list` invece che discovery via runtime guard message. Default unchanged (`true` per heading/frontmatter, `false` per block).
+
+3. **`bun run version patch`** con `FORCE=true` (script guard "must be on main" bypass, pattern usato per tutti i 0.4.x cut consecutive — 0.4.x line vive interamente su `feat/http-embedded` finché non c'è merge esplicito a main). Auto commit `5405716` + auto tag `0.4.4` + auto push branch + tag.
+
+4. **CI release run [`25393505832`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832)** ✅ green in ~32s, asset shape unchanged: `main.js` 3.0MB + `manifest.json` 389B + `obsidian-plugin-0.4.4.zip` 917KB. `prerelease: false` automatico (default GitHub).
+
+5. **Cross-link release su #54** ([comment 4381783250](https://github.com/istefox/obsidian-mcp-connector/issues/54#issuecomment-4381783250)): release URL + CI run + asset confirm + cycle 4 closed statement. Promessa fatta nel reply substantive ("will cross-link the release here when CI lands green") fulfilled.
+
+### State change
+
+- Tag: `0.4.3` → **`0.4.4`** (commit `5405716`)
+- Tools: 20 → 21 (PR #83 list_tags) → **24** (3 graph tools)
+- `[Unreleased]` in CHANGELOG.md: vuotato (4 entry promosse a `[0.4.4]` automaticamente quando lanciamo qualcosa di nuovo? **NB**: il version script NON sposta `[Unreleased]` → `[0.4.4]` block. CHANGELOG ha ancora le entry sotto `[Unreleased]`. Da decidere se cleanup successivo con un `chore(changelog): promote [Unreleased] entries to [0.4.4]` commit, o lasciare per il next cycle.)
+- Branch `feat/http-embedded` HEAD: `5405716`
+- Folotp engagement: round-5 sentinel clean → cycle 4 (`0.4.0-beta.3 → 0.4.0 → 0.4.1 → 0.4.2 → 0.4.3`) chiuso strutturalmente su patch_vault_file safety surface
+
+### Pending immediate
+
+- **CHANGELOG cleanup**: spostare `[Unreleased]` block sotto `## [0.4.4] — 2026-05-05` (manuale, ~5 min). Da decidere se shippare ora come `chore(changelog):` patch su `0.4.4` (no version bump), o aspettare `0.4.5` per accorpare.
+- **Folotp round-6 atteso ~24-72h** dopo BRAT auto-update (test dei 3 nuovi tool di Phase A/B/C + verify che `createTargetIfMissing` describe() change sia visibile). Probabile new feedback su graph navigation tool shape.
+- **Marcoaperez next PR** atteso 1-2 settimane (candidate `get_recent_files`/`get_document_map`/etc.)
+- **Store PR #11919** monitor (week 3, silent — la routine settimanale ha già controllato lunedì 2026-05-04)
+
+### Methodology validation
+
+- **Validated-contributor multi-point ack rule** applied: substantive reply con preamble explicit thanks per round-5 rigor + per-point ack in ordine + commit promise (schema caveat) actually delivered before bump.
+- **Foundational read-fully-analyze rule** applicata su round-5 comment di folotp: 5 ask items + control + triangulation matrix letti integralmente prima di drafting reply.
+- **Honest re-assessment**: ho re-emphasised il caveat nel schema invece di flipparе il default. Decisione documentata nel reply ("backwards-compat trumps the edge case").
 
 ---
 
