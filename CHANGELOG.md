@@ -5,6 +5,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-05-05
+
+### Fixed
+
+- **`patch_vault_file targetType:"block"` silently destroyed the
+  surrounding fenced code block** when the block id resolved inside a
+  code fence on the cache-miss + regex-fallback path (#84, sibling
+  regression to #81, surfaced by @folotp's round-042 soak on the actual
+  HTTP-embedded chain with xxd-pinned bytes). The 0.4.2 fix gated the
+  table branch correctly but missed the fenced-code branch on this
+  specific shape: `findBlockReferenceInContent` walks backward from the
+  `^block-id` line stopping at blank lines, which captures the **opening
+  fence delimiter** as `startLine`. The 0.4.2 caller checked
+  `isInsideTableOrFencedCode(lines, blockPos.startLine)` — and the
+  helper's fence-counting loop iterates `lines[0..lineIdx-1]` strictly,
+  so the fence AT `lineIdx` itself wasn't counted (`inFence=false`) and
+  the line itself wasn't checked for being a fence delimiter. Net:
+  helper returned false, gate failed, splice replaced the opening fence
+  + content + `^block-id` line inline, orphaning the closing fence.
+  🔴 Severity HIGH — vault-safety, same shape as #81. Two compounding
+  fixes:
+  - **Boundary case** in `isInsideTableOrFencedCode`: a line that itself
+    is a fence delimiter (`.trim().startsWith("```")`) now returns true
+    — splicing through a delimiter always orphans the matching one.
+    Symmetric to the existing `isSeparator(target) → return true` check
+    in the table case (`patchHelpers.ts:202`).
+  - **New `isBlockRangeStructurallyUnsafe` wrapper**: block branch of
+    `applyPatch` now checks every line in `[startLine, endLine]` via the
+    new exported helper, not just `startLine`. Defense-in-depth against
+    future cache-resolution shapes where the resolved block spans a
+    fence boundary in a different layout than the regex-fallback's
+    output.
+  - Both `applyPatch` implementations (`services/patchHelpers.ts`
+    canonical + `tools/patchActiveFile.ts` duplicate) updated
+    symmetrically.
+  - **Test-fixture realism gap closed**: the existing 0.4.2 fenced-code
+    test (`patchVaultFile.test.ts:460-486`) bypassed the bug by mocking
+    the cache to return the in-fence content line directly, never
+    exercising the regex-fallback path that production hits on cache
+    miss. New test on folotp's #84 fixture byte-exact **without
+    `setMockMetadata`** forces the regex fallback to run, surfacing the
+    fence-opener-as-startLine shape that this patch fixes.
+
+  Tests: 9 new cases across `patchHelpers.test.ts` (3 fence-delimiter-
+  line boundary cases on `isInsideTableOrFencedCode` + 5 cases on the
+  new `isBlockRangeStructurallyUnsafe` describe), 3 in
+  `patchVaultFile.test.ts` (#84 byte-exact regex-fallback + append-op
+  symmetric + paragraph-before-fence control as regression sentinel),
+  1 mirror in `patchActiveFile.test.ts` (cache-only with mocked
+  `startLine` at opening fence). Plugin suite: 656/656 green
+  (delta +13 vs 0.4.2 baseline).
+
+### Known limits (not regressions, not fixed in this patch)
+
+Folotp's round-042 bonus sentinel results on `#83`'s boundary scanner
+pinned two future-fix candidates that are documented per-line
+`^`-anchored regex behavior on the **heading** side, not block-side
+regressions:
+
+- `## ` at column 1 inside a fenced code block fakes a section heading.
+- `## ` at column 1 inside a multi-line `<!-- HTML comment -->` fakes a
+  section heading.
+
+Folotp's explicit framing: "future-fix pins for the boundary scanner
+if/when fence-awareness or HTML-comment-awareness is added on the
+heading side (parallel to the new block-side
+`isInsideTableOrFencedCode` helper)". Not silent data destruction; not
+blocking. Tracked as candidates for a future 0.4.x feature batch
+post-store-accept.
+
 ## [0.4.2] — 2026-05-04
 
 ### Fixed
