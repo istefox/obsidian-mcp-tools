@@ -29,7 +29,7 @@ Starting with **0.4.0**, the plugin hosts the MCP server **in-process inside Obs
 
 When connected to an MCP-compatible client, this plugin enables:
 
-- **Vault access** — read, write, and patch notes through 14 typed tools (`get_vault_file`, `create_vault_file`, `patch_vault_file`, `list_vault_files`, …) with native binary content for images and audio.
+- **Vault access** — read, write, and patch notes through 16 typed tools (`get_vault_file`, `create_vault_file`, `patch_vault_file`, `list_vault_files`, `create_vault_directory`, `delete_vault_directory`, …) with native binary content for images and audio. Missing parent directories on a `create`/`append` path are auto-created.
 - **Native semantic search** — `search_vault_smart` over an on-device MiniLM index, with optional fallback to Smart Connections if it is installed. Provider tri-state setting (`auto` / `native` / `smart-connections`) under the plugin settings.
 - **Plain-text + structured search** — `search_vault_simple` (text + context windows) and `search_vault` (DQL / JsonLogic via Local REST API).
 - **Template execution** — invoke Templater templates as MCP tool calls with dynamic parameters.
@@ -40,7 +40,7 @@ When connected to an MCP-compatible client, this plugin enables:
 - **Tag-filtered file lookup** — `get_files_by_tag` returns every file tagged with a given tag, with per-file occurrence count for relevance ranking. Optional `includeNested` to match `#project` against `#project/active`, `#project/archived`, etc. (mirrors Obsidian's tag pane).
 - **Graph navigation** — `get_outgoing_links` returns the body, embed, and frontmatter links emanating from a file (with resolved `targetPath` and `resolved` flag); `get_backlinks` returns every file that links to a given target, with per-source count. Both read-only, both backed by `app.metadataCache.resolvedLinks` / `getFirstLinkpathDest`.
 
-24 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
+26 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
 
 ## Prerequisites
 
@@ -134,7 +134,7 @@ Click **Copy config for streamable-http clients**. The snippet uses the generic 
 
 ### Verifying the setup
 
-Once configured, your client should expose **24 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
+Once configured, your client should expose **26 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
 
 To verify the connection works end-to-end, ask the agent to call `get_server_info`. A successful response confirms the client can reach the in-process server and the bearer token is correct. For deeper inspection (request/response logs, tool schema inspection without an LLM in the loop), use [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector):
 

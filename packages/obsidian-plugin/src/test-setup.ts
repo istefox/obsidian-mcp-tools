@@ -210,6 +210,7 @@ void mock.module("svelte", () => ({
 
 type MockVaultState = {
   files: Map<string, string>;
+  folders: Set<string>;
   activeFilePath: string | null;
   metadataCache: Map<
     string,
@@ -266,6 +267,7 @@ type MockVaultState = {
 
 const _mockState: MockVaultState = {
   files: new Map(),
+  folders: new Set(),
   activeFilePath: null,
   metadataCache: new Map(),
   commands: [],
@@ -278,6 +280,7 @@ const _mockState: MockVaultState = {
 
 export function resetMockVault(): void {
   _mockState.files.clear();
+  _mockState.folders.clear();
   _mockState.activeFilePath = null;
   _mockState.metadataCache.clear();
   _mockState.commands = [];
@@ -296,6 +299,16 @@ export function resetMockVault(): void {
 
 export function setMockFile(path: string, content: string): void {
   _mockState.files.set(path, content);
+}
+
+/**
+ * Pre-populate a directory in the mock vault. Tests use this to set up
+ * the "parent already exists" precondition without having to call
+ * `vault.createFolder` from the production helper.
+ */
+export function setMockFolder(path: string): void {
+  if (!path) return;
+  _mockState.folders.add(path);
 }
 
 export function setMockActiveFile(path: string | null): void {
@@ -484,12 +497,28 @@ function fileFromPath(path: string): MockTFile | null {
   return new MockTFile(path, name);
 }
 
+function folderFromPath(path: string): MockTFolder | null {
+  if (!_mockState.folders.has(path)) return null;
+  const name = path.split("/").pop() ?? path;
+  return new MockTFolder(path, name);
+}
+
+/** Test-only access to the folder set, for assertions on createFolder. */
+export function getMockFolders(): string[] {
+  return Array.from(_mockState.folders).sort();
+}
+
 import type { App, TAbstractFile, TFile, TFolder } from "obsidian";
 
 export function mockApp(): App {
   const vault = {
-    getAbstractFileByPath: (path: string): TAbstractFile | null =>
-      fileFromPath(path) as unknown as TAbstractFile | null,
+    getAbstractFileByPath: (path: string): TAbstractFile | null => {
+      const f = fileFromPath(path);
+      if (f) return f as unknown as TAbstractFile;
+      const d = folderFromPath(path);
+      if (d) return d as unknown as TAbstractFile;
+      return null;
+    },
     getFiles: (): TFile[] =>
       Array.from(_mockState.files.keys())
         .map((p) => fileFromPath(p))
@@ -515,8 +544,31 @@ export function mockApp(): App {
       return buf as ArrayBuffer;
     },
     create: async (path: string, content: string): Promise<TFile> => {
+      // Mirror Obsidian semantics: bottom-level fs operation throws
+      // ENOENT when the parent directory doesn't exist. The mock walks
+      // every ancestor segment (excluding the leaf filename) and
+      // requires each to be in the folders set.
+      const slash = path.lastIndexOf("/");
+      if (slash > 0) {
+        const parent = path.slice(0, slash);
+        if (!_mockState.folders.has(parent)) {
+          throw new Error(
+            `ENOENT: no such file or directory, open '<vault>/${path}'`,
+          );
+        }
+      }
       _mockState.files.set(path, content);
       return fileFromPath(path) as unknown as TFile;
+    },
+    createFolder: async (path: string): Promise<TFolder> => {
+      // Real Obsidian throws "Folder already exists" on a duplicate.
+      // The production helper swallows that case, so the mock must
+      // throw to exercise that swallow path.
+      if (_mockState.folders.has(path)) {
+        throw new Error(`Folder already exists: ${path}`);
+      }
+      _mockState.folders.add(path);
+      return folderFromPath(path) as unknown as TFolder;
     },
     modify: async (file: TFile, content: string): Promise<void> => {
       const path = (file as unknown as MockTFile).path;
@@ -538,6 +590,32 @@ export function mockApp(): App {
       unsubscribe: () => {},
     }),
     off: () => {},
+    adapter: {
+      // Recursive rmdir over the mock vault: removes the folder, every
+      // descendant folder, and every descendant file.
+      rmdir: async (path: string, recursive: boolean): Promise<void> => {
+        if (!_mockState.folders.has(path)) {
+          throw new Error(
+            `ENOENT: no such file or directory, rmdir '<vault>/${path}'`,
+          );
+        }
+        const prefix = `${path}/`;
+        const childFiles = Array.from(_mockState.files.keys()).filter((p) =>
+          p.startsWith(prefix),
+        );
+        const childFolders = Array.from(_mockState.folders).filter((p) =>
+          p.startsWith(prefix),
+        );
+        if (!recursive && (childFiles.length > 0 || childFolders.length > 0)) {
+          throw new Error(`ENOTEMPTY: directory not empty, rmdir '${path}'`);
+        }
+        for (const f of childFiles) _mockState.files.delete(f);
+        for (const d of childFolders) _mockState.folders.delete(d);
+        _mockState.folders.delete(path);
+      },
+      exists: async (path: string): Promise<boolean> =>
+        _mockState.files.has(path) || _mockState.folders.has(path),
+    },
   };
 
   const workspace = {

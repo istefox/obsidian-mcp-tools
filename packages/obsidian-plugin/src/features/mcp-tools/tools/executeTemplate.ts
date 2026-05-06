@@ -2,6 +2,7 @@ import { type } from "arktype";
 import type { App, TFile } from "obsidian";
 import type McpToolsPlugin from "$/main";
 import { Templater, type PromptArgAccessor } from "shared";
+import { ensureParentFolderExists } from "$/features/mcp-tools/services/ensureFolderExists";
 
 export const executeTemplateSchema = type({
   name: '"execute_template"',
@@ -135,6 +136,7 @@ export async function executeTemplateHandler(
     // future refactor that delegates to
     // `templater.create_new_note_from_template(...)`.
     if (createFile && ctx.arguments.targetPath) {
+      await ensureParentFolderExists(ctx.app, ctx.arguments.targetPath);
       await ctx.app.vault.create(ctx.arguments.targetPath, processedContent);
       return {
         content: [

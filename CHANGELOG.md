@@ -5,6 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **`create_vault_directory` tool** — creates a directory at a
+  vault-relative path, recursively creating any missing intermediate
+  ancestors (`mkdirp` semantics). Idempotent: succeeds silently if the
+  directory already exists. Rejects empty paths and refuses to overwrite
+  an existing file with the same path. Closes the gap whereby an MCP
+  client could create files but not the directories needed to organise
+  them. (#86)
+
+- **`delete_vault_directory` tool** — deletes a vault directory via
+  `app.vault.adapter.rmdir`. Defaults to non-recursive (fails on a
+  non-empty directory); pass `recursive: "true"` to delete the directory
+  along with every file and sub-directory it contains. Bottoms out in
+  the filesystem adapter, so deleted content does NOT route through the
+  Obsidian trash — the call is irreversible from MCP. Closes the gap
+  whereby empty directories accumulated as filesystem debris after
+  `delete_vault_file` cleared their contents. (#86)
+
+### Fixed
+
+- **`create_vault_file` / `append_to_vault_file` / `execute_template`:
+  ENOENT on missing parent directory.** All three handlers called
+  `app.vault.create(path, content)` directly without ensuring the
+  ancestor chain existed, so any path containing a not-yet-created
+  subdirectory failed at the filesystem layer with
+  `ENOENT: no such file or directory`. The legacy LRA chain (0.3.x)
+  side-stepped this with a single-level `createFolder` shim in
+  `_vaultPut`; the in-process 0.4.x handlers regressed by not porting
+  it. New shared helper `services/ensureFolderExists.ts` walks every
+  ancestor segment root-first, calls `app.vault.createFolder` on the
+  first missing one, and tolerates the "already exists" race — extending
+  parity with LRA into proper multi-level mkdirp. Reported by @folotp
+  in #86 with a worked diff and ENOENT repro; the fix covers the
+  three call sites instead of just the two flagged in the report.
+
+### Changed
+
+- **`minAppVersion` raised from `0.15.0` to `1.7.2`.** The new
+  directory tools depend on `app.vault.createFolder` (`@since 1.4.0`)
+  and `app.vault.adapter.rmdir(path, recursive)` (`@since 1.7.2`). All
+  active Obsidian installs are well past 1.7.2 in practice, so this is
+  a manifest update rather than a portability blocker — flagging here
+  for changelog completeness. BRAT installs gated below 1.7.2 will
+  refuse to update; users on those versions should update Obsidian
+  before pulling 0.4.5.
+
 ## [0.4.4] — 2026-05-05
 
 ### Added

@@ -1,8 +1,70 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-05 sera tarda (`0.4.4` SHIPPED — cycle 5 closed: list_tags + get_files_by_tag + get_outgoing_links + get_backlinks; tools 20→24; folotp round-5 clean su 0.4.3 ack-ed; CI [run 25393505832](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832) green; commit `5405716`, tag `0.4.4`, prerelease:false).** `0.4.0` → `0.4.1` → `0.4.2` → `0.4.3` → **`0.4.4`** shipped consecutivamente, 5 cycle iterativi (4 soak-driven + 1 feature batch). Documento di passaggio di consegne. Self-contained.
+> **Aggiornato 2026-05-06 mattina (#86 fix landed locally — `create_vault_file`/`append_to_vault_file`/`execute_template` ENOENT su parent mancante + 2 tool nuovi `create_vault_directory` + `delete_vault_directory`; tools 24→26; minAppVersion 0.15.0 → 1.7.2; suite 731/734 verde, 3 fail bindWithFallback environmental pre-existing. Commit non ancora bumped — pendente decisione ship `0.4.5` vs accumulate.)**
+>
+> Storico (precedente): **2026-05-05 sera tarda (`0.4.4` SHIPPED — cycle 5 closed: list_tags + get_files_by_tag + get_outgoing_links + get_backlinks; tools 20→24; folotp round-5 clean su 0.4.3 ack-ed; CI [run 25393505832](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832) green; commit `5405716`, tag `0.4.4`, prerelease:false).** `0.4.0` → `0.4.1` → `0.4.2` → `0.4.3` → **`0.4.4`** shipped consecutivamente, 5 cycle iterativi (4 soak-driven + 1 feature batch). Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-06 mattina — #86 fix (parent dir mkdirp + create/delete vault directory) 📂
+
+**Trigger**: folotp ha aperto **#86** (2026-05-05 20:04Z, ~2h dopo cut 0.4.4) — `create_vault_file` fallisce con ENOENT quando un ancestor della path non esiste; gap correlato di nessun tool MCP per cancellare directory (filesystem debris dopo `delete_vault_file` di tutti i contenuti). Issue strutturato come al solito: bug + diagnostic line:column + minimal fix proposto + comparison con LRA legacy chain (3.x usa `createFolder` + `catch {}` su single-level) + nota su `minAppVersion`.
+
+### Diagnosi end-to-end (foundational read-fully-analyze rule)
+
+3 production call-site di `app.vault.create()` nei tool, tutti senza `ensureParentFolders`:
+- `createVaultFile.ts:33` (segnalato da folotp)
+- `appendToVaultFile.ts:29` (sibling, segnalato da folotp)
+- `executeTemplate.ts:138` (NON segnalato — emerso durante il run dei test che fallivano per la stessa root cause; same fix triplica il rendimento dello stesso lavoro)
+
+LRA chain side-stepped questo con un `createFolder(parent)` + `try/catch swallow` single-level. La 0.4.x in-process l'ha regressa non portando il shim. Fix scelto: andare oltre LRA — `mkdirp` multi-level, walk root-first, swallow "already exists" race.
+
+### Implementazione (1 helper + 3 patch + 2 tool nuovi)
+
+1. **`services/ensureFolderExists.ts`** — helper condiviso + `ensureParentFolderExists` wrapper per i tool che prendono path file. Idempotent, swallow only "already exists", re-throw real errors (permissions/invalid path/locked).
+2. **`createVaultFile.ts` + `appendToVaultFile.ts` + `executeTemplate.ts`** — chiamano `ensureParentFolderExists` prima di ogni `vault.create()`. Schema `.describe()` aggiornati per riflettere il nuovo behavior.
+3. **`createVaultDirectory.ts`** — nuovo tool. Idempotent. Reject empty/root path + reject collision con file esistente. Trim leading/trailing slash.
+4. **`deleteVaultDirectory.ts`** — nuovo tool. `recursive?: "true"|"false"` (default `"false"` = fail su non-empty). Reject path-è-file (rimanda a `delete_vault_file`). Bottoms-out in `app.vault.adapter.rmdir` — bypassa il trash di Obsidian (irreversibile da MCP, documentato in `.describe()`).
+5. **`mcp-tools/index.ts`** — registrazione 2 tool nuovi sotto la sezione "Vault file ops". Tools: 24 → **26**.
+6. **`manifest.json`** — `minAppVersion`: `0.15.0` → `1.7.2` (richiesto da `adapter.rmdir(path, recursive)` @ 1.7.2). README già allineato a v1.7.7 mention, no edit.
+7. **`test-setup.ts`** — extension non-trivial: aggiunto `_mockState.folders: Set<string>`, `setMockFolder`/`getMockFolders` helpers, `vault.create` ora throws ENOENT su parent mancante (mirror produzione, **questo è il signal-test del fix**), `vault.createFolder` mock con dup-throw, `vault.adapter.rmdir`/`exists` mock, `getAbstractFileByPath` esteso a folder. **Mock change behavioral**: ha rotto i 2 test pre-esistenti `createVaultFile`/`appendToVaultFile` con path nested → riscritti per esercitare il fix.
+
+### Test coverage (+38 cases)
+
+- `createVaultFile.test.ts`: 2 → **7** (root, single-level mkdirp, multi-level mkdirp, partial-existing-chain, idempotent existing parent, overwrite)
+- `appendToVaultFile.test.ts`: 2 → **5** (existing append, root create, mkdirp on create branch, modify-branch-doesnt-touch-folders)
+- `createVaultDirectory.test.ts` **nuovo**: 7 (single, mkdirp, idempotent, slash-normalisation, empty-reject, file-collision-reject, schema)
+- `deleteVaultDirectory.test.ts` **nuovo**: 9 (empty default, fail-non-empty, recursive removes children, ENOENT, file-reject, root-reject, slash-trim, schema)
+- `services/ensureFolderExists.test.ts` **nuovo**: 9 (no-op empty, single, walk-root-first, idempotent, double-slash, re-throw EACCES, swallow already-exists race, parent-no-op-root-file, parent-multi-level)
+
+Total: **+37 nuovi test** (delta 36/36 in isolation pass). Plugin suite full: **728/734 → 731/734** verde (+3 net). 3 fail residue (`bindWithFallback`) sono environmental pre-existing port-27200-in-use, NON causate da queste modifiche; documentate da CLAUDE.md / handoff. **Bonus inatteso**: il fix su `executeTemplate.ts` ha risolto 3 fail pre-esistenti su `executeTemplate.test.ts` + `templatesCompat.test.ts` che erano dovute alla stessa ENOENT root cause sul path nested.
+
+### Methodology applied
+
+- **Foundational read-fully-analyze rule**: end-to-end read di issue #86 + 3 file production + 4 file test + grep di tutti i call site di `vault.create()` prima di drafting il fix. Caught il 3° call site (executeTemplate) che folotp non aveva flagged — same root cause, same fix, no scope creep.
+- **High-signal contributor pattern**: folotp's proposed minimal fix accettato come starting point, esteso a multi-level mkdirp per parità superiore (issue body diceva "single level handles common case but silently fails if 2+ levels missing"). Tre call site coperti invece dei due flagged.
+
+### State change
+
+- Tools: 24 → **26** (registered: `create_vault_directory` + `delete_vault_directory` in "Vault file ops" sezione)
+- minAppVersion: `0.15.0` → `1.7.2`
+- Branch `feat/http-embedded` HEAD `d3efb4b` + 0 commit (modifiche locali, non ancora committate o bumped)
+- CHANGELOG `[Unreleased]` populated con: 2 Added (tool nuovi), 1 Fixed (#86 ENOENT triplicato), 1 Changed (minAppVersion bump)
+- Plugin tools suite: 178/178 → **215/215** (+37 cases)
+
+### Pending — DECISIONE SHIP
+
+- **Option A — Ship come 0.4.5 patch immediato**: `bun run version patch` → tag → push → CI green. Coerente col pattern dei 5 cycle iterativi (cycle 0.4.0→0.4.4 sempre <12h shipped). Bug fix è il primario; minAppVersion bump da segnalare nel release body. Probabile folotp round-6 verify entro 24-72h post-BRAT. **Raccomandazione: A.**
+- **Option B — Accumulate** per accorpare con futuri fix/feature in 0.4.5 batch più grosso. Costo: folotp aspetta più a lungo per il fix che ha riportato.
+
+### Pending immediate post-ship
+
+- Comment di chiusura su #86 con sommario root cause + 3-call-site coverage + minAppVersion note.
+- Folotp round-6 atteso 24-72h post-BRAT (verify dei 2 tool nuovi + verify ENOENT fix sui 3 call-site).
+- Marcoaperez next PR (atteso 1-2 settimane).
+- Store PR #11919 monitor (week 3, silent — routine settimanale).
 
 ---
 

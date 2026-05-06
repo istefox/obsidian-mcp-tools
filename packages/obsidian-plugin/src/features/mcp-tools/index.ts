@@ -45,6 +45,14 @@ import {
   deleteVaultFileHandler,
   deleteVaultFileSchema,
 } from "./tools/deleteVaultFile";
+import {
+  createVaultDirectoryHandler,
+  createVaultDirectorySchema,
+} from "./tools/createVaultDirectory";
+import {
+  deleteVaultDirectoryHandler,
+  deleteVaultDirectorySchema,
+} from "./tools/deleteVaultDirectory";
 import { searchVaultHandler, searchVaultSchema } from "./tools/searchVault";
 import {
   searchVaultSimpleHandler,
@@ -134,6 +142,12 @@ export async function registerTools(
   );
   registry.register(deleteVaultFileSchema, async ({ arguments: args }) =>
     deleteVaultFileHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(createVaultDirectorySchema, async ({ arguments: args }) =>
+    createVaultDirectoryHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(deleteVaultDirectorySchema, async ({ arguments: args }) =>
+    deleteVaultDirectoryHandler({ arguments: args, app: ctx.app }),
   );
 
   // Metadata
