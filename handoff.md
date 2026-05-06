@@ -1,10 +1,50 @@
 # Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
 
-> **Aggiornato 2026-05-06 mattina (#86 fix landed locally — `create_vault_file`/`append_to_vault_file`/`execute_template` ENOENT su parent mancante + 2 tool nuovi `create_vault_directory` + `delete_vault_directory`; tools 24→26; minAppVersion 0.15.0 → 1.7.2; suite 731/734 verde, 3 fail bindWithFallback environmental pre-existing. Commit non ancora bumped — pendente decisione ship `0.4.5` vs accumulate.)**
+> **Aggiornato 2026-05-06 sera (post-cycle housekeeping + downstream loop close: CHANGELOG `[Unreleased] → [0.4.5]` promote shipped — commit `15c1689`, CI run `25453980713` ✅; markdown-patch v0.4.5 fix landing cross-posted su upstream #83 — comment `4391074182` con cross-credit folotp variant matrix; verifica preliminare 0.3.13 patch NOT NEEDED — `markdown-patch` è dep del LRA plugin esterno non del fork; memoria persistente allineata. CI 0.4.5 verificata green retroattivamente.)**
 >
-> Storico (precedente): **2026-05-05 sera tarda (`0.4.4` SHIPPED — cycle 5 closed: list_tags + get_files_by_tag + get_outgoing_links + get_backlinks; tools 20→24; folotp round-5 clean su 0.4.3 ack-ed; CI [run 25393505832](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832) green; commit `5405716`, tag `0.4.4`, prerelease:false).** `0.4.0` → `0.4.1` → `0.4.2` → `0.4.3` → **`0.4.4`** shipped consecutivamente, 5 cycle iterativi (4 soak-driven + 1 feature batch). Documento di passaggio di consegne. Self-contained.
+> Storico (precedente): **2026-05-06 mattina (`0.4.5` SHIPPED — commit `0584a51` + bump `29ae191`, CI [run 25418823490](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25418823490) green ~31s, prerelease:false — folotp #86 fix: ENOENT triplicato su `create_vault_file`/`append_to_vault_file`/`execute_template` parent missing + 2 tool nuovi `create_vault_directory` + `delete_vault_directory`; tools 24→26; minAppVersion 0.15.0 → 1.7.2; suite 731/734 verde; #86 closed con close-out comment).**
+>
+> Storico (anteriore): **2026-05-05 sera tarda (`0.4.4` SHIPPED — cycle 5 closed: list_tags + get_files_by_tag + get_outgoing_links + get_backlinks; tools 20→24; folotp round-5 clean su 0.4.3 ack-ed; CI [run 25393505832](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25393505832) green; commit `5405716`, tag `0.4.4`, prerelease:false).** `0.4.0` → `0.4.1` → `0.4.2` → `0.4.3` → `0.4.4` → **`0.4.5`** shipped consecutivamente, 6 cycle iterativi (5 soak-driven + 1 feature batch). Documento di passaggio di consegne. Self-contained.
 >
 > **Per il quadro architetturale completo** (gotcha, stack, convenzioni di codice): leggere **`CLAUDE.md`** in radice. Questo file è la sintesi *operativa*; CLAUDE.md è la sintesi *tecnica*.
+
+---
+
+## Decisioni di sessione 2026-05-06 sera — CHANGELOG promote + markdown-patch v0.4.5 cross-post 🧹📡
+
+**Trigger**: continuazione sessione post-0.4.5 ship. Verifica novità → `git pull` (`d3efb4b → 29ae191` + `0584a51` di mattina già locale, no merge richiesto). Stefano richiede in sequenza: (a) verifica CI 0.4.5 + pending, (b) aggiornamento memoria persistente outdated, (c) CHANGELOG promote (pattern `chore(changelog):` come 0.4.4 cycle), (d) verifica commenti pending → discovery markdown-patch#10 closure → cross-post upstream #83.
+
+### Implementazione (4 azioni concrete + 1 negative-result decision)
+
+1. **Hook error fix**: `PostToolUse:Read` falliva con `No such file or directory` su `.remember/logs/hook-errors.log`. `mkdir -p` + `touch` → log directory ora esiste, hook non fallisce più. Outside repo working tree (`.remember/` è path locale di Stefano), zero impatto sul ship state.
+
+2. **CI 0.4.5 verifica retroattiva**: run [`25418823490`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25418823490) ✅ Release green (31s) + run [`25418823110`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25418823110) ✅ CI green (27s). Asset shape unchanged: `main.js` 3.0MB + `manifest.json` 389B + `obsidian-plugin-0.4.5.zip` 917KB. Già citato nel close-out comment di Stefano su #86 mattina, doppio-check via `gh run list`.
+
+3. **CHANGELOG promote shipped** ([commit `15c1689`](https://github.com/istefox/obsidian-mcp-connector/commit/15c1689), [CI run `25453980713`](https://github.com/istefox/obsidian-mcp-connector/actions/runs/25453980713) ✅ green ~32s): mirror byte-identico del precedente `chore(changelog): promote [Unreleased] entries to [0.4.4] block` ([commit `d3efb4b`](https://github.com/istefox/obsidian-mcp-connector/commit/d3efb4b)). Single-line insert preserve `[Unreleased]` header empty al top per next cycle. Le 4 entry (2 Added: `create_vault_directory` + `delete_vault_directory`, 1 Fixed: ENOENT 3-call-site, 1 Changed: minAppVersion 0.15.0→1.7.2) ora sotto `## [0.4.5] — 2026-05-06`.
+
+4. **markdown-patch v0.4.5 cross-post upstream #83** ([comment `4391074182`](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/83#issuecomment-4391074182)): @coddingtonbear ha cuttato `markdown-patch v0.4.5` (npm only, no GitHub Release page) il 2026-05-06 02:52:43Z con il fix di `coddingtonbear/markdown-patch#10`, [closure note 4384726426](https://github.com/coddingtonbear/markdown-patch/issues/10#issuecomment-4384726426): *"A fix for this was released as part of v0.4.5; thanks for the thorough test cases!"* Credit del "thorough test cases" va a folotp che 2026-05-04 19:48Z aveva [forwardato dal nostro upstream #83 thread](https://github.com/coddingtonbear/markdown-patch/issues/10#issuecomment-4374013278) la **variant matrix di 4 case** (table+code-span / single-row / plain-prose / code-span-no-table; **variant C plain-prose decisivo** per scope generico fix invece di cell-specific shape). Cross-post structure: update for thread watchers + citation closure note (verbatim, authority-preserving) + cross-credit folotp esplicito (multi-point ack rule applicata) + propagation paths (legacy 0.3.x stdio chain transparent una volta che LRA bumpa il dep — gated su LRA release cadence; HTTP-embedded 0.4.x bypassa markdown-patch by design Goal 4 — `0.4.2` `hasParentH1` + `isInsideTableOrFencedCode` guards coprono l'equivalent surface independently) + soft nudge a folotp per closure #83 con pointer a markdown-patch#10 (echo prior nudge 2026-05-04 20:13Z, ora con fix actually landed evidence).
+
+5. **Verifica preliminare 0.3.13 patch — NOT NEEDED, decision via negative result**: Stefano aveva autorizzato anche un eventuale "0.3.13 patch con dep bump markdown-patch 0.4.4→0.4.5" sulla legacy line. Verifica preliminare ha rivelato che l'assunzione era errata: `markdown-patch` **non è dep npm del fork** (verificato `bun.lock` empty per `markdown-patch`, `package.json` di tutti i workspace package empty, root `package.json` empty — solo riferimenti commento documentari in `patchHelpers.ts` + `local-rest-api/index.ts` che descrivono la legacy chain behavior). È dep del LRA plugin esterno installato dall'utente nella sua Obsidian. Fix si propaga transparently quando coddingtonbear bumperà il dep in nuova LRA release. **Quindi NIENTE 0.3.13 cut necessario sul fork** — task #7 deletato pre-action, no branch creato, no `bun install` run, zero side-effects.
+
+### Methodology applied
+
+- **Foundational read-fully-analyze + decision before action**: prima del cross-post upstream #83, verifica via `gh api` delle comment IDs di markdown-patch#10 (folotp `4374013278`, coddingtonbear `4384726426`) + verifica tramite `registry.npmjs.org/markdown-patch` del publish time di v0.4.5 (`2026-05-06T02:52:43.625Z`, 51 secondi prima della closure comment). Citation di coddingtonbear textual-exact preservata nel quote block. **Verifica preliminare** ha salvato 0.3.13-cut effort prima di branch/PR action — assunzione "markdown-patch ≡ dep del fork" falsificata via 3 grep concatenati (root `package.json` + `bun.lock` + `packages/*/package.json`).
+- **Authority disambiguation**: closure di coddingtonbear è la authoritative voice su markdown-patch#10. Cross-post mio rispetta framing (cita verbatim, non riformula) + cross-credit folotp esplicito non-implicit (multi-point ack rule reinforced in pratica concreta).
+- **Honest framing del fork in cross-post**: propagation paths sono espliciti — 0.3.x line transparent gated su LRA release cadence (out of our hands, comunicato apertamente), 0.4.x bypasses by design (architecture pivot Goal 4), guards `0.4.2` cover indipendentemente. No claim indiretti "fix is now in your fork" che sarebbe stato misleading.
+
+### State change
+
+- HEAD `feat/http-embedded` = `15c1689` (CHANGELOG promote post-0.4.5, pushed 2026-05-06 18:36Z)
+- CHANGELOG.md: 4 entry promosse a `## [0.4.5] — 2026-05-06` block; `[Unreleased]` header empty al top per next cycle
+- Upstream #83: nuovo comment mio `4391074182` per visibility ai watchers + folotp credit pubblico esplicito + soft closure nudge
+- Memoria persistente aggiornata: `project_fork_state.md` (release stack 2026-05-06 sera, branch hygiene HEAD `15c1689`, sezione markdown-patch v0.4.5 landing + correction sul punto 0.3.13) + `MEMORY.md` index pointer
+
+### Pending immediate post-session (al 2026-05-06 sera)
+
+- **Folotp closure #83**: soft nudge appena postato, time-gated. Atteso closure dopo che folotp lo nota (probabilmente entro 24-48h dato il pattern di responsiveness osservato).
+- **Folotp round-6 verify 0.4.5**: atteso 24-72h post-BRAT auto-update (window: 2026-05-07 mattina → 2026-05-09 mattina). Shape della check già anticipato nel close-out comment di #86: 5 step (multi-level missing parent su create_vault_file + missing parent su append_to_vault_file create branch + nested targetPath su execute_template + idempotent create_vault_directory + recursive vs non-recursive delete_vault_directory).
+- **Marcoaperez next PR**: 1-2 settimane (candidate da inventory 5+ tool: `get_recent_files` / `get_document_map` / `get_periodic_note` family / `execute_dataview_query` / `get_vault_files`).
+- **Store PR #11919 monitor**: lunedì 2026-05-11 routine settimanale `trig_015yL8D3VNao7nhRKjBu95ZK` (week 4+, silent finora — last bot scan 2026-04-14, ~3 settimane di silenzio sopra le 2-8 tipiche).
 
 ---
 
