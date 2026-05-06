@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-05-06
+
 ### Added
 
 - **`create_vault_directory` tool** — creates a directory at a
