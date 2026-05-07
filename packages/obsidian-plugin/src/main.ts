@@ -90,6 +90,35 @@ export default class McpToolsPlugin extends Plugin {
   }
 
   /**
+   * Resolve the Local REST API base URL from the LRA plugin's settings.
+   *
+   * LRA exposes `bindingHost` (default `127.0.0.1`) and `port` (default
+   * `27124` for HTTPS). Reading from the live settings means a user who
+   * runs LRA on a non-default port — common when 27124 is taken by
+   * another service — gets a working `search_vault` instead of a hard
+   * connection error against the previously hardcoded URL.
+   *
+   * Protocol is fixed to HTTPS: LRA serves HTTPS on `port` by default
+   * and HTTP on `port - 1` only when `enableInsecureServer` is opted
+   * in. Supporting that branch is out of scope here; the historical
+   * pin to HTTPS preserves the previous default behavior.
+   *
+   * Falls back to `https://127.0.0.1:27124` when the LRA plugin is
+   * loaded but its settings aren't readable yet — unusual in practice
+   * (the plugin polls until LRA is ready before this can be called)
+   * but cheap to handle so the tool returns a sensible URL rather
+   * than `undefined`.
+   */
+  getLocalRestApiUrl(): string {
+    const settings = this.localRestApi.plugin?.settings as
+      | { port?: number; bindingHost?: string }
+      | undefined;
+    const host = settings?.bindingHost ?? "127.0.0.1";
+    const port = settings?.port ?? 27124;
+    return `https://${host}:${port}`;
+  }
+
+  /**
    * In-process permission check for the `execute_obsidian_command`
    * MCP tool. Implements the same two-phase mutex policy as the HTTP
    * handler in `features/command-permissions/services/permissionCheck.ts`
