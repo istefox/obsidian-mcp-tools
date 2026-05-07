@@ -104,4 +104,48 @@ describe("delete_vault_directory tool", () => {
     expect(result.isError).toBeUndefined();
     expect(getMockFolders()).toEqual([]);
   });
+
+  // Test-as-spec: locks in the current behavior on path-traversal input.
+  // Today the handler does NOT sanitise '..' segments — it forwards the
+  // trimmed path to vault.adapter.rmdir. The mock raises ENOENT because no
+  // folder named '../escape' exists; on a real adapter the call would either
+  // resolve outside the vault root or fail with a permission error. Either
+  // way, no implicit accept-and-delete occurs, but a future explicit
+  // traversal-rejection branch should surface here rather than silently.
+  test("documents current behavior on path traversal '../escape'", async () => {
+    const app = mockApp();
+    const result = await deleteVaultDirectoryHandler({
+      arguments: { path: "../escape" },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/failed to delete/i);
+  });
+
+  // Covers the `String(e)` branch of `e instanceof Error ? e.message : String(e)`.
+  // Existing tests only trigger the Error-class branch (rmdir throws an Error
+  // with ENOENT/ENOTEMPTY). A real adapter could reject with a non-Error value
+  // (e.g. a raw string from a native binding); without this test that branch
+  // is dead code from the test runner's perspective.
+  test("surfaces non-Error thrown values from rmdir", async () => {
+    setMockFolder("locked");
+    const app = mockApp();
+    // Override the mock adapter's rmdir to throw a non-Error value.
+    (
+      app.vault.adapter as unknown as {
+        rmdir: (path: string, recursive: boolean) => Promise<void>;
+      }
+    ).rmdir = async () => {
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      throw "raw string rejection from native binding";
+    };
+    const result = await deleteVaultDirectoryHandler({
+      arguments: { path: "locked" },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(
+      "raw string rejection from native binding",
+    );
+  });
 });
