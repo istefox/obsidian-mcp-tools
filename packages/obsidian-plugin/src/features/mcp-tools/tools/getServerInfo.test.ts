@@ -19,4 +19,43 @@ describe("get_server_info tool", () => {
     expect(parsed.version).toBe("0.4.0-alpha.1");
     expect(parsed.transport).toBe("streamable-http");
   });
+
+  test("omits localTransport when no getter is wired", async () => {
+    const result = await getServerInfoHandler({
+      arguments: {},
+      pluginVersion: "0.4.0-alpha.1",
+    });
+    const parsed = JSON.parse(result.content[0].text as string);
+    expect(parsed).not.toHaveProperty("localTransport");
+  });
+
+  test("omits localTransport when getter returns undefined (transport not yet bound)", async () => {
+    const result = await getServerInfoHandler({
+      arguments: {},
+      pluginVersion: "0.4.0-alpha.1",
+      getLocalTransport: () => undefined,
+    });
+    const parsed = JSON.parse(result.content[0].text as string);
+    expect(parsed).not.toHaveProperty("localTransport");
+  });
+
+  test("includes localTransport when getter returns a resolved transport", async () => {
+    const result = await getServerInfoHandler({
+      arguments: {},
+      pluginVersion: "0.4.0-alpha.1",
+      getLocalTransport: () => ({
+        protocol: "http",
+        host: "127.0.0.1",
+        port: 27201,
+        path: "/mcp",
+      }),
+    });
+    const parsed = JSON.parse(result.content[0].text as string);
+    expect(parsed.localTransport).toEqual({
+      protocol: "http",
+      host: "127.0.0.1",
+      port: 27201,
+      path: "/mcp",
+    });
+  });
 });

@@ -101,7 +101,23 @@ export async function registerTools(
 ): Promise<void> {
   // Health
   registry.register(getServerInfoSchema, async ({ arguments: args }) =>
-    getServerInfoHandler({ arguments: args, pluginVersion: ctx.pluginVersion }),
+    getServerInfoHandler({
+      arguments: args,
+      pluginVersion: ctx.pluginVersion,
+      // Lazy: at registration time the HTTP server has not bound yet,
+      // so plugin.mcpTransportState is undefined. By tool-call time
+      // setup() has populated it with a live RunningServer.
+      getLocalTransport: () => {
+        const port = ctx.plugin.mcpTransportState?.server.port;
+        if (port === undefined) return undefined;
+        return {
+          protocol: "http",
+          host: "127.0.0.1",
+          port,
+          path: "/mcp",
+        };
+      },
+    }),
   );
 
   // Active file
