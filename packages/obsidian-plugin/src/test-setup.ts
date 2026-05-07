@@ -131,6 +131,17 @@ void mock.module("obsidian", () => {
     return out.length === 0 ? null : Array.from(new Set(out));
   }
 
+  // Platform shape mirrors `obsidian.d.ts` enough for tests to import
+  // `Platform.isMobile` / `Platform.isDesktop` without crashing. Default
+  // to "desktop" since the plugin is `isDesktopOnly: true`.
+  const Platform = {
+    isMobile: false,
+    isDesktop: true,
+    isMacOS: process.platform === "darwin",
+    isLinux: process.platform === "linux",
+    isWin: process.platform === "win32",
+  };
+
   return {
     Notice,
     Plugin,
@@ -139,6 +150,7 @@ void mock.module("obsidian", () => {
     PluginSettingTab,
     App,
     Modal,
+    Platform,
     getAllTags,
     requestUrl: async (req: { url: string } | string) => {
       const url = typeof req === "string" ? req : req.url;

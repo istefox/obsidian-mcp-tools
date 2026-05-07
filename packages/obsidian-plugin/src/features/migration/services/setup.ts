@@ -4,6 +4,7 @@ import { logger } from "$/shared/logger";
 import {
   detectLegacyInstall,
   hasAnyLegacySignal,
+  type LegacyInstallState,
 } from "./detect";
 import { executeSteps, planMigration, type MigrationContext } from "./plan";
 import { MigrationModalHost } from "./migrationModalHost";
@@ -41,16 +42,23 @@ export async function setupMigration(
       unknown
     >;
 
-    // Already skipped this user — keep silent on every subsequent load
-    // until they re-trigger the check from settings.
+    // Run the detector first regardless of `skippedAt`. The dismissal
+    // suppresses the modal (intentional — modal nag is bad UX), but
+    // not the recurring soft signal: if the user dismissed the modal
+    // and the legacy state is *still* there on a later load, surface
+    // a non-blocking Notice so the disconnect doesn't stay silent
+    // forever. Fork issue #78.
+    const state = await detectLegacyInstall({ pluginData });
     const skippedSlice =
       (pluginData[SKIPPED_KEY] as Record<string, unknown> | undefined) ?? {};
-    if (typeof skippedSlice.skippedAt === "string") {
+    const wasSkipped = typeof skippedSlice.skippedAt === "string";
+
+    const action = decideMigrationAction(state, wasSkipped);
+    if (action === "noop") {
       return { success: true };
     }
-
-    const state = await detectLegacyInstall({ pluginData });
-    if (!hasAnyLegacySignal(state)) {
+    if (action === "notice") {
+      emitLingeringLegacyNotice(state);
       return { success: true };
     }
 
@@ -156,4 +164,58 @@ function openLearnMore(): void {
   } else {
     window.open(LEARN_MORE_URL, "_blank");
   }
+}
+
+export type MigrationAction = "noop" | "notice" | "modal";
+
+/**
+ * Pure decision function: given the detector result and whether the
+ * user has previously dismissed the modal, returns which side-effect
+ * setupMigration should run. Extracted so the policy is unit-testable
+ * without filesystem mocks or Obsidian Notice / Modal instances.
+ *
+ * Args:
+ *   state: result of detectLegacyInstall, may report zero or more signals.
+ *   wasSkipped: true iff `migration.skippedAt` is set in plugin data.
+ *
+ * Returns:
+ *   "noop"   — nothing to do (no signals, or migration already complete).
+ *   "notice" — legacy state lingers AND user has dismissed; surface a
+ *              non-blocking Notice each load until they remediate.
+ *   "modal"  — legacy state present AND first-load decision pending;
+ *              open the migration modal (subject to transport readiness
+ *              checked by the caller).
+ */
+export function decideMigrationAction(
+  state: LegacyInstallState,
+  wasSkipped: boolean,
+): MigrationAction {
+  if (!hasAnyLegacySignal(state)) return "noop";
+  if (wasSkipped) return "notice";
+  return "modal";
+}
+
+/**
+ * Soft signal for users who dismissed the migration modal but still
+ * have legacy state on disk. Non-modal, 8s, advisory. Fork issue #78.
+ */
+const LINGERING_NOTICE_MS = 8000;
+function emitLingeringLegacyNotice(state: LegacyInstallState): void {
+  const which = lingeringSignalDescription(state);
+  new Notice(
+    `MCP Connector: legacy 0.3.x state still detected (${which}). Re-run the migration check from Settings → Migration from 0.3.x.`,
+    LINGERING_NOTICE_MS,
+  );
+  logger.info("migration: legacy state persists after dismissal", {
+    which,
+    skippedAfterFirstLoad: true,
+  });
+}
+
+function lingeringSignalDescription(state: LegacyInstallState): string {
+  const parts: string[] = [];
+  if (state.hasLegacyBinary) parts.push("binary");
+  if (state.hasLegacyClaudeConfigEntry) parts.push("Claude Desktop config");
+  if (state.hasLegacySettingsKeys) parts.push("plugin data keys");
+  return parts.length > 0 ? parts.join(", ") : "unknown";
 }
