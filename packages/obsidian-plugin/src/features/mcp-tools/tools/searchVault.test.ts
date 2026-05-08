@@ -58,4 +58,37 @@ describe("search_vault tool", () => {
     const data = JSON.parse(result.content[0].text as string);
     expect(Array.isArray(data) || (data.results && Array.isArray(data.results))).toBe(true);
   });
+
+  // Fork issue #79: searchVault no longer hardcodes the LRA URL.
+  // Routes through plugin.getLocalRestApiUrl() so a user with LRA on a
+  // non-default port (e.g. 27124 occupied → LRA shifted to 27125) gets
+  // a working tool instead of a hard connection error.
+  test("routes the request through plugin.getLocalRestApiUrl()", async () => {
+    setMockRequestUrl("https://127.0.0.1:27199/search/", {
+      status: 200,
+      text: JSON.stringify([{ filename: "x.md", result: { ok: true } }]),
+      headers: { "content-type": "application/json" },
+    });
+    const plugin = mockPlugin({
+      localRestApi: {
+        id: "obsidian-local-rest-api",
+        name: "Local REST API",
+        required: true,
+        installed: true,
+        api: {} as never,
+      },
+      getLocalRestApiKey: () => "fake-rest-api-key",
+      getLocalRestApiUrl: () => "https://127.0.0.1:27199",
+    } as never);
+    const result = await searchVaultHandler({
+      arguments: { query: 'TABLE FROM "Notes"' },
+      app: mockApp(),
+      plugin,
+    });
+    expect(result.isError).toBeUndefined();
+    // Mock setup keys responses by URL — the assertion above only
+    // succeeds if the handler dispatched against 27199, not 27124.
+    const data = JSON.parse(result.content[0].text as string);
+    expect(data[0]?.filename).toBe("x.md");
+  });
 });

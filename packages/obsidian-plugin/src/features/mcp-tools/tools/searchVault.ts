@@ -3,8 +3,6 @@ import type { App } from "obsidian";
 import { requestUrl } from "obsidian";
 import type McpToolsPlugin from "$/main";
 
-const REST_API_URL = "https://127.0.0.1:27124";
-
 export const searchVaultSchema = type({
   name: '"search_vault"',
   arguments: {
@@ -71,7 +69,7 @@ export async function searchVaultHandler(
       : "application/vnd.olrapi.jsonlogic+json";
 
   const response = await requestUrl({
-    url: `${REST_API_URL}/search/`,
+    url: `${ctx.plugin.getLocalRestApiUrl()}/search/`,
     method: "POST",
     headers: {
       "Content-Type": contentType,
