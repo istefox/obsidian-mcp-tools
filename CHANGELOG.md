@@ -5,6 +5,69 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **`get_server_info` now surfaces the in-process listen address.**
+  Adds a `localTransport: { protocol, host, port, path }` field to the
+  response when the HTTP server is bound, omitted otherwise. Doubles
+  as the third confirmed-positive chain-id discriminator from the soak
+  preflight protocol — callers can programmatically assert they are
+  routed through the HTTP-embedded server rather than the legacy stdio
+  binary. Reported by @folotp via #78. (#91)
+
+- **Recurring `Notice` while legacy 0.3.x state persists post-skip.**
+  Once the first-load migration modal has been dismissed
+  (`migrationDecision.skippedAt` set), the plugin re-checks legacy
+  signals on every subsequent load and surfaces a non-modal `Notice`
+  if `hasLegacyBinary` / `hasLegacyClaudeConfigEntry` /
+  `hasLegacySettingsKeys` are still true. Three-state action map
+  branches the pointer (verify-binary-gone / edit-client-config /
+  settings-cleanup) so the nudge is always actionable. Decision logic
+  isolated as a pure `decideMigrationAction(signals, hasSkippedAt)`
+  function (`noop | notice | modal`) — the first-load modal flow is
+  unchanged. (#78, #91)
+
+### Fixed
+
+- **`search_vault`: unhardcoded Local REST API URL.** `searchVault.ts`
+  previously hit LRA on a hardcoded `https://127.0.0.1:27124`, the
+  only fork tool out of 26 still doing so post-pivot to HTTP-embedded.
+  New `McpToolsPlugin.getLocalRestApiUrl()` mirrors the existing
+  `getLocalRestApiKey()` shape and reads `bindingHost` + `port` from
+  live LRA settings, with a clean fallback to the documented default
+  when the LRA plugin cannot be queried (test environment, plugin not
+  yet loaded). If a user reconfigures LRA's listen port in Obsidian,
+  `search_vault` follows automatically — no plugin restart, no env
+  var. (#79, #90)
+
+- **`delete_vault_directory`: ENOTEMPTY error no longer leaks the
+  absolute host filesystem path.** The catch block previously bubbled
+  the raw Node `fs.rmdir` error message, which embeds the full
+  absolute path Node was given and exposes `$HOME`, cloud-sync
+  identifiers, and the local vault folder name to the MCP client. The
+  fix maps known fs errno codes (`ENOTEMPTY` / `ENOENT` / `EACCES` /
+  `EPERM`) to vault-relative messages with the same shape as the
+  existing sibling error paths in the same handler. The ENOTEMPTY
+  branch additionally hints at the way out
+  (`use recursive: "true" to delete it together with its contents`)
+  instead of echoing Node's raw error string — caller-actionable
+  without prior context. Mock realism update (`test-setup.ts`):
+  `adapter.rmdir` now sets `.code` errno on the thrown `Error` and
+  embeds a synthetic absolute path, mirroring real Node behaviour;
+  this closes the testing gap that let the leak slip past 0.4.5's
+  pre-cut tests. Reported by @folotp during the 0.4.5 round-6 verify
+  on #86. (#88, #92)
+
+### Changed
+
+- **Migration walkthrough adds an explicit
+  "verify-legacy-binary-gone" step** with cross-platform check
+  commands (macOS/Linux `ls`, Windows PowerShell `Test-Path`), paired
+  with the recurring in-product `Notice` as a backstop. Closes the
+  gap that surfaced in the 2026-05-04 post-#83 retrospective where a
+  stale legacy binary could silently re-route MCP traffic through the
+  unmaintained 0.3.x stdio chain without the user noticing. (#78, #91)
+
 ## [0.4.5] — 2026-05-06
 
 ### Added
