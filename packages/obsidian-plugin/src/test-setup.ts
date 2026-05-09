@@ -281,6 +281,14 @@ type MockVaultState = {
   fileStats: Map<string, { ctime: number; mtime: number }>;
 };
 
+// Synthetic absolute filesystem prefix used by the mock `adapter.rmdir`
+// to mirror the path embedded in real Node `fs.rmdir` errors. Tests
+// assert that handler code suppresses this trailer before surfacing
+// errors to the MCP client (regression guard for #88 absolute-path
+// leak). Kept in `/Users/...` shape so the regression check works on
+// macOS- and Linux-like fixtures alike.
+const MOCK_VAULT_ABS_PREFIX = "/Users/test/Obsidian/MockVault";
+
 const _mockState: MockVaultState = {
   files: new Map(),
   folders: new Set(),
@@ -635,12 +643,20 @@ export function mockApp(): App {
     off: () => {},
     adapter: {
       // Recursive rmdir over the mock vault: removes the folder, every
-      // descendant folder, and every descendant file.
+      // descendant folder, and every descendant file. Errors mirror the
+      // real Node `fs.rmdir` shape (absolute host path embedded in the
+      // message + `.code` set on the Error instance) so handler tests
+      // can assert that the production code suppresses the absolute
+      // path before surfacing it to the MCP client (regression guard
+      // for fork issue #88).
       rmdir: async (path: string, recursive: boolean): Promise<void> => {
+        const absPath = `${MOCK_VAULT_ABS_PREFIX}/${path}`;
         if (!_mockState.folders.has(path)) {
-          throw new Error(
-            `ENOENT: no such file or directory, rmdir '<vault>/${path}'`,
+          const err: NodeJS.ErrnoException = new Error(
+            `ENOENT: no such file or directory, rmdir '${absPath}'`,
           );
+          err.code = "ENOENT";
+          throw err;
         }
         const prefix = `${path}/`;
         const childFiles = Array.from(_mockState.files.keys()).filter((p) =>
@@ -650,7 +666,11 @@ export function mockApp(): App {
           p.startsWith(prefix),
         );
         if (!recursive && (childFiles.length > 0 || childFolders.length > 0)) {
-          throw new Error(`ENOTEMPTY: directory not empty, rmdir '${path}'`);
+          const err: NodeJS.ErrnoException = new Error(
+            `ENOTEMPTY: directory not empty, rmdir '${absPath}'`,
+          );
+          err.code = "ENOTEMPTY";
+          throw err;
         }
         for (const f of childFiles) _mockState.files.delete(f);
         for (const d of childFolders) _mockState.folders.delete(d);

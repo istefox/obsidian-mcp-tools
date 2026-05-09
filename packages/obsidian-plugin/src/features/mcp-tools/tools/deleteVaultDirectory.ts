@@ -67,7 +67,21 @@ export async function deleteVaultDirectoryHandler(
       }
     ).rmdir(trimmed, recursive);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    // Map known Node fs errno codes to vault-relative messages so the
+    // raw Node "rmdir '<absolute-host-path>'" trailer never reaches the
+    // MCP client (it would expose $HOME / cloud-sync identifiers / vault
+    // folder name). Unknown errors fall through to the original shape.
+    const errno = (e as NodeJS.ErrnoException | undefined)?.code;
+    const msg =
+      errno === "ENOTEMPTY"
+        ? 'directory not empty (use recursive: "true" to delete it together with its contents)'
+        : errno === "ENOENT"
+          ? "directory does not exist"
+          : errno === "EACCES" || errno === "EPERM"
+            ? "permission denied"
+            : e instanceof Error
+              ? e.message
+              : String(e);
     return {
       content: [
         { type: "text", text: `Failed to delete directory ${trimmed}: ${msg}` },

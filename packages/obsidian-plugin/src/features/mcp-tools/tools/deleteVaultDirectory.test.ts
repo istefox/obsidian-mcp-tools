@@ -122,6 +122,46 @@ describe("delete_vault_directory tool", () => {
     expect(result.content[0].text).toMatch(/failed to delete/i);
   });
 
+  // Regression guard for #88 — the ENOTEMPTY branch must produce a
+  // vault-relative, caller-actionable message and never bubble the
+  // absolute filesystem path that Node's `fs.rmdir` embeds in its
+  // error message (which would expose $HOME / cloud-sync identifiers
+  // / vault folder name to the MCP client).
+  test("ENOTEMPTY error is errno-keyed and suppresses the absolute host path", async () => {
+    setMockFolder("Notes");
+    setMockFile("Notes/a.md", "x");
+    const app = mockApp();
+    const result = await deleteVaultDirectoryHandler({
+      arguments: { path: "Notes" },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    // Errno-keyed actionable shape: the caller learns that recursive=true
+    // is the way out.
+    expect(result.content[0].text).toContain('use recursive: "true"');
+    // No absolute-path trailer ("rmdir '<abs>'" segment from Node).
+    expect(result.content[0].text).not.toContain("rmdir '");
+    // Belt-and-suspenders: no obvious absolute-path indicators of any
+    // platform shape (macOS, Linux, Windows).
+    expect(result.content[0].text).not.toMatch(/\/Users\/|\/home\/|C:\\/);
+  });
+
+  // Sister regression guard: the ENOENT branch was already vault-relative
+  // in spirit (mock used the `<vault>/${path}` placeholder) but with a
+  // realistic absolute-path mock the handler must still suppress the
+  // trailer.
+  test("ENOENT error is errno-keyed and suppresses the absolute host path", async () => {
+    const app = mockApp();
+    const result = await deleteVaultDirectoryHandler({
+      arguments: { path: "ghost" },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("does not exist");
+    expect(result.content[0].text).not.toContain("rmdir '");
+    expect(result.content[0].text).not.toMatch(/\/Users\/|\/home\/|C:\\/);
+  });
+
   // Covers the `String(e)` branch of `e instanceof Error ? e.message : String(e)`.
   // Existing tests only trigger the Error-class branch (rmdir throws an Error
   // with ENOENT/ENOTEMPTY). A real adapter could reject with a non-Error value
