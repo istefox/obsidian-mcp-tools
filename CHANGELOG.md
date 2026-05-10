@@ -7,6 +7,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
+- **`rename_vault_file` tool** — renames or moves a vault file via
+  `app.fileManager.renameFile`, preserving link integrity across the
+  vault (wikilinks, markdown links, embeds, and frontmatter aliases
+  pointing at the source path are rewritten atomically by Obsidian).
+  Schema: `{ from, to }`, both required, both vault-root relative.
+  Response on success: `{ ok: true, path: <to> }`. Closes the gap
+  whereby an MCP client could only emulate rename via
+  `read + create + delete`, which destroys every backlink to the file
+  on every move.
+
+  Error semantics, all surfaced as `isError: true` with a descriptive
+  message:
+  - `from` does not resolve → "Source file not found: …"
+  - `to` already exists → "Destination already exists: …" (no overwrite)
+  - destination parent directory does not exist → "Destination parent
+    directory does not exist: …" (fail-loud, NOT auto-created — mirrors
+    the unresolved-target bias of `patch_*_file` from #6 / #58)
+  - `from === to` → "Source and destination are identical: …"
+  - underlying `renameFile` rejection → echoed verbatim as
+    "Failed to rename: …"
+
+  Authorization gate matches `delete_vault_file` / `create_vault_file`
+  (no per-tool allowlist). Out of scope: folder rename and heading
+  rename (the latter tracked separately in #68).
+
+  Pinned by 8 cases in `renameVaultFile.test.ts` (schema name, root
+  rename + JSON response shape, cross-directory move, all five error
+  branches). Mock surface in `test-setup.ts` extended additively with
+  `app.fileManager.renameFile` (migrates content, metadata cache,
+  stats, and active-file pointer).
+
+  Proposed and triage-accepted by @istefox in
+  [#67](https://github.com/istefox/obsidian-mcp-connector/issues/67).
+
 - **`get_server_info` now surfaces the in-process listen address.**
   Adds a `localTransport: { protocol, host, port, path }` field to the
   response when the HTTP server is bound, omitted otherwise. Doubles

@@ -46,6 +46,10 @@ import {
   deleteVaultFileSchema,
 } from "./tools/deleteVaultFile";
 import {
+  renameVaultFileHandler,
+  renameVaultFileSchema,
+} from "./tools/renameVaultFile";
+import {
   createVaultDirectoryHandler,
   createVaultDirectorySchema,
 } from "./tools/createVaultDirectory";
@@ -158,6 +162,9 @@ export async function registerTools(
   );
   registry.register(deleteVaultFileSchema, async ({ arguments: args }) =>
     deleteVaultFileHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(renameVaultFileSchema, async ({ arguments: args }) =>
+    renameVaultFileHandler({ arguments: args, app: ctx.app }),
   );
   registry.register(createVaultDirectorySchema, async ({ arguments: args }) =>
     createVaultDirectoryHandler({ arguments: args, app: ctx.app }),

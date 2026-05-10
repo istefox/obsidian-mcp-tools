@@ -765,6 +765,41 @@ export function mockApp(): App {
       cache.frontmatter = fm;
       _mockState.metadataCache.set(path, cache);
     },
+    /**
+     * Mock of `app.fileManager.renameFile`. The real Obsidian
+     * implementation also rewrites every wikilink / markdown link /
+     * embed / frontmatter alias pointing at the source path; here we
+     * only migrate the file's own state (content, metadata cache,
+     * stats, active-file pointer) since `rename_vault_file` tests
+     * exercise the handler's branching, not link-rewrite fidelity.
+     * Folder rename is out of scope (the handler rejects it via the
+     * existing API surface — TFolder cannot be passed as `from`).
+     */
+    renameFile: async (
+      file: TAbstractFile,
+      newPath: string,
+    ): Promise<void> => {
+      const path = (file as unknown as MockTFile).path;
+      if (!_mockState.files.has(path)) {
+        throw new Error(`File not found: ${path}`);
+      }
+      const content = _mockState.files.get(path) ?? "";
+      _mockState.files.delete(path);
+      _mockState.files.set(newPath, content);
+      const meta = _mockState.metadataCache.get(path);
+      if (meta) {
+        _mockState.metadataCache.delete(path);
+        _mockState.metadataCache.set(newPath, meta);
+      }
+      const stat = _mockState.fileStats.get(path);
+      if (stat) {
+        _mockState.fileStats.delete(path);
+        _mockState.fileStats.set(newPath, stat);
+      }
+      if (_mockState.activeFilePath === path) {
+        _mockState.activeFilePath = newPath;
+      }
+    },
   };
 
   const commands = {

@@ -109,13 +109,14 @@ describe("end-to-end: HTTP → McpServer", () => {
         "list_vault_files",
         "patch_active_file",
         "patch_vault_file",
+        "rename_vault_file",
         "search_vault",
         "search_vault_simple",
         "search_vault_smart",
         "show_file_in_obsidian",
         "update_active_file",
       ]);
-      expect(names).toHaveLength(26);
+      expect(names).toHaveLength(27);
     } finally {
       await new Promise<void>((r) => server.server.close(() => r()));
     }
