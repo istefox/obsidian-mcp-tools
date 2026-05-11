@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.6] — 2026-05-11
+
 ### Added
 
 - **`rename_vault_file` tool** — renames or moves a vault file via
