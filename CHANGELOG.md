@@ -5,6 +5,59 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **`get_recent_files` tool** — returns the most recently modified
+  markdown files in the vault, ordered by `mtime` descending. Useful
+  agent-recency context (proposed by @istefox in
+  [#69 upstream comment](https://github.com/jacksteamdev/obsidian-mcp-tools/pull/69#issuecomment-4371427847)
+  as a "smallest-wins-first" candidate; confirmed as NEXT after the
+  PR #93 merge in
+  [#93 close-out](https://github.com/istefox/obsidian-mcp-connector/pull/93#issuecomment-4418358887)).
+
+  Schema: `{ limit?: number }`. `limit` is an arktype-validated integer
+  in `[1, 100]` (default 20). Out-of-range values, zero, negatives, and
+  non-integers are rejected at schema-validation time — fail-loud, no
+  silent clamping, matching the validation bias of the rest of the
+  tool surface.
+
+  Response shape:
+  ```json
+  {
+    "totalFiles": 250,
+    "files": [
+      { "path": "Notes/today.md", "mtime": 1715432100000, "ctime": 1715000000000, "size": 1234 }
+    ]
+  }
+  ```
+  Timestamps are Unix epoch milliseconds (raw `TFile.stat.mtime` /
+  `TFile.stat.ctime`); `size` is the file's byte length. `totalFiles`
+  counts the full visible (post-exclusion) markdown set before the
+  recency slice, matching the contract of `get_files_by_tag` so callers
+  can detect whether `limit` truncated the result.
+
+  Honours Obsidian's `Files & Links → Excluded files` configuration via
+  the runtime `MetadataCache.isUserIgnored(path)` accessor. The cast
+  through `unknown` mirrors the pattern used by `list_tags` for
+  `metadataCache.getTags` (both methods exist at runtime but are not
+  surfaced by the bundled `obsidian.d.ts`). Markdown-only via
+  `vault.getMarkdownFiles()`; non-markdown files are not surfaced.
+
+  Authorization gate matches `list_tags` / `get_files_by_tag` — no
+  per-tool allowlist, no plugin dependency, read-only. Out of scope
+  (deferred for a follow-up if user demand surfaces): folder-scoped
+  filtering, sort key parameter, non-markdown surface.
+
+  Pinned by 10 cases in `getRecentFiles.test.ts` (schema name,
+  empty-vault response, mtime ordering, default limit of 20, explicit
+  limit, limit > totalFiles graceful path, full per-entry shape
+  including `size`, non-markdown filter, `isUserIgnored` exclusion, and
+  arktype boundary validation covering 0/-5/5.5/101 rejects and 1/100
+  boundary accepts). Mock surface in `test-setup.ts` extended additively
+  with `setMockIgnored(path)` + `metadataCache.isUserIgnored` (same
+  pattern that landed `setMockFileStat()` in #93 — reusable for any
+  follow-up tool that filters against the user-ignored set).
+
 ## [0.4.6] — 2026-05-11
 
 ### Added

@@ -85,6 +85,10 @@ import {
   getFilesByTagSchema,
 } from "./tools/getFilesByTag";
 import {
+  getRecentFilesHandler,
+  getRecentFilesSchema,
+} from "./tools/getRecentFiles";
+import {
   getOutgoingLinksHandler,
   getOutgoingLinksSchema,
 } from "./tools/getOutgoingLinks";
@@ -179,6 +183,9 @@ export async function registerTools(
   );
   registry.register(getFilesByTagSchema, async ({ arguments: args }) =>
     getFilesByTagHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(getRecentFilesSchema, async ({ arguments: args }) =>
+    getRecentFilesHandler({ arguments: args, app: ctx.app }),
   );
 
   // Links

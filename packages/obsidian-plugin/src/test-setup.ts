@@ -279,6 +279,11 @@ type MockVaultState = {
   // a path is absent so existing tests keep observing 0/0 — only tests
   // that need recency ordering (`get_recent_files` etc.) populate this.
   fileStats: Map<string, { ctime: number; mtime: number }>;
+  // Paths returned as `true` by `MetadataCache.isUserIgnored`. Mirrors
+  // Obsidian's `Files & Links → Excluded files` runtime behaviour without
+  // depending on the glob/regex compilation path. Empty by default so
+  // tests that don't exercise exclusion keep observing the full vault.
+  ignored: Set<string>;
 };
 
 // Synthetic absolute filesystem prefix used by the mock `adapter.rmdir`
@@ -301,6 +306,7 @@ const _mockState: MockVaultState = {
   unresolvedLinks: {},
   requestUrlResponses: new Map(),
   fileStats: new Map(),
+  ignored: new Set(),
 };
 
 export function resetMockVault(): void {
@@ -321,6 +327,7 @@ export function resetMockVault(): void {
   }
   _mockState.requestUrlResponses.clear();
   _mockState.fileStats.clear();
+  _mockState.ignored.clear();
 }
 
 export function setMockFile(path: string, content: string): void {
@@ -349,6 +356,17 @@ export function setMockFileStat(
     ctime: stat.ctime ?? 0,
     mtime: stat.mtime ?? 0,
   });
+}
+
+/**
+ * Mark a vault path as user-ignored, mirroring Obsidian's
+ * `Files & Links → Excluded files` runtime setting. Reflected by
+ * `app.metadataCache.isUserIgnored(path)` returning `true` for any
+ * registered path. Used by tools that filter against the exclusion set
+ * (`get_recent_files`, etc.).
+ */
+export function setMockIgnored(path: string): void {
+  _mockState.ignored.add(path);
 }
 
 /**
@@ -709,6 +727,9 @@ export function mockApp(): App {
       return _mockState.metadataCache.get(path) ?? null;
     },
     getTags: (): Record<string, number> => ({ ..._mockState.tags }),
+    // Mirrors Obsidian's runtime `MetadataCache.isUserIgnored` (not in
+    // the bundled `obsidian.d.ts`). Backed by `setMockIgnored()`.
+    isUserIgnored: (path: string): boolean => _mockState.ignored.has(path),
     // Live references — `resetMockVault()` mutates these in place so
     // the bindings stay valid across tests without re-creating the App.
     get resolvedLinks(): Record<string, Record<string, number>> {

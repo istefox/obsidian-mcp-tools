@@ -102,6 +102,7 @@ describe("end-to-end: HTTP → McpServer", () => {
         "get_backlinks",
         "get_files_by_tag",
         "get_outgoing_links",
+        "get_recent_files",
         "get_server_info",
         "get_vault_file",
         "list_obsidian_commands",
@@ -116,7 +117,7 @@ describe("end-to-end: HTTP → McpServer", () => {
         "show_file_in_obsidian",
         "update_active_file",
       ]);
-      expect(names).toHaveLength(27);
+      expect(names).toHaveLength(28);
     } finally {
       await new Promise<void>((r) => server.server.close(() => r()));
     }
