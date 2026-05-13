@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { type } from "arktype";
 import {
+  _resetMissingIsUserIgnoredWarning,
   getRecentFilesHandler,
   getRecentFilesSchema,
 } from "./getRecentFiles";
@@ -12,7 +13,12 @@ import {
   setMockIgnored,
 } from "$/test-setup";
 
-beforeEach(() => resetMockVault());
+beforeEach(() => {
+  resetMockVault();
+  // The one-shot warning flag in `getRecentFiles.ts` persists at module
+  // scope across tests; reset it so each test exercises a clean state.
+  _resetMissingIsUserIgnoredWarning();
+});
 
 describe("get_recent_files tool", () => {
   test("schema declares the tool name", () => {
@@ -42,6 +48,31 @@ describe("get_recent_files tool", () => {
       "newest.md",
       "middle.md",
       "old.md",
+    ]);
+  });
+
+  test("applies a path-ascending tiebreaker on equal mtimes", async () => {
+    // Three files share the same `mtime` (common on bulk imports /
+    // sync events). The response contract pins `path` ascending as
+    // the secondary key so repeat calls return deterministic order
+    // regardless of the underlying `vault.getMarkdownFiles()`
+    // iteration order, which is undocumented.
+    setMockFile("zebra.md", "");
+    setMockFile("apple.md", "");
+    setMockFile("mango.md", "");
+    setMockFile("recent.md", "");
+    setMockFileStat("zebra.md", { mtime: 1000 });
+    setMockFileStat("apple.md", { mtime: 1000 });
+    setMockFileStat("mango.md", { mtime: 1000 });
+    setMockFileStat("recent.md", { mtime: 9999 });
+
+    const r = await getRecentFilesHandler({ arguments: {}, app: mockApp() });
+    const data = JSON.parse(r.content[0].text as string);
+    expect(data.files.map((f: { path: string }) => f.path)).toEqual([
+      "recent.md",
+      "apple.md",
+      "mango.md",
+      "zebra.md",
     ]);
   });
 
@@ -126,6 +157,32 @@ describe("get_recent_files tool", () => {
     expect(data.totalFiles).toBe(1);
     expect(data.files).toHaveLength(1);
     expect(data.files[0].path).toBe("note.md");
+  });
+
+  test("gracefully degrades when isUserIgnored is unavailable", async () => {
+    // If a future Obsidian release renames or drops the runtime
+    // `MetadataCache.isUserIgnored` accessor, the handler must NOT
+    // throw — it falls back to "no exclusion applied" and emits a
+    // one-shot warning to the plugin log. Verified here by stripping
+    // the accessor from a fresh mockApp().
+    setMockFile("a.md", "");
+    setMockFile("b.md", "");
+    setMockFileStat("a.md", { mtime: 1 });
+    setMockFileStat("b.md", { mtime: 2 });
+
+    const app = mockApp();
+    delete (
+      app.metadataCache as unknown as { isUserIgnored?: unknown }
+    ).isUserIgnored;
+
+    const r = await getRecentFilesHandler({ arguments: {}, app });
+    const data = JSON.parse(r.content[0].text as string);
+    // Without the exclusion accessor, all visible markdown files flow
+    // through unfiltered.
+    expect(data.totalFiles).toBe(2);
+    expect(data.files).toHaveLength(2);
+    expect(data.files[0].path).toBe("b.md");
+    expect(data.files[1].path).toBe("a.md");
   });
 
   test("respects Obsidian's excluded files setting", async () => {
