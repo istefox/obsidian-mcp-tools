@@ -8,12 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Added
 
 - **`get_recent_files` tool** — returns the most recently modified
-  markdown files in the vault, ordered by `mtime` descending. Useful
+  markdown files in the vault, ordered by `mtime` descending with a
+  `path` ascending tiebreaker on equal `mtime` (so repeat calls return
+  deterministic order on bulk-import / sync-event ties). Useful
   agent-recency context (proposed by @istefox in
   [#69 upstream comment](https://github.com/jacksteamdev/obsidian-mcp-tools/pull/69#issuecomment-4371427847)
   as a "smallest-wins-first" candidate; confirmed as NEXT after the
   PR #93 merge in
-  [#93 close-out](https://github.com/istefox/obsidian-mcp-connector/pull/93#issuecomment-4418358887)).
+  [#93 close-out](https://github.com/istefox/obsidian-mcp-connector/pull/93#issuecomment-4418358887);
+  shipped in PR #94; review follow-ups (LOW1/LOW2/LOW3 from
+  [#94 close-out](https://github.com/istefox/obsidian-mcp-connector/pull/94))
+  landed in the same `[Unreleased]` block).
 
   Schema: `{ limit?: number }`. `limit` is an arktype-validated integer
   in `[1, 100]` (default 20). Out-of-range values, zero, negatives, and
@@ -40,23 +45,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   the runtime `MetadataCache.isUserIgnored(path)` accessor. The cast
   through `unknown` mirrors the pattern used by `list_tags` for
   `metadataCache.getTags` (both methods exist at runtime but are not
-  surfaced by the bundled `obsidian.d.ts`). Markdown-only via
-  `vault.getMarkdownFiles()`; non-markdown files are not surfaced.
+  surfaced by the bundled `obsidian.d.ts`). If the accessor is
+  unavailable (future Obsidian rename / removal), the handler degrades
+  gracefully to "no exclusion applied" and emits a one-shot
+  `logger.warn` so the regression is observable in the plugin log
+  instead of silently surfacing user-ignored entries. Markdown-only
+  via `vault.getMarkdownFiles()`; non-markdown files are not surfaced.
 
   Authorization gate matches `list_tags` / `get_files_by_tag` — no
   per-tool allowlist, no plugin dependency, read-only. Out of scope
   (deferred for a follow-up if user demand surfaces): folder-scoped
   filtering, sort key parameter, non-markdown surface.
 
-  Pinned by 10 cases in `getRecentFiles.test.ts` (schema name,
-  empty-vault response, mtime ordering, default limit of 20, explicit
-  limit, limit > totalFiles graceful path, full per-entry shape
-  including `size`, non-markdown filter, `isUserIgnored` exclusion, and
-  arktype boundary validation covering 0/-5/5.5/101 rejects and 1/100
-  boundary accepts). Mock surface in `test-setup.ts` extended additively
-  with `setMockIgnored(path)` + `metadataCache.isUserIgnored` (same
-  pattern that landed `setMockFileStat()` in #93 — reusable for any
-  follow-up tool that filters against the user-ignored set).
+  Pinned by 12 cases in `getRecentFiles.test.ts` (schema name,
+  empty-vault response, mtime ordering, equal-mtime path-ascending
+  tiebreaker, default limit of 20, explicit limit, limit > totalFiles
+  graceful path, full per-entry shape including `size`, non-markdown
+  filter, graceful degradation when `isUserIgnored` is absent,
+  `isUserIgnored` exclusion when present, and arktype boundary
+  validation covering 0 / -5 / 5.5 / 101 rejects and 1 / 100 boundary
+  accepts). Mock surface in `test-setup.ts` extended additively with
+  `setMockIgnored(path)` + `metadataCache.isUserIgnored` (same pattern
+  that landed `setMockFileStat()` in #93 — reusable for any follow-up
+  tool that filters against the user-ignored set).
 
 ## [0.4.6] — 2026-05-11
 
