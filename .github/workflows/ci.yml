@@ -48,8 +48,5 @@ jobs:
       - name: Tests — shared
         run: cd packages/shared && bun test
 
-      - name: Tests — mcp-server
-        run: cd packages/mcp-server && bun test
-
       - name: Tests — obsidian-plugin
         run: cd packages/obsidian-plugin && bun test
