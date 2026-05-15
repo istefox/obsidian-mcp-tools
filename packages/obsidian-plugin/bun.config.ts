@@ -126,6 +126,20 @@ const config: BuildConfig = {
       isProd ? "production" : "development",
     ),
     "import.meta.filename": JSON.stringify("mcp-tools-for-obsidian.ts"),
+    // Bundled deps (notably `@xenova/transformers/src/env.js`) call
+    // `fileURLToPath(import.meta.url)` eagerly at module init. Without
+    // this define, Bun bakes the BUILD MACHINE's absolute path (the
+    // GitHub Actions Linux runner: `file:///home/runner/...`). On
+    // Windows `getPathFromURLWin32` rejects a drive-less POSIX path with
+    // `TypeError: File URL path must be absolute`, crashing the plugin
+    // on load before any of our code runs (#100). The placeholder MUST
+    // carry a drive letter — a drive-less `file:///x` URL throws on
+    // Windows for the exact same reason (that IS the bug's mechanism);
+    // `file:///C:/…` is accepted by `fileURLToPath` on every platform.
+    // The resolved value is dead in our build (`env.allowLocalModels =
+    // false`, ONNX wasm pinned to a CDN) — only the eager call must not
+    // throw.
+    "import.meta.url": JSON.stringify("file:///C:/mcp-tools-for-obsidian.ts"),
     // These environment variables are critical for the MCP server download functionality.
     // In CI the release workflow injects the correct values (see .github/workflows/release.yml);
     // the fallback targets the active fork repo so local builds keep working.

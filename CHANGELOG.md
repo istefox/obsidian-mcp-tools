@@ -263,6 +263,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   logged verbatim for diagnostics. Reported by @folotp on a 0.4.6 soak.
   (#98)
 
+- **Windows: plugin no longer crashes on load (`fileURLToPath` of a
+  baked build-machine path).** `@xenova/transformers/src/env.js` calls
+  `fileURLToPath(import.meta.url)` eagerly at module-init. `bun.config.ts`
+  neutralised `import.meta.filename` but not `import.meta.url`, so Bun
+  baked the **build machine's** absolute path into `main.js` — on the
+  GitHub Actions Linux runner, `file:///home/runner/...`. At load on
+  Windows, `getPathFromURLWin32` rejects that drive-less POSIX path with
+  `TypeError: File URL path must be absolute`, taking down the whole
+  plugin before any of our code runs. macOS/Linux were unaffected (a
+  POSIX path is still a valid file-URL path there). Fixed by adding
+  `import.meta.url` to the `define` block, mirroring the existing
+  `import.meta.filename` neutralisation. The placeholder carries a drive
+  letter (`file:///C:/…`) on purpose: a drive-less `file:///…` URL
+  throws on Windows for the *same* reason as the bug, whereas
+  `fileURLToPath` accepts `file:///C:/…` on every platform. The value is
+  dead in our build (`env.allowLocalModels = false`, ONNX wasm pinned to
+  a CDN) — only the eager call needed to stop throwing. Reported by
+  @nathancrum. (#100)
+
 ### Changed
 
 - **Migration walkthrough adds an explicit
