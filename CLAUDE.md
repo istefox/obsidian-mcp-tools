@@ -12,7 +12,7 @@ One shipped component on the 0.4.x line:
 
 Why operations go through Obsidian APIs rather than reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the plugin invoke other Obsidian plugins (Templater, Dataview) through their APIs.
 
-Current versions (2026-05-09): **`main` ships 0.3.12** (stable, 20 MCP tools, stdio+binary architecture as described above), **`feat/http-embedded` ships 0.4.5** (released 2026-05-06, 26 MCP tools, in-process HTTP server inside the plugin, no binary; native semantic search via Transformers.js; see § Branch protection policy below). The `0.4.x` line has shipped 6 consecutive cycles (`0.4.0` → `0.4.5`, 5 soak-driven patches + 1 feature batch); a `[Unreleased]` block in `CHANGELOG.md` accumulates the `0.4.6` batch (currently #79 LRA port unhardcode, #78 migration UX, #88 ENOTEMPTY abs-path leak fix). License: MIT.
+Current lines: **`main` = 0.3.12** — the legacy stdio + standalone-binary architecture, retained only on the protected `main` branch (see § Branch protection policy). **`feat/http-embedded` = 0.4.6** — the active 0.4.x line: in-process HTTP MCP server inside the plugin, no binary, native semantic search via Transformers.js. The `packages/mcp-server` binary and `features/mcp-server-install` installer have been retired from the 0.4.x line. The `[Unreleased]` block in `CHANGELOG.md` accumulates the next cut; consult `CHANGELOG.md` for its current contents (do not enumerate here — it drifts). License: MIT.
 
 ### Fork status
 
@@ -161,9 +161,9 @@ Rules:
 
 Capabilities declared: **`tools`** and **`prompts`**. No MCP resources are exposed.
 
-### Tools (20 total)
+### Tools (29 total, 0.4.x)
 
-**Vault file management** — `packages/obsidian-plugin/src/features/local-rest-api/index.ts`:
+**Vault file management** — `packages/obsidian-plugin/src/features/mcp-tools/tools/`:
 
 | Tool | Purpose |
 |---|---|
@@ -243,7 +243,6 @@ Full spec lives in `.clinerules`. Highlights:
 Active traps in the current tree. Historical bugs already fixed in the fork are in `git log` — don't clutter this list with them.
 
 - **`patches/svelte@5.16.0.patch`** forces Svelte to use `index-client.js` instead of `index-server.js` — required for Bun bundler compatibility. Re-verify if you upgrade Svelte.
-- **Self-signed HTTPS**: the server sets `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"` inside `makeRequest.ts`. Removing or relocating this breaks every server→Obsidian call.
 - **`packages/obsidian-plugin/main.js` is the only shipped artifact** — CI regenerates it on tagged releases via `bun.config.ts`. Run `bun run build` from `packages/obsidian-plugin` locally; never commit the output.
 - **Version bumps must go through `bun run version`** — it atomically updates `package.json`, `manifest.json`, `versions.json` and creates the git commit + tag. Manual edits get out of sync.
 - **`packages/obsidian-plugin/main.js` is written at the package root, not `dist/`** — Obsidian expects that path. Do not move it.
