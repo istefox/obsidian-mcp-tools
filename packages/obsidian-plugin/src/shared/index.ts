@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import type { App, Plugin } from "obsidian";
 import { getAPI, LocalRestApiPublicApi } from "obsidian-local-rest-api";
 import {
   distinct,
@@ -13,6 +13,31 @@ import {
 } from "rxjs";
 import type { SmartConnections, Templater } from "shared";
 import type McpToolsPlugin from "src/main";
+
+// Augment Obsidian's App type to include the (undocumented) plugin
+// registry. Relocated from the retired mcp-server-install/types.ts —
+// shared/index.ts is the primary consumer and is always compiled, so a
+// declare-module here applies project-wide (also used by
+// mcp-tools/tools/executeTemplate.ts).
+declare module "obsidian" {
+  interface App {
+    plugins: {
+      plugins: {
+        ["obsidian-local-rest-api"]?: {
+          settings?: {
+            apiKey?: string;
+          };
+        };
+        ["smart-connections"]?: {
+          env?: SmartConnections.SmartSearch;
+        } & Plugin;
+        ["templater-obsidian"]?: {
+          templater?: Templater.ITemplater;
+        };
+      };
+    };
+  }
+}
 
 export interface Dependency<ID extends keyof App["plugins"]["plugins"], API> {
   id: keyof Dependencies;
