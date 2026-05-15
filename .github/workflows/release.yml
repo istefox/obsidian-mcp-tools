@@ -82,6 +82,12 @@ jobs:
         with:
           subject-path: "packages/mcp-server/dist/*"
 
+      - name: Generate artifact attestation for the plugin bundle (0.4.x line)
+        if: steps.release_line.outputs.ships_binary != 'true'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "main.js"
+
       - name: Get existing release body
         id: get_release_body
         uses: actions/github-script@v9
@@ -95,7 +101,8 @@ jobs:
             });
             return release.data.body || '';
 
-      - name: Upload plugin artifacts (always)
+      - name: Upload plugin artifacts (0.3.x line — includes convenience zip)
+        if: steps.release_line.outputs.ships_binary == 'true'
         env:
           GH_WORKFLOW_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         uses: ncipollo/release-action@v1
@@ -114,6 +121,29 @@ jobs:
             ---
             ${{ steps.release_line.outputs.ships_binary == 'true' && '✨ This release includes attested build artifacts.' || '' }}
             ${{ steps.release_line.outputs.ships_binary == 'true' && format('📝 View attestation details in the [workflow run]({0})', env.GH_WORKFLOW_URL) || '' }}
+
+      - name: Upload plugin artifacts (0.4.x line — main.js and manifest.json only)
+        if: steps.release_line.outputs.ships_binary != 'true'
+        env:
+          GH_WORKFLOW_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          omitName: true
+          tag: ${{ github.ref_name }}
+          # styles.css intentionally omitted — Svelte 5 inlines
+          # component CSS into main.js, no separate stylesheet is
+          # emitted by this build. ncipollo/release-action errors out
+          # if a literal (non-glob) artifact is missing.
+          # Convenience zip omitted — automated reviewer flagged
+          # additional files beyond main.js/manifest.json/styles.css.
+          artifacts: "main.js,manifest.json"
+          body: |
+            ${{ steps.get_release_body.outputs.result }}
+
+            ---
+            ${{ steps.release_line.outputs.ships_binary != 'true' && '✨ This release includes an attested build artifact (main.js).' || '' }}
+            ${{ steps.release_line.outputs.ships_binary != 'true' && format('📝 View attestation details in the [workflow run]({0})', env.GH_WORKFLOW_URL) || '' }}
 
       - name: Upload mcp-server binaries (0.3.x line only)
         if: steps.release_line.outputs.ships_binary == 'true'

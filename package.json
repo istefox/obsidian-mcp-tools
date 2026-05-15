@@ -16,6 +16,7 @@
     "packages/*"
   ],
   "scripts": {
+    "build": "bun --filter '@obsidian-mcp-tools/obsidian-plugin' build",
     "check": "bun --filter '*' check",
     "dev": "bun --filter '*' dev",
     "version": "bun scripts/version.ts",
