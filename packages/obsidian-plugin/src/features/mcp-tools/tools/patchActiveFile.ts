@@ -59,8 +59,8 @@ export async function patchActiveFileHandler(
  * resolves the file by path, then delegates here.
  *
  * Per-target-type default for createTargetIfMissing (per source 0.3.7 fix +
- * upstream #71):
- *   heading + frontmatter → true  (preserve upstream 0.2.x behaviour)
+ * issue #71):
+ *   heading + frontmatter → true  (preserve 0.2.x behaviour)
  *   block → false  (fail loud on unresolved id; safer per #71 block-in-table
  *                   corruption risk)
  *
@@ -78,7 +78,7 @@ export async function applyPatch(
   args: PatchActiveFileContext["arguments"],
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   // Block defaults to false to fail loud on unresolved block ids — avoids
-  // silent corruption in block-in-table scenarios (upstream #71).
+  // silent corruption in block-in-table scenarios (issue #71).
   const createIfMissing =
     args.createTargetIfMissing ?? args.targetType !== "block";
   const delimiter = args.targetDelimiter ?? "::";
@@ -171,7 +171,7 @@ export async function applyPatch(
 
     // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
     // Mirror of the gate in services/patchHelpers.ts:applyPatch — see fork #80,
-    // jacksteamdev/#83. The two applyPatch impls are duplicated; the shared
+    // #83. The two applyPatch impls are duplicated; the shared
     // hasParentH1 helper keeps the policy in one place.
     if (
       headingLine !== -1 &&
@@ -269,7 +269,7 @@ export async function applyPatch(
 
     // 0.3.x parity: reject when block resolves inside a table or fenced code
     // block. Mirror of the gate in services/patchHelpers.ts:applyPatch —
-    // see fork #81, jacksteamdev/#83. 0.4.3 fork #84: full block range
+    // see fork #81, #83. 0.4.3 fork #84: full block range
     // check, not just startLine — see range wrapper in patchHelpers.ts.
     if (isBlockRangeStructurallyUnsafe(lines, pos.startLine, pos.endLine)) {
       return {

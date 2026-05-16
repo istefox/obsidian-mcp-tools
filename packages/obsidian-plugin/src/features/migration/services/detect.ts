@@ -72,9 +72,9 @@ export type DetectLegacyInstallInput = {
   pluginId?: string;
   /**
    * Override the legacy plugin id checked alongside the new id.
-   * Defaults to `obsidian-mcp-tools` (the upstream key 0.3.x of this
-   * fork wrote into `claude_desktop_config.json`). Override only in
-   * tests where the legacy id differs.
+   * Defaults to `obsidian-mcp-tools` (the legacy key 0.3.x wrote into
+   * `claude_desktop_config.json`). Override only in tests where the
+   * legacy id differs.
    */
   legacyPluginId?: string;
   /**
@@ -210,7 +210,7 @@ async function probeLegacyClaudeConfigEntry(
   const map = servers as Record<string, unknown>;
 
   // Two cases of "legacy" we care about:
-  //   (a) Entry under `legacyPluginId` (`obsidian-mcp-tools` upstream
+  //   (a) Entry under `legacyPluginId` (`obsidian-mcp-tools` legacy
   //       key) exists at all. Even with a 0.4.0-shaped `npx mcp-remote`
   //       payload, the key needs to migrate to `newPluginId` so the
   //       fork's plugin id matches the manifest.

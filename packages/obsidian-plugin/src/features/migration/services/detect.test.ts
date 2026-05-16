@@ -281,7 +281,7 @@ describe("detectLegacyInstall", () => {
   });
 
   test("entry under legacy `obsidian-mcp-tools` key → hasLegacyClaudeConfigEntry=true (key migration needed)", async () => {
-    // 0.3.x of this fork wrote the entry under the upstream key. Even
+    // 0.3.x wrote the entry under the legacy key. Even
     // if the payload shape were 0.4.0-compatible, the key itself must
     // migrate to mcp-tools-istefox.
     const configPath = path.join(tmpRoot, "claude_desktop_config.json");

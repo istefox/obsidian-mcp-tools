@@ -125,7 +125,7 @@ export async function getVaultFileHandler(ctx: GetVaultFileContext): Promise<{
 
   // ── JSON format ────────────────────────────────────────────────────────────
   // Explicit format=json: read text content and attach metadata regardless of
-  // extension. This mirrors the upstream ApiNoteJson contract:
+  // extension. Shape: ApiNoteJson contract:
   // `{ path, content, frontmatter, tags, stat: { ctime, mtime, size } }`.
   // The `stat` field was missing in the initial 0.4.0 port — folotp flagged
   // the drift between the description and the actual response.

@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.7] — 2026-05-16
+
 ### Added
 
 - **`get_vault_file_partial` tool** — partial-read access to a vault

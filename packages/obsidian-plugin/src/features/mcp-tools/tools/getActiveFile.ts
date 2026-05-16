@@ -36,9 +36,9 @@ export async function getActiveFileHandler(
     return { content: [{ type: "text", text: content }] };
   }
 
-  // JSON shape: matches the upstream ApiNoteJson contract from the MCP server
-  // (content, frontmatter, path, stat, tags) so consumers get the same fields
-  // regardless of whether they talk to the REST API or the embedded server.
+  // JSON shape: matches the ApiNoteJson contract (content, frontmatter, path,
+  // stat, tags) so consumers get the same fields regardless of whether they
+  // talk to the REST API or the embedded server.
   const cache = ctx.app.metadataCache.getFileCache(file);
   const frontmatter = (cache?.frontmatter as Record<string, unknown>) ?? {};
 

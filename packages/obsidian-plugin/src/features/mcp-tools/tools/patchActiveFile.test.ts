@@ -267,8 +267,8 @@ describe("patch_active_file tool", () => {
   // ─── Regression rejects: 0.4.x parity with 0.3.x legacy chain ─────────
   // Mirrors the gates in services/patchHelpers.ts (used by patch_vault_file).
   // Both surfaced by folotp during the round-3 retest after the chain
-  // mis-identification was corrected (jacksteamdev/obsidian-mcp-tools#83).
-  // See fork issues #80 (H2-root) and #81 (block-in-table/fenced-code).
+  // mis-identification was corrected (soak round 3, issues #80/#81 thread).
+  // See issues #80 (H2-root) and #81 (block-in-table/fenced-code).
 
   test("#80: rejects level-2 root-orphan heading replace when createTargetIfMissing=false", async () => {
     setMockFile("a.md", "## RootHeading\n\nBody content.\n");

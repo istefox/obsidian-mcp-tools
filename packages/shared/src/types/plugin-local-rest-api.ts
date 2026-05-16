@@ -26,7 +26,7 @@ export const ApiError = type({
  * key at the validation boundary, making `format: "json"` unusable on
  * any realistic vault. Downstream consumers (LLM clients especially)
  * handle dynamic frontmatter shapes natively; strict wrapper-side
- * typing here costs more than it buys. Fixes upstream issue #81.
+ * typing here costs more than it buys. Fixes issue #81.
  */
 export const ApiNoteJson = type({
   content: "string",
@@ -229,7 +229,7 @@ export const ApiVaultFileResponse = type({
  * @property trimTargetWhitespace - Whether to remove whitespace from target identifier before matching (default: false)
  * @property content - The actual content to insert, append, or use as replacement
  * @property contentType - Format of the content - use application/json for structured data like table rows or frontmatter values
- * @property createTargetIfMissing - Whether the Local REST API should create the target heading/block if it does not exist. Default is per-target-type: `true` for `heading` and `frontmatter` (upstream 0.2.x compatibility), `false` for `block` (safer default because unresolved block ids — especially those inside markdown table cells, which markdown-patch's block indexer does not search — should fail loud rather than silently appending at EOF; see upstream issue #71 block-in-table gap). Set explicitly to override the per-target-type default.
+ * @property createTargetIfMissing - Whether the Local REST API should create the target heading/block if it does not exist. Default is per-target-type: `true` for `heading` and `frontmatter` (0.2.x compatibility), `false` for `block` (safer default because unresolved block ids — especially those inside markdown table cells, which markdown-patch's block indexer does not search — should fail loud rather than silently appending at EOF; see issue #71 block-in-table gap). Set explicitly to override the per-target-type default.
  */
 export const ApiPatchParameters = type({
   operation: type("'append' | 'prepend' | 'replace'").describe(
@@ -254,7 +254,7 @@ export const ApiPatchParameters = type({
     "Format of the content - use application/json for structured data like table rows or frontmatter values",
   ),
   "createTargetIfMissing?": type("boolean").describe(
-    "Whether to create the target if it doesn't exist. Default is per-target-type: true for heading and frontmatter (upstream compat), false for block (safer — block ids inside table cells are not searched by the indexer and silent EOF-append causes data corruption). Set explicitly to override.",
+    "Whether to create the target if it doesn't exist. Default is per-target-type: true for heading and frontmatter (0.2.x compat), false for block (safer — block ids inside table cells are not searched by the indexer and silent EOF-append causes data corruption). Set explicitly to override.",
   ),
 });
 

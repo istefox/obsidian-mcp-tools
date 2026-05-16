@@ -28,7 +28,7 @@ import {
  *  1. Idempotent rewrite — running twice with the same inputs yields
  *     identical bytes (after the first write).
  *  2. Other `mcpServers` entries preserved across the rewrite.
- *  3. Legacy `obsidian-mcp-tools` entry removed when migrating.
+ *  3. Legacy plugin config key removed when migrating.
  *  4. Backup file written before the first overwrite.
  *  5. Refuses to overwrite malformed JSON (data preservation).
  *  6. ENOENT → creates a new file with just the plugin entry.
@@ -105,7 +105,7 @@ describe("updateClaudeDesktopConfig", () => {
     expect(parsed.mcpServers[FORK_PLUGIN_ID]).toBeDefined();
   });
 
-  test("removes legacy `obsidian-mcp-tools` entry by default", async () => {
+  test("removes legacy plugin config key by default", async () => {
     await fsp.writeFile(
       configPath,
       JSON.stringify({

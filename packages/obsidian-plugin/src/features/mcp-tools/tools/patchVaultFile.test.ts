@@ -316,7 +316,7 @@ describe("patch_vault_file tool", () => {
   });
 
   test("regression: block target with createTargetIfMissing=false on table-located block fails loud", async () => {
-    // Simulates upstream #71: block id ^X exists in markdown table cell,
+    // Simulates issue #71: block id ^X exists in markdown table cell,
     // but Obsidian's metadataCache.blocks does NOT index blocks inside tables.
     // Our findBlockPositionFromCache returns null → with default
     // createTargetIfMissing=false (block-specific), we fail loud.
@@ -342,7 +342,7 @@ describe("patch_vault_file tool", () => {
 //
 // Both surfaced by folotp during the round-3 retest on the actual
 // HTTP-embedded chain after the chain mis-identification was corrected
-// (jacksteamdev/obsidian-mcp-tools#83). See fork issues #80 and #81.
+// (soak round 3, issues #80/#81 thread). See issues #80 and #81.
 
 describe("patch_vault_file — H2-root reject (#80)", () => {
   test("rejects level-2 root-orphan heading replace when createTargetIfMissing=false (folotp R1)", async () => {

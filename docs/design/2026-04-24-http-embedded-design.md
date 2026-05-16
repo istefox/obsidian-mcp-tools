@@ -6,7 +6,7 @@
 | **Date** | 2026-04-24 |
 | **Author** | Stefano Ferri (@istefox) |
 | **Audience** | Project maintainers, future contributors |
-| **Related** | [`jacksteamdev/obsidian-mcp-tools#79`](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/79) (upstream unmaintained declaration), [`obsidianmd/obsidian-releases#11919`](https://github.com/obsidianmd/obsidian-releases/pull/11919) (community store submission), `docs/design/issue-29-command-execution.md` (command execution policy — preserved) |
+| **Related** | [`obsidianmd/obsidian-releases#11919`](https://github.com/obsidianmd/obsidian-releases/pull/11919) (community store submission), `docs/design/issue-29-command-execution.md` (command execution policy — preserved) |
 
 ## Executive summary
 
@@ -14,8 +14,8 @@ This document specifies the architectural pivot from the current stdio + externa
 
 The pivot has three drivers:
 
-1. **Upstream maintainer's official position.** On 2026-04-24 @jacksteamdev declared `jacksteamdev/obsidian-mcp-tools` officially unmaintained, citing the supply-chain exposure of shipping platform binaries. He offered to link from the upstream README to any plugin that (a) uses MCP over HTTP and (b) is published in the official Obsidian community store. This design targets both conditions.
-2. **Competitive positioning.** Five in-process Obsidian MCP plugins are already active as of 2026-04 (`aaronsb`, `rygwdn`, `jlevere`, `dsebastien`, `Chepech/anamnesis`). None are in the community store yet. The window to be the first in-process plugin in the store is estimated at 3-6 months. The strategic goal is leadership of the segment, leveraging the 74k install base of the dormant upstream.
+1. **Architecture evolution.** The 0.3.x stdio + external binary design carried inherent supply-chain exposure from shipping platform binaries. Moving to in-process HTTP eliminates that surface entirely and simplifies the deployment story.
+2. **Competitive positioning.** Five in-process Obsidian MCP plugins are already active as of 2026-04 (`aaronsb`, `rygwdn`, `jlevere`, `dsebastien`, `Chepech/anamnesis`). None are in the community store yet. The window to be the first in-process plugin in the store is estimated at 3-6 months. The strategic goal is leadership of the segment.
 3. **Permanent fix for the installer 404 class of bugs** (see [#3](https://github.com/istefox/obsidian-mcp-connector/issues/3)). Removing the external binary removes the entire failure surface.
 
 Target transport: **Streamable HTTP** (MCP spec 2025-06-18, stable). Claude Desktop does not yet speak HTTP natively (bug [anthropics/claude-code#30327](https://github.com/anthropics/claude-code/issues/30327)); it is supported via `npx mcp-remote`, the official Anthropic-maintained stdio-to-HTTP bridge. All other major MCP clients (Claude Code CLI, Cursor, Cline, Continue, VS Code, Windsurf) speak HTTP natively.
@@ -52,7 +52,7 @@ The following decisions were made during brainstorming and are recorded here wit
 
 **Decision:** The plugin generates a `claude_desktop_config.json` entry that invokes `npx -y mcp-remote http://127.0.0.1:PORT/mcp --header 'Authorization: Bearer TOKEN'`. No binary is shipped from this repo.
 
-**Rationale:** Anthropic maintains `mcp-remote` on npm as the official stdio-to-HTTP bridge. It runs via `npx` (no permanent install), requires only Node.js on the user's machine (acceptable for the MCP+Obsidian target audience, which is developer-leaning), and keeps this project free of supply-chain responsibility for a compiled binary. Alternative approaches (shipping our own compiled shim, shell scripts with `curl`, bundling Node) all reintroduce the exact concern @jacksteamdev raised.
+**Rationale:** Anthropic maintains `mcp-remote` on npm as the official stdio-to-HTTP bridge. It runs via `npx` (no permanent install), requires only Node.js on the user's machine (acceptable for the MCP+Obsidian target audience, which is developer-leaning), and keeps this project free of supply-chain responsibility for a compiled binary. Alternative approaches (shipping our own compiled shim, shell scripts with `curl`, bundling Node) all reintroduce the supply-chain exposure that the pivot is designed to eliminate.
 
 ### D3. Port binding: configurable default `127.0.0.1:27200` with fallback
 
@@ -416,7 +416,7 @@ After merge, `0.3.x` lives on `branch-0.3` for critical patches. End-of-Life 4-8
 
 ### Store submission strategy
 
-`obsidianmd/obsidian-releases#11919` is open (2026-04-18) with automated lint passed, awaiting human review. Recommended path: **get 0.3.5 into the store as soon as review arrives**, then ship 0.4.0 as a normal update. This maximizes time-in-store and inherits the 74k jacksteamdev MCP Tools user base through the upstream README link as soon as that link becomes possible.
+`obsidianmd/obsidian-releases#11919` is open (2026-04-18) with automated lint passed, awaiting human review. Recommended path: **get 0.3.5 into the store as soon as review arrives**, then ship 0.4.0 as a normal update. This maximizes time-in-store before the competitive window closes.
 
 ### User migration modal
 
@@ -550,7 +550,7 @@ Week 9     Beta: 0.4.0-beta.1, alpha feedback triage
            Store PR #11919 decision (push 0.4.0 or let 0.3.5 in first)
 
 Week 10    0.4.0 stable tag + release
-           README PR to upstream + Discord DM to @jacksteamdev
+           Community outreach (Discord, Reddit) for the new release
            0.3.x → branch-0.3 for bugfix maintenance
 
 Week 14    0.5.0: reranking + HNSW if vault size demands
@@ -578,7 +578,7 @@ Prudent estimate. Compressible to 6-7 weeks with focused execution; 10 weeks inc
 4. Migration from 0.3.x completes with no settings or config loss.
 5. Zero ESLint errors from `ObsidianReviewBot`.
 6. `0.4.0` accepted in the official community plugin store.
-7. Link in the `jacksteamdev/obsidian-mcp-tools` README obtained (jacksteamdev's stated condition).
+7. Plugin listed in the official Obsidian community store.
 8. At least five pieces of community feedback within two weeks post-release (adoption proxy).
 
 ## References
@@ -590,6 +590,5 @@ Prudent estimate. Compressible to 6-7 weeks with focused execution; 10 weeks inc
 - Bug: [anthropics/claude-code#30327](https://github.com/anthropics/claude-code/issues/30327) — Claude Desktop HTTP transport not yet supported
 - Clients: [MCP Example Clients](https://modelcontextprotocol.io/clients), [Stacklok client compatibility](https://docs.stacklok.com/toolhive/reference/client-compatibility)
 - `mcp-remote`: [npm package](https://www.npmjs.com/package/mcp-remote)
-- Upstream position: [jacksteamdev/obsidian-mcp-tools#79](https://github.com/jacksteamdev/obsidian-mcp-tools/issues/79)
 - Store PR: [obsidianmd/obsidian-releases#11919](https://github.com/obsidianmd/obsidian-releases/pull/11919)
 - Related in-repo: `.clinerules`, `docs/project-architecture.md`, `docs/design/issue-29-command-execution.md`, `CLAUDE.md`

@@ -29,7 +29,7 @@ interface HandlerContext {
  * Exported so it can be unit-tested without instantiating the whole
  * ToolRegistry.
  *
- * See upstream issues #63 (Letta Cloud) and #77 (openai-codex).
+ * See issues #63 (Letta Cloud) and #77 (openai-codex).
  */
 export function normalizeInputSchema(
   jsonSchema: unknown,
@@ -52,14 +52,14 @@ export function normalizeInputSchema(
   }
 
   // Guarantee `properties` is present, defaulting to an empty object
-  // for no-arg tools (upstream #77).
+  // for no-arg tools (issue #77).
   if (!("properties" in result)) {
     result.properties = {};
   }
 
   // Strip `additionalProperties: {}` — an empty-object schema is
   // semantically equivalent to `additionalProperties: true` but is
-  // rejected by strict validators such as Letta Cloud (upstream #63).
+  // rejected by strict validators such as Letta Cloud (issue #63).
   // `true`, `false`, and genuine sub-schemas are left untouched.
   const ap = result.additionalProperties;
   if (

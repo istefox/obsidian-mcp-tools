@@ -89,7 +89,7 @@ The 0.4.x release pipeline (per `release.yml` split, PR #62) only emits attestat
 
 | Version | Status | Security policy |
 |---|---|---|
-| **0.4.x** | **Current — full support** | Critical and high vulnerabilities patched; plugin-only release line. Latest: `0.4.0` (2026-05-04). |
+| **0.4.x** | **Current — full support** | Critical and high vulnerabilities patched; plugin-only release line. Latest: `0.4.7` (2026-05-16). |
 | **0.3.x** | Legacy — critical fixes only | Binary release line for users on the standalone-server architecture. Patched only for actively exploited or data-loss-class issues. Latest: `0.3.12` (2026-04-28). |
 | 0.2.x and earlier | End of life | No support. Users should migrate to `0.4.0` (or `0.3.12` if the binary architecture is required). |
 
@@ -114,10 +114,10 @@ Patches for the 0.4.x line ship as new tags on the `feat/http-embedded` → `mai
 
 ## Security Acknowledgments
 
-The following individuals and organizations have contributed to the security posture of this fork through responsible disclosure or substantive review:
+The following individuals and organizations have contributed to the security posture of this project through responsible disclosure or substantive review:
 
 - @folotp — extensive soak testing across the 0.4.0 beta cycle (rounds 1, 2, 3) surfacing multiple silent-data-corruption regressions in `patch_*_file` and `execute_template`. Reports landed as fixes in 0.3.8, 0.3.12, 0.4.0-beta.2, and 0.4.0-beta.3.
-- Upstream `jacksteamdev/obsidian-mcp-tools` — the original authorization design for `execute_obsidian_command` (issue #29 / threat model) carried forward into this fork unchanged.
+- Original authorization design for `execute_obsidian_command` (issue #29 / threat model) — carried forward from the 0.3.x codebase unchanged (MIT-licensed).
 
 ## License
 
