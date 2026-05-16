@@ -8,8 +8,8 @@
  *    share the same `Promise<Pipeline>` so the model is constructed
  *    exactly once.
  * 2. **LRU query cache** — identical query strings reuse the same
- *    `Float32Array` reference. Default size 32 (per design § Query
- *    pipeline). Exact-match cache; semantic dedupe is out of scope.
+ *    `Float32Array` reference. Default size 32. Exact-match cache;
+ *    semantic dedupe is out of scope.
  * 3. **Unload-when-idle** — if `unloadWhenIdle` is true, the pipeline
  *    is dropped 60s after the last call (RAM saver for memory-
  *    constrained users). The next call cold-reloads.

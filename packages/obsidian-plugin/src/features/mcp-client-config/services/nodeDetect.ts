@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import os from "os";
 
 /**
- * Node.js presence + version detection (Phase 4 T9).
+ * Node.js presence + version detection.
  *
  * Background: Claude Desktop's bridge to the in-process HTTP MCP
  * server goes through `npx mcp-remote`. `npx` requires Node.js on

@@ -59,7 +59,7 @@ export type SemanticSearchState = {
   /**
    * Closure mapping `SemanticSearchSettings` to the matching
    * provider. Present iff `setup()` was called with `factoryDeps`.
-   * The settings UI (T12) calls this on a tri-state change to swap
+   * The settings UI calls this on a tri-state change to swap
    * `state.provider` without rebuilding the embedder/store.
    * Optional in the type so test fixtures can construct partial
    * state shapes; populated to either ProviderChooser or null at
@@ -67,20 +67,20 @@ export type SemanticSearchState = {
    */
   chooser?: ProviderChooser | null;
   /**
-   * Reference to the model downloader so the settings UI (T13) can
+   * Reference to the model downloader so the settings UI can
    * subscribe to the first-run download progress without importing
-   * internal feature plumbing. Wired by T15 production setup;
+   * internal feature plumbing. Wired by production setup;
    * absent in tests and in the early lifecycle.
    */
   downloader?: ModelDownloader | null;
   /**
-   * The constructed indexer (live or low-power per setting) when
-   * Phase 3 is wired. Not auto-started — the search tool calls
-   * `startIndexerIfNeeded()` on first use (Q4 = lazy).
+   * The constructed indexer (live or low-power per setting), when
+   * present. Not auto-started — the search tool calls
+   * `startIndexerIfNeeded()` on first use (lazy).
    */
   indexer?: SemanticIndexer | null;
   /**
-   * The embedding store, wired by T15 production setup. Used by the
+   * The embedding store, wired by production setup. Used by the
    * settings UI to surface the indexed-chunks count.
    */
   store?: EmbeddingStore | null;
@@ -181,11 +181,10 @@ export async function setup(
     const settingsMutex = createMutex();
     const settings = await loadAndPersistSettings(plugin, settingsMutex);
 
-    // Phase 3 T8: if factoryDeps is supplied, construct the chooser
-    // and pick the provider matching the user's tri-state setting.
-    // Without deps, the state holds a NoopProvider; T11 will supply
-    // the real deps from main.ts after the embedder + store are
-    // wired up against the live vault.
+    // If factoryDeps is supplied, construct the chooser and pick the
+    // provider matching the user's tri-state setting. Without deps,
+    // the state holds a NoopProvider until the real deps are supplied
+    // from main.ts after the embedder + store are wired to the vault.
     let provider: SemanticSearchProvider;
     let chooser: ProviderChooser | null = null;
     if (opts.factoryDeps) {
@@ -203,9 +202,9 @@ export async function setup(
       downloader: null,
       indexer: null,
       store: opts.factoryDeps?.store ?? null,
-      startIndexerIfNeeded: undefined, // T15 wiring overrides this
+      startIndexerIfNeeded: undefined, // production wiring overrides this
       teardown: async () => {
-        // T15 production wiring overrides this to flush+close the
+        // production wiring overrides this to flush+close the
         // store, stop the indexer, and unload the embedder model.
       },
     };

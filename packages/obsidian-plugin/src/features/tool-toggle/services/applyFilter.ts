@@ -2,7 +2,7 @@ import { logger } from "$/shared/logger";
 
 /**
  * Apply the user-controlled `toolToggle.disabled` list to a freshly-
- * registered ToolRegistry (Phase 4 T12.c).
+ * registered ToolRegistry.
  *
  * The `ToolRegistry` already separates registration from enablement
  * via its internal `enabled` set + `disableByName(name)` API. This

@@ -55,7 +55,7 @@ export async function createMcpService(
     pluginVersion: config.pluginVersion,
   });
 
-  // Apply the user's `toolToggle.disabled` filter (Phase 4 T12.c).
+  // Apply the user's `toolToggle.disabled` filter.
   // Disabled tools stay registered but are flipped off the registry's
   // enabled set, so they no longer appear in `tools/list` and any
   // `tools/call` against them returns MethodNotFound. Idempotent.

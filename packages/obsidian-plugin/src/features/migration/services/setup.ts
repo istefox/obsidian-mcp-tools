@@ -10,7 +10,7 @@ import { executeSteps, planMigration, type MigrationContext } from "./plan";
 import { MigrationModalHost } from "./migrationModalHost";
 
 /**
- * First-load wiring for the migration modal (Phase 4 T8).
+ * First-load wiring for the migration modal.
  *
  * Called from `main.ts:onload` after the HTTP transport has been set
  * up so the live `port` + `bearerToken` are available. Does the

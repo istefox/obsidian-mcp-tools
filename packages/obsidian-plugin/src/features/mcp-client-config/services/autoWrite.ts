@@ -4,7 +4,7 @@ import { updateClaudeDesktopConfig } from "./claudeDesktop";
 /**
  * Auto-write Claude Desktop config glue.
  *
- * The Settings UI exposes an opt-in toggle (default OFF, per design D6)
+ * The Settings UI exposes an opt-in toggle (default OFF)
  * that, when ON, automatically rewrites `claude_desktop_config.json`
  * whenever the bearer token rotates or the HTTP server's port changes.
  * This module owns the read/write of that flag and the one-shot sync

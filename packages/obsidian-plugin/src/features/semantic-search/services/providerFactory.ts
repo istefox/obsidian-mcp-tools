@@ -1,6 +1,6 @@
 /**
  * Provider factory — selects the active SemanticSearchProvider based
- * on the user's tri-state setting (design D7).
+ * on the user's tri-state setting.
  *
  * Behavior matrix:
  *   provider="native"            → always NativeProvider

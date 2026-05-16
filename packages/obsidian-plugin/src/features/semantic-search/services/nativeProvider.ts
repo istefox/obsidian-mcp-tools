@@ -1,7 +1,7 @@
 /**
  * NativeProvider — semantic search backed by Transformers.js + the
- * local embedding store. Implements `SemanticSearchProvider` and
- * dispatches via the design D7 tri-state setting (T8 factory).
+ * local embedding store. Implements `SemanticSearchProvider`; the
+ * provider factory selects it from the user's tri-state setting.
  *
  * Algorithm:
  *   1. Embed the query (LRU-cached at the embedder layer).

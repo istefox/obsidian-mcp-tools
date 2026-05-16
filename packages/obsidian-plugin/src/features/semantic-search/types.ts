@@ -3,12 +3,12 @@ import { type } from "arktype";
 /**
  * Runtime schema for the semantic-search settings block.
  *
- * `provider` is the user-facing tri-state from design D7:
- *   - "native"            → always Transformers.js (T6 NativeProvider)
- *   - "smart-connections" → always Smart Connections (T7 wrapper); errors actionably if not installed
+ * `provider` is the user-facing tri-state:
+ *   - "native"            → always Transformers.js (NativeProvider)
+ *   - "smart-connections" → always Smart Connections; errors actionably if not installed
  *   - "auto"              → Smart Connections if loaded and ready, otherwise native
  *
- * `indexingMode` is design D9: live re-embedding on file change vs.
+ * `indexingMode`: live re-embedding on file change vs.
  * 5-minute batched scan. Only meaningful when the active provider
  * is `NativeProvider` — Smart Connections owns its own indexing.
  *

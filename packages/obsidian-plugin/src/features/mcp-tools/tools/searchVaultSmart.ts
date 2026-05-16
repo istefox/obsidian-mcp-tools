@@ -51,7 +51,7 @@ function errorResult(text: string): ToolResult {
  * Handler for the `search_vault_smart` MCP tool.
  *
  * Dispatches through `plugin.semanticSearchState.provider`, which is
- * picked by the Phase 3 provider factory based on the user's tri-state
+ * picked by the provider factory based on the user's tri-state
  * setting (native / smart-connections / auto). The tool no longer
  * knows or cares which backend services the search — it only forwards
  * the query and filters to the active provider, then JSON-serializes

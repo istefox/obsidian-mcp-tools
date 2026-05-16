@@ -1,5 +1,5 @@
 /**
- * Live semantic indexer (design § Indexing pipeline, design D9).
+ * Live semantic indexer.
  *
  * Algorithm:
  *   - On `start`, run a full build over every markdown file currently
@@ -175,7 +175,7 @@ export function createLiveIndexer(opts: LiveIndexerOpts): SemanticIndexer {
 }
 
 // ---------------------------------------------------------------------------
-// Low-power indexer (design D9, opt-in)
+// Low-power indexer (opt-in)
 // ---------------------------------------------------------------------------
 
 export type LowPowerIndexerOpts = {

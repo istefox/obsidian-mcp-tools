@@ -3,7 +3,7 @@ import { FORK_PLUGIN_ID } from "./claudeDesktop";
 
 /**
  * Pure JSON generators for the three MCP client families the plugin
- * targets (per design D6). Each function returns the inner
+ * targets. Each function returns the inner
  * `mcpServers` entry only — the UI calls `wrapInMcpServers()` if it
  * wants the full ready-to-paste block.
  *

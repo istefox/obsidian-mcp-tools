@@ -8,7 +8,7 @@ import {
 } from "./nodeDetect";
 
 /**
- * `mcp-remote` pre-warm (Phase 4 T10).
+ * `mcp-remote` pre-warm.
  *
  * The Claude Desktop bridge runs `npx -y mcp-remote ...` at every
  * launch; if the package is not in the npm cache, the first invocation

@@ -11,7 +11,7 @@
  *   contentHash, byteOffset, byteLength)`. Bumping `version` triggers
  *   a clean re-index on next `init()` (logged warning, no error).
  *
- * Why flat-file instead of SQLite or HNSW (design D5):
+ * Why flat-file instead of SQLite or HNSW:
  * - Vault sizes targeted at 0.4.0 are well under 100k chunks. Cosine
  *   flat scan over 100k × 384-dim Float32 (~150MB) takes ~20ms on
  *   modern CPU with vectorized typed-array math. HNSW indexing is
