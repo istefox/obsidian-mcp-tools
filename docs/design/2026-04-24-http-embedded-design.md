@@ -1,5 +1,7 @@
 # 0.4.0 — Plugin-embedded MCP server (HTTP transport)
 
+> **Historical design record.** The 0.4.x in-process HTTP-embedded server described here is shipped. For the current architecture see [`docs/project-architecture.md`](project-architecture.md); this file is kept for design rationale only.
+
 | | |
 |---|---|
 | **Status** | Approved — ready for implementation planning |

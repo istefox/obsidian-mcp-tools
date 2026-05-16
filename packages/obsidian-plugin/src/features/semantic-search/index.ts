@@ -24,20 +24,14 @@ export {
 } from "./services/modelDownloader";
 
 /**
- * Semantic search feature — Phase 3 scaffolding.
+ * Semantic search feature — public API + setup.
  *
- * The full provider/indexer pipeline lands in T2-T15 of
- * `docs/plans/0.4.0-phase-3-semantic-search.md`. This entry point
- * currently installs a no-op provider so `searchVaultSmart` can
- * dispatch through `plugin.semanticSearchState.provider` without
- * breaking once T11 wires the tool handler. Until T6/T7 land, the
- * no-op provider returns `isReady: false` and an actionable error
- * message — strict no-regression scaffolding.
- *
- * T2 adds the settings block: tri-state provider + indexing mode +
- * unload-when-idle, persisted via `plugin.saveData` under a feature
- * mutex (load → modify → save serialized to avoid the non-atomic
- * loadData/saveData trap documented in CLAUDE.md § Gotchas).
+ * `setup()` constructs the real provider via `factoryDeps` (or leaves
+ * the NoopProvider in place when omitted — early lifecycle / tests),
+ * wires the indexer + embedding store + model downloader, and persists
+ * the feature settings under a feature mutex: `plugin.loadData` /
+ * `plugin.saveData` are not atomic, so the read-modify-write of this
+ * settings slice is serialized (see CLAUDE.md § Gotchas).
  */
 
 export type SearchOpts = {

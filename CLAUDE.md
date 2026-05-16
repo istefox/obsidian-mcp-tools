@@ -230,6 +230,40 @@ Full spec lives in `.clinerules`. Highlights:
 - **ArkType validation at every boundary** — external fetch responses, REST endpoint payloads, MCP tool arguments, prompt frontmatter. Add `.describe()` to improve error messages.
 - **Feature name kebab-case**, **function camelCase**, **type PascalCase**, **constant SCREAMING_SNAKE_CASE**.
 
+## Documentation discipline
+
+This repo is read by skeptical strangers. Committed doc/comment bloat makes a
+sound, reviewed project look AI-generated and unmaintained — a real cost we
+have paid. Every committed doc and comment must earn its place.
+
+**Hard rules:**
+
+1. **No session scaffolding in the tracked tree.** `handoff*.md`, per-session
+   notes, scratch plans, "decisions log" files → `.gitignore`, never committed.
+   Cross-session context belongs in `CLAUDE.md` (a curated snapshot), not in
+   raw handoff dumps. Internal coordination is not a repo artifact.
+2. **Execution/migration plans are ephemeral.** Once the work ships, the plan
+   is deleted in the same PR. The shipped code, `CHANGELOG.md`, and the design
+   doc are the record. `git log` is the history — do not keep "completed"
+   plans in `docs/` as a museum.
+3. **One source of truth per topic.** Architecture → `docs/project-architecture.md`
+   + `.clinerules`. Do not add a second doc that restates an existing one.
+   Superseded docs are **deleted, not banner-tagged and left in place.**
+4. **Docs earn their length.** A doc that could be 40 lines must not be 400.
+   `README.md` = what it is, install, use, where to look next — not a treatise.
+   `CHANGELOG.md` is the one expected-long file; that is fine.
+5. **Comments: non-obvious WHY only.** Keep comments that explain a constraint,
+   an invariant, or a workaround for a specific bug. Delete WHAT-comments and
+   AI narration (e.g. "optional feature", "this function does X", restating the
+   signature) and stale phase/task-ID narration. If deleting the comment loses
+   no information, it should not exist.
+6. **Release gate.** Every release PR audits the repo root + `docs/` for
+   completed-plan / handoff / superseded residue and removes it in that PR.
+
+Litmus test before committing any doc or comment: *would a skeptical external
+dev reading this cold see it as load-bearing, or as AI exhaust the author
+never cleaned up?* If exhaust, it does not get committed.
+
 ## Gotchas
 
 Active traps in the current tree. Historical bugs already fixed are in `git log` — don't clutter this list with them.
