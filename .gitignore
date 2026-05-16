@@ -186,3 +186,6 @@ docs/planning/
 data.json
 cline_docs/temp/
 tmp/
+
+# Local strategy / private notes (not for the public repo)
+handoff_stele.md

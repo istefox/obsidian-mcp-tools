@@ -61,10 +61,13 @@ describe("serializeDisabledToolsToEnv", () => {
 });
 
 describe("KNOWN_MCP_TOOL_NAMES", () => {
-  test("contains exactly 18 tool names (matching the server's advertised count)", () => {
-    // If this number changes, update both the list in utils.ts and
-    // the MCP surface section in CLAUDE.md.
-    expect(KNOWN_MCP_TOOL_NAMES.length).toBe(18);
+  test("contains exactly 20 tool names (matching the in-process registry)", () => {
+    // 0.4.0: 20 tools, including list_obsidian_commands and
+    // execute_obsidian_command (these were not exposed as MCP tools
+    // in 0.3.x — issue #29 added them). If this number changes,
+    // update both the list in utils.ts and the MCP surface section
+    // in CLAUDE.md.
+    expect(KNOWN_MCP_TOOL_NAMES.length).toBe(20);
   });
 
   test("has no duplicate entries", () => {

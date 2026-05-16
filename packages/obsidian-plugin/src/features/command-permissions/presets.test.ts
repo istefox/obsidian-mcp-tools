@@ -5,6 +5,7 @@ import {
   PRESETS,
   type PresetCategory,
 } from "./presets";
+import { isDestructiveCommand } from "./utils";
 
 function makeRegistry(
   ids: readonly string[],
@@ -47,12 +48,11 @@ describe("PRESETS catalog", () => {
   test("no preset contains a command matching the destructive heuristic", () => {
     // The whole point of presets is pre-authorization with one click,
     // so they must be curated to exclude anything the modal would
-    // flag as destructive. Keep this in sync with the regex in
-    // utils.ts::isDestructiveCommand.
-    const destructive = /\b(delete|remove|uninstall|trash|clean(?:up)?|purge|drop|reset|clear|wipe)\b/i;
+    // flag as destructive. Defer to `isDestructiveCommand` directly so
+    // future regex tweaks (in utils.ts) do not drift from this guard.
     for (const preset of PRESETS) {
       for (const cmd of preset.commandIds) {
-        expect(destructive.test(cmd)).toBe(false);
+        expect(isDestructiveCommand(cmd)).toBe(false);
       }
     }
   });

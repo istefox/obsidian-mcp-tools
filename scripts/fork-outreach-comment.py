@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Batch-comment on upstream issues that have been resolved in the fork.
+"""Historical outreach script — archives cross-project issue pointers.
 
-Posts a standardized "fixed in community fork" pointer on every listed
-upstream issue, one comment per issue, via `gh issue comment`. Tracks what
-has been commented in scripts/.outreach-log.jsonl so re-runs are idempotent.
+NOTE: This script was used during the 0.3.x era to post "fixed here" pointers
+on issues in the predecessor repository. It is retained as a historical
+reference and audit log companion (scripts/.outreach-log.jsonl). The outreach
+campaign is complete; do not run --execute against REPO_UPSTREAM again.
+
+Posts a standardized pointer comment on every listed issue, one comment per
+issue, via `gh issue comment`. Tracks what has been commented in
+scripts/.outreach-log.jsonl so re-runs are idempotent.
 
 Defaults to --dry-run (prints what would be sent, sends nothing). Pass
 --execute to actually post. Intended workflow:
@@ -32,7 +37,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-REPO_UPSTREAM = "jacksteamdev/obsidian-mcp-tools"
+# Historical target — the predecessor repository that hosted the original issues.
+# Retained for reference and idempotency checks against .outreach-log.jsonl.
+REPO_UPSTREAM = "jacksteamdev/obsidian-mcp-tools"  # noqa: S105 — not a secret
 REPO_FORK = "istefox/obsidian-mcp-connector"
 # When obsidianmd/obsidian-releases#11919 is merged, extend the templates
 # with a "Available in the community store" clause alongside BRAT. Until
@@ -87,27 +94,26 @@ INDIRECT_MAP: dict[int, FixRef] = {
 
 
 COMMENT_TEMPLATE_DIRECT = """\
-Heads up for anyone still watching this — this has been fixed in the \
-community fork at https://github.com/{fork} (commit `{sha_clause}`, shipped \
+Heads up for anyone still watching this — this has been fixed in \
+https://github.com/{fork} (commit `{sha_clause}`, shipped \
 in **v{version}**).
 
 Install today via [BRAT](https://github.com/TfTHacker/obsidian42-brat) by \
 pointing it to `{fork}`.
 
-Posting from the fork maintainer side to surface the pointer — feel free \
-to close this issue if the fork resolves it for you, or keep it open to \
-track the upstream decision."""
+Posting to surface the pointer — feel free \
+to close this issue if the fix resolves it for you."""
 
 
 COMMENT_TEMPLATE_INDIRECT = """\
 Heads up for anyone still watching this — I believe this is resolved \
-indirectly in the community fork at https://github.com/{fork} by the \
+indirectly in https://github.com/{fork} by the \
 install-location refactor for #28 (commit `{sha_clause}`, shipped in \
 **v{version}**). The underlying root cause (MCP server binary stuck in a \
 hard-coded path) was the same.
 
 Install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) pointing \
-to `{fork}`. If the bug still reproduces on the fork, please open a fresh \
+to `{fork}`. If the bug still reproduces, please open a fresh \
 issue at {fork}/issues — happy to look at it."""
 
 

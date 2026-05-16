@@ -19,6 +19,46 @@ const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");
 const isProd = args.includes("--prod");
 
+// `onnxruntime-node` redirect + `sharp` stub. Transformers.js v2.17.2
+// has eager `import * as ONNX_NODE from 'onnxruntime-node'` and chooses
+// it whenever `process?.release?.name === 'node'` — which in Electron
+// renderer is **true** (process.release.name === 'node' is inherited).
+// Stubbing onnxruntime-node to an empty module made
+// `ONNX.InferenceSession` undefined and produced
+// "Cannot read properties of undefined (reading 'create')" at
+// `from_pretrained` time. Fix: redirect the import to `onnxruntime-web`
+// so the WASM backend is picked up instead. Sharp stays stubbed to an
+// empty module since it's only used by image pipelines we don't touch.
+const stubEmptyModulesPlugin: BunPlugin = {
+  name: "stub-empty-modules",
+  setup(build) {
+    // Redirect onnxruntime-node → onnxruntime-web (re-export wrapper).
+    build.onResolve({ filter: /^onnxruntime-node$/ }, () => ({
+      path: "onnxruntime-node-shim",
+      namespace: "ort-node-redirect",
+    }));
+    build.onLoad(
+      { filter: /.*/, namespace: "ort-node-redirect" },
+      () => ({
+        contents: "module.exports = require('onnxruntime-web');",
+        loader: "js",
+      }),
+    );
+    // Stub sharp.
+    build.onResolve({ filter: /^sharp$/ }, (args) => ({
+      path: args.path,
+      namespace: "stub-empty",
+    }));
+    build.onLoad(
+      { filter: /.*/, namespace: "stub-empty" },
+      () => ({
+        contents: "module.exports = {};",
+        loader: "js",
+      }),
+    );
+  },
+};
+
 // Svelte plugin implementation
 const sveltePlugin: BunPlugin = {
 	name: "svelte",
@@ -34,7 +74,7 @@ const sveltePlugin: BunPlugin = {
           filename: parsed.base,
 					generate: "client",
 					css: "injected",
-					dev: isProd,
+					dev: !isProd,
 				});
 
 				return {
@@ -54,7 +94,7 @@ const config: BuildConfig = {
   entrypoints: ["./src/main.ts"],
   outdir: "../..",
   minify: isProd,
-  plugins: [sveltePlugin],
+  plugins: [stubEmptyModulesPlugin, sveltePlugin],
   external: [
     "obsidian",
     "electron",
@@ -69,6 +109,13 @@ const config: BuildConfig = {
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
+    // Note: `onnxruntime-node` and `sharp` are NOT in this `external`
+    // list. They're handled by the `stubEmptyModulesPlugin` above
+    // which replaces them with empty modules at bundle time —
+    // marking them `external` would leave a literal
+    // `require("onnxruntime-node")` in main.js that Electron cannot
+    // resolve (observed: "Cannot find module 'onnxruntime-node'" at
+    // plugin load).
   ],
   target: "node",
   format: "cjs",
@@ -79,6 +126,20 @@ const config: BuildConfig = {
       isProd ? "production" : "development",
     ),
     "import.meta.filename": JSON.stringify("mcp-tools-for-obsidian.ts"),
+    // Bundled deps (notably `@xenova/transformers/src/env.js`) call
+    // `fileURLToPath(import.meta.url)` eagerly at module init. Without
+    // this define, Bun bakes the BUILD MACHINE's absolute path (the
+    // GitHub Actions Linux runner: `file:///home/runner/...`). On
+    // Windows `getPathFromURLWin32` rejects a drive-less POSIX path with
+    // `TypeError: File URL path must be absolute`, crashing the plugin
+    // on load before any of our code runs (#100). The placeholder MUST
+    // carry a drive letter — a drive-less `file:///x` URL throws on
+    // Windows for the exact same reason (that IS the bug's mechanism);
+    // `file:///C:/…` is accepted by `fileURLToPath` on every platform.
+    // The resolved value is dead in our build (`env.allowLocalModels =
+    // false`, ONNX wasm pinned to a CDN) — only the eager call must not
+    // throw.
+    "import.meta.url": JSON.stringify("file:///C:/mcp-tools-for-obsidian.ts"),
     // These environment variables are critical for the MCP server download functionality.
     // In CI the release workflow injects the correct values (see .github/workflows/release.yml);
     // the fallback targets the active fork repo so local builds keep working.

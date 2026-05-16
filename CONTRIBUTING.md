@@ -37,8 +37,8 @@ Think before you post. Ask yourself:
 
 2. **Clone and Setup**:
    ```bash
-   git clone https://github.com/jacksteamdev/obsidian-mcp-tools.git
-   cd obsidian-mcp-tools
+   git clone https://github.com/istefox/obsidian-mcp-connector.git
+   cd obsidian-mcp-connector
    bun install
    ```
 
@@ -54,7 +54,6 @@ Think before you post. Ask yourself:
 ### Documentation Resources
 - **Project architecture**: `/docs/project-architecture.md`
 - **Feature documentation**: `/docs/features/`
-- **AI-generated docs**: [DeepWiki](https://deepwiki.com/jacksteamdev/obsidian-mcp-tools)
 - **Coding standards**: `.clinerules`
 
 ### Monorepo Structure
@@ -96,7 +95,7 @@ packages/
 > **Additional context**: Logs attached, willing to test fixes
 
 ### Pull Requests
-1. **Fork the repository** and create a feature branch
+1. **Fork [istefox/obsidian-mcp-connector](https://github.com/istefox/obsidian-mcp-connector)** and create a feature branch
 2. **Follow the architecture patterns** described in `/docs/project-architecture.md`
 3. **Write tests** for new functionality
 4. **Test thoroughly**:
@@ -157,9 +156,12 @@ bun test
 ## Security Considerations
 
 ### Binary Security
+
+These notes apply to the legacy 0.3.x binary line. The current 0.4.x line ships no standalone binary — the only artifact is the plugin bundle (main.js), attested at release.
+
 - All binaries are SLSA-attested and cryptographically signed
-- Use `gh attestation verify --owner jacksteamdev <binary>` to verify integrity
-- Report security issues to [jacksteamdev+security@gmail.com](mailto:jacksteamdev+security@gmail.com)
+- Use `gh attestation verify --owner istefox <binary>` to verify integrity
+- Report security issues via the [security policy](SECURITY.md)
 
 ### Development Security
 - **No secrets in code**: Use environment variables for API keys
@@ -169,11 +171,10 @@ bun test
 
 ## Resources
 
-- **GitHub Repository**: [jacksteamdev/obsidian-mcp-tools](https://github.com/jacksteamdev/obsidian-mcp-tools)
+- **GitHub Repository**: [istefox/obsidian-mcp-connector](https://github.com/istefox/obsidian-mcp-connector)
 - **Discord Community**: [Join here](https://discord.gg/q59pTrN9AA)
-- **Release History**: [GitHub Releases](https://github.com/jacksteamdev/obsidian-mcp-tools/releases)
+- **Release History**: [GitHub Releases](https://github.com/istefox/obsidian-mcp-connector/releases)
 - **Security Policy**: [SECURITY.md](SECURITY.md)
-- **AI Documentation**: [DeepWiki](https://deepwiki.com/jacksteamdev/obsidian-mcp-tools)
 
 ## Questions?
 

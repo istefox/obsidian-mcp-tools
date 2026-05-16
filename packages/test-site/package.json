@@ -25,12 +25,12 @@
 		"globals": "^15.0.0",
 		"prettier": "^3.3.2",
 		"prettier-plugin-svelte": "^3.2.6",
-		"prettier-plugin-tailwindcss": "^0.8.0",
+		"prettier-plugin-tailwindcss": "^0.6.5",
 		"svelte": "^5.0.0",
 		"svelte-check": "^4.0.0",
 		"tailwindcss": "^3.4.9",
 		"typescript": "^5.0.0",
 		"typescript-eslint": "^8.0.0",
-		"vite": "^8.0.10"
+		"vite": "^5.4.11"
 	}
 }

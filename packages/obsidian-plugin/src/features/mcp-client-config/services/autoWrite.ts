@@ -1,0 +1,143 @@
+import { logger } from "$/shared/logger";
+import { updateClaudeDesktopConfig } from "./claudeDesktop";
+
+/**
+ * Auto-write Claude Desktop config glue.
+ *
+ * The Settings UI exposes an opt-in toggle (default OFF, per design D6)
+ * that, when ON, automatically rewrites `claude_desktop_config.json`
+ * whenever the bearer token rotates or the HTTP server's port changes.
+ * This module owns the read/write of that flag and the one-shot sync
+ * action invoked by callers.
+ *
+ * The flag lives at `mcpClientConfig.autoWriteClaudeDesktopConfig` in
+ * `data.json`. Default is `false` — a "config rewrite" is a touch on
+ * a user-managed file outside the vault, so we do not perform it
+ * without explicit consent.
+ *
+ * Why this is a separate module rather than inline in
+ * `AccessControlSection.svelte`: it lets the regenerate flow in
+ * `mcp-transport` and the migration executor in `migration` share a
+ * single sync entry point, and it keeps the persistence shape testable
+ * without a Svelte runtime.
+ */
+
+const DATA_KEY = "mcpClientConfig";
+const FLAG_KEY = "autoWriteClaudeDesktopConfig";
+
+type PluginLike = {
+  loadData: () => Promise<unknown>;
+  saveData: (data: unknown) => Promise<void>;
+  mcpTransportState?:
+    | {
+        bearerToken: string;
+        server: { port: number };
+      }
+    | undefined;
+};
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the flag from `data.json`. Returns false on any of:
+ *  - Missing `data.json` content (fresh install).
+ *  - Missing `mcpClientConfig` slice.
+ *  - Flag explicitly set to false.
+ *  - Flag missing or non-boolean.
+ *
+ * Coerces unexpected shapes to false. The auto-write feature is
+ * fail-safe: a corrupt or unexpected setting state should NOT
+ * surprise-write to user files.
+ */
+export async function getAutoWriteEnabled(
+  plugin: PluginLike,
+): Promise<boolean> {
+  try {
+    const data = (await plugin.loadData()) as Record<string, unknown> | null;
+    if (!data || typeof data !== "object") return false;
+    const slice = data[DATA_KEY];
+    if (!slice || typeof slice !== "object") return false;
+    const flag = (slice as Record<string, unknown>)[FLAG_KEY];
+    return flag === true;
+  } catch (err) {
+    logger.warn("autoWrite: getAutoWriteEnabled failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * Atomically persist the flag. Reads the current `data.json`, mutates
+ * only the `mcpClientConfig.autoWriteClaudeDesktopConfig` field, writes
+ * the merged object back. Other keys are preserved.
+ *
+ * Note: the existing settings-lock mutex in
+ * `command-permissions/services/settingsLock` is the canonical pattern
+ * for serialized writes. The auto-write toggle is touched only from
+ * the Settings UI (single user-driven event) so we read/write directly
+ * here; the migration flow and regenerate flow READ the flag, never
+ * write it.
+ */
+export async function setAutoWriteEnabled(
+  plugin: PluginLike,
+  enabled: boolean,
+): Promise<void> {
+  const data =
+    ((await plugin.loadData()) as Record<string, unknown> | null) ?? {};
+  const slice = (data[DATA_KEY] as Record<string, unknown> | undefined) ?? {};
+  await plugin.saveData({
+    ...data,
+    [DATA_KEY]: { ...slice, [FLAG_KEY]: enabled },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// One-shot sync
+// ---------------------------------------------------------------------------
+
+export type ApplyAutoWriteResult =
+  | { applied: true }
+  | { applied: false; reason: "disabled" | "transport-offline" }
+  | { applied: false; reason: "error"; error: string };
+
+/**
+ * If the auto-write flag is ON AND the HTTP transport is up, rewrite
+ * the Claude Desktop config to match the live port and token. No-op
+ * (with a structured reason) otherwise.
+ *
+ * Caller responsibilities:
+ *  - The bearer-token rotation flow must call this AFTER the new
+ *    transport state is in place, so the live `port` + `token` reflect
+ *    the just-saved values.
+ *  - The migration flow does NOT use this — it calls
+ *    `updateClaudeDesktopConfig` directly through the executor (T2).
+ *
+ * Returns a structured result so the UI can decide whether to show a
+ * toast (e.g. "Config rewritten." vs. "Auto-write is OFF.").
+ */
+export async function applyAutoWrite(
+  plugin: PluginLike,
+): Promise<ApplyAutoWriteResult> {
+  const enabled = await getAutoWriteEnabled(plugin);
+  if (!enabled) return { applied: false, reason: "disabled" };
+
+  const state = plugin.mcpTransportState;
+  if (!state) return { applied: false, reason: "transport-offline" };
+
+  try {
+    await updateClaudeDesktopConfig({
+      port: state.server.port,
+      token: state.bearerToken,
+    });
+    return { applied: true };
+  } catch (err) {
+    return {
+      applied: false,
+      reason: "error",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

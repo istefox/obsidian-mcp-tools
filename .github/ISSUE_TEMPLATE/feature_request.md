@@ -7,7 +7,7 @@ assignees: []
 ---
 
 <!-- 
-🚨 READ FIRST: https://github.com/jacksteamdev/obsidian-mcp-tools/blob/main/CONTRIBUTING.md
+🚨 READ FIRST: https://github.com/istefox/obsidian-mcp-connector/blob/main/CONTRIBUTING.md
 
 This is a FREE project maintained by volunteers. Be respectful and patient.
 Rude, demanding, or entitled behavior results in immediate bans.
@@ -35,8 +35,8 @@ Optional: Technical details if you have ideas about implementation
 - MCP protocol considerations?
 -->
 
-## Maintainer Transition Note
-**This project is currently transitioning to new maintainers. Feature requests will be evaluated by the new maintainer team based on:**
+## Evaluation Criteria
+**Feature requests will be evaluated based on:**
 - Alignment with project goals
 - Implementation complexity  
 - Community benefit

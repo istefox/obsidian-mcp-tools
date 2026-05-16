@@ -1,6 +1,6 @@
 {
   "name": "mcp-tools-for-obsidian",
-  "version": "0.3.12",
+  "version": "0.4.7",
   "private": true,
   "description": "Securely connect Claude Desktop to your Obsidian vault with semantic search, templates, and file management capabilities.",
   "tags": [
@@ -16,17 +16,18 @@
     "packages/*"
   ],
   "scripts": {
+    "build": "bun --filter '@obsidian-mcp-tools/obsidian-plugin' build",
     "check": "bun --filter '*' check",
     "dev": "bun --filter '*' dev",
     "version": "bun scripts/version.ts",
     "release": "bun --filter '*' release",
     "zip": "bun --filter '*' zip"
   },
-  "devDependencies": {
-    "npm-run-all": "^4.1.5"
-  },
   "patchedDependencies": {
     "svelte@5.16.0": "patches/svelte@5.16.0.patch"
+  },
+  "overrides": {
+    "vite": "5.4.11"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001724"
