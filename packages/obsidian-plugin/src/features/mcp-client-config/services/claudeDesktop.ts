@@ -19,11 +19,9 @@ import { logger } from "$/shared/logger";
  * stdio flow Claude Desktop expects into HTTP requests against an
  * MCP endpoint. It runs on demand via `npx`, no install step.
  *
- * Key compatibility: 0.3.x of this fork wrote the entry under the
- * upstream key `"obsidian-mcp-tools"` (kept verbatim for users
- * migrating from upstream to the fork). 0.4.0 writes under the
- * fork-aligned `"mcp-tools-istefox"` and, when migrating, removes
- * the legacy key.
+ * Key compatibility: 0.3.x wrote the entry under the legacy key
+ * `"obsidian-mcp-tools"`. 0.4.0 writes under `"mcp-tools-istefox"`
+ * and, when migrating, removes the legacy key.
  */
 
 // ---------------------------------------------------------------------------
@@ -33,7 +31,7 @@ import { logger } from "$/shared/logger";
 /** Plugin id used in 0.4.0 `mcpServers` map (matches manifest.json). */
 export const FORK_PLUGIN_ID = "mcp-tools-istefox";
 
-/** Plugin id used by 0.3.x of this fork (inherited from upstream). */
+/** Plugin id used by 0.3.x (the legacy config key, kept for migration). */
 export const LEGACY_PLUGIN_ID = "obsidian-mcp-tools";
 
 const CLAUDE_CONFIG_PATH_TEMPLATES = {

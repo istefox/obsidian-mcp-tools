@@ -265,7 +265,7 @@ export function isBlockRangeStructurallyUnsafe(
  * Find a block reference position from Obsidian's metadataCache. Preferred
  * over `findBlockReferenceInContent` because it respects the markdown-patch
  * indexer's block detection rules (e.g., does not search inside markdown
- * tables — see upstream issue #71). Returns null on miss; callers MUST
+ * tables — see issue #71). Returns null on miss; callers MUST
  * decide whether to fail loud or fall back to EOF append based on the
  * `createTargetIfMissing` flag.
  *
@@ -461,7 +461,7 @@ export type PatchArgs = {
  *   the content is appended at EOF.
  * - **block**: looks up the block `^id` via metadataCache (preferred) or regex
  *   fallback. Returns an error if not found and `createTargetIfMissing` is
- *   false (the default for blocks — see upstream issue #71).
+ *   false (the default for blocks — see issue #71).
  * - **frontmatter**: uses `app.fileManager.processFrontMatter` to mutate the
  *   requested key. Array-typed values are handled structurally via the
  *   `planFrontmatterReplace` / `planFrontmatterAppend` helpers — `replace`
@@ -484,7 +484,7 @@ export async function applyPatch(
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   const targetDelimiter = args.targetDelimiter ?? "::";
   // Default createTargetIfMissing: true for heading/frontmatter, false for block
-  // (see upstream issue #71 — block in table is not indexed by metadataCache).
+  // (see issue #71 — block in table is not indexed by metadataCache).
   const defaultCreate = args.targetType !== "block";
   const createIfMissing = args.createTargetIfMissing ?? defaultCreate;
 
@@ -584,7 +584,7 @@ export async function applyPatch(
     // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
     // The legacy LRA chain enforced this via markdown-patch's indexer; the
     // 0.4.0 in-process port missed the gate (folotp round-3 regression on
-    // the actual HTTP-embedded chain — see fork #80, jacksteamdev/#83).
+    // the actual HTTP-embedded chain — see fork #80, #83).
     if (headingLevel >= 2 && !createIfMissing && !hasParentH1(lines, headingLine)) {
       return {
         content: [
@@ -685,8 +685,8 @@ export async function applyPatch(
   // block. Legacy LRA chain enforced this via markdown-patch's indexer (HTTP
   // 400 invalid-target); the 0.4.0 in-process port missed it (folotp round-3
   // regression — silent destruction of the surrounding section/table when
-  // `^cell-id` is matched inside a `| ... |` row). See fork #81,
-  // jacksteamdev/#83. The check runs after resolution (whether via cache
+  // `^cell-id` is matched inside a `| ... |` row). See fork #81, #83.
+  // The check runs after resolution (whether via cache
   // or regex fallback), before any splice, and applies symmetrically to
   // append/prepend/replace — `prepend` would inject before a structural
   // boundary the splice can't honor either.

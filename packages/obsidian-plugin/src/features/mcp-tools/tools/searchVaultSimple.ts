@@ -33,7 +33,7 @@ type FileResult = {
  * Search vault files for plain-text substring matches. Iterates over all
  * markdown files, performs case-insensitive search, extracts context
  * windows around each match, and respects the client-side limit truncation
- * (upstream #62 fix).
+ * (fix for issue #62).
  */
 export async function searchVaultSimpleHandler(
   ctx: SearchVaultSimpleContext,
@@ -47,7 +47,7 @@ export async function searchVaultSimpleHandler(
   const results: FileResult[] = [];
 
   for (const file of files) {
-    if (results.length >= limit) break; // upstream #62 fix: client-side truncation
+    if (results.length >= limit) break; // #62 fix: client-side truncation
 
     const content = await ctx.app.vault.cachedRead(file);
     const lower = content.toLowerCase();

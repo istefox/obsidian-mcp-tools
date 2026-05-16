@@ -1,8 +1,8 @@
 # Design: Obsidian Command Execution via MCP
 
 > **Status**: **Fase 1 + Fase 2 landed** on `myfork/main` (2026-04-11). Only Fase 3 (polish + tests) is open.
-> **Tracks**: upstream issue #29, upstream PR #47 (both open).
-> **Fork context**: this document is the design reference for the `istefox/obsidian-mcp-tools` fork. It intentionally diverges from the upstream PR #47 approach where noted.
+> **Tracks**: issue #29, PR #47 (both open at the time of writing).
+> **Context**: this document is the design reference for `istefox/obsidian-mcp-connector`. It intentionally diverges from the PR #47 approach where noted.
 >
 > **What Fase 1 delivered** (commit `c2f4549`):
 > - Two new MCP tools: `list_obsidian_commands` (read-only, always available) and `execute_obsidian_command` (gated).
@@ -45,11 +45,11 @@ Three properties of Obsidian commands make a naive "pass-through" dangerous:
 
 A naive implementation ("just expose `execute_command(id)` as a tool") lets the LLM invoke arbitrary code in the user's note-taking environment with no consent step. That is unacceptable.
 
-## Surface of the current proposal (upstream PR #47)
+## Surface of the prior proposal (PR #47)
 
-Upstream PR #47 is open but not merged. From the upstream context in `CLAUDE.md`, it adds a tool for Obsidian command execution but leaves policy design unresolved. The PR has not been reviewed by the project owner.
+PR #47 was open but not merged. It added a tool for Obsidian command execution but left policy design unresolved.
 
-**This design document replaces that approach rather than refining it.** Even if the fork eventually cherry-picks pieces of PR #47, the policy model described below should be the contract.
+**This design document replaces that approach rather than refining it.** The policy model described below is the contract.
 
 ## Threat model
 
@@ -406,7 +406,7 @@ Scope:
 - **Inferring safety from command ID** — too error-prone, see threat model above.
 - **Cross-vault allowlists** — allowlists are per-vault because the command list itself is per-vault (plugins differ). The user configures each vault separately.
 - **Conditional command execution** (e.g., "only allow this command if it's Tuesday") — out of scope. If needed, users can toggle the killswitch manually.
-- **Backward compatibility with upstream PR #47's API** — we diverge deliberately. The fork has no obligation to match an unmerged upstream proposal.
+- **Backward compatibility with PR #47's API** — this design diverges deliberately from that prior proposal.
 
 ## Open questions for the implementer
 
@@ -438,4 +438,4 @@ This design should be treated as authoritative for the fork. Anyone implementing
 
 ---
 
-*Document version*: 1 — initial draft, 2026-04-11. Author: design review session in `istefox/obsidian-mcp-tools`.
+*Document version*: 1 — initial draft, 2026-04-11. Author: design review session in `istefox/obsidian-mcp-connector`.

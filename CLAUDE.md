@@ -12,30 +12,26 @@ One shipped component on the 0.4.x line:
 
 Why operations go through Obsidian APIs rather than reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the plugin invoke other Obsidian plugins (Templater, Dataview) through their APIs.
 
-Current lines: **`main` = 0.3.12** — the legacy stdio + standalone-binary architecture, retained only on the protected `main` branch (see § Branch protection policy). **`feat/http-embedded` = 0.4.6** — the active 0.4.x line: in-process HTTP MCP server inside the plugin, no binary, native semantic search via Transformers.js. The `packages/mcp-server` binary and `features/mcp-server-install` installer have been retired from the 0.4.x line. The `[Unreleased]` block in `CHANGELOG.md` accumulates the next cut; consult `CHANGELOG.md` for its current contents (do not enumerate here — it drifts). License: MIT.
+Current lines: **`main` = 0.3.12** — the legacy stdio + standalone-binary architecture, retained only on the protected `main` branch (see § Branch protection policy). **`feat/http-embedded` = 0.4.7** — the active 0.4.x line: in-process HTTP MCP server inside the plugin, no binary, native semantic search via Transformers.js. The `packages/mcp-server` binary and `features/mcp-server-install` installer have been retired from the 0.4.x line. The `[Unreleased]` block in `CHANGELOG.md` accumulates the next cut; consult `CHANGELOG.md` for its current contents (do not enumerate here — it drifts). License: MIT.
 
-### Fork status
+### Branch protection policy (set by Stefano)
 
-Active work happens on the **`istefox/obsidian-mcp-connector`** fork. Upstream `jacksteamdev/obsidian-mcp-tools` was officially declared unmaintained on 2026-04-24 (see issue #79); the maintainer recommended migration to MCP over HTTP and offered to link the upstream README to any successor plugin that uses HTTP transport AND is published in the official Obsidian community store.
+**`main` is the production-ready, user-facing branch. Treat it as protected.**
 
-### Branch protection policy (2026-04-25, set by Stefano)
-
-**`main` is the production-ready, user-facing branch — currently 0.3.12. Treat it as protected.**
-
-Active branches as of 2026-05-09:
+Active branches as of 2026-05-16:
 
 | Branch | Version | Status | Use |
 |---|---|---|---|
 | `main` | **0.3.12** | **PROTECTED** — stable, BRAT users install this | Bug-fix patches only (0.3.x line) |
-| `feat/http-embedded` | **0.4.6** | Active dev — Phase 4 ✅ closed, 6 cycle `0.4.x` shipped | The HTTP-embedded pivot per `docs/design/2026-04-24-http-embedded-design.md` and `docs/plans/0.4.0-phase-{1,2,3,4}-*.md` |
+| `feat/http-embedded` | **0.4.7** | Active dev — the HTTP-embedded pivot | The in-process HTTP MCP server per `docs/design/2026-04-24-http-embedded-design.md` |
 
 **Hard rules — apply unless Stefano explicitly authorizes the specific action:**
 
-1. **Never merge** `feat/http-embedded` (or any experimental branch) **into `main`**. The merge to 0.4.0 happens only when Stefano gives explicit go-ahead, after Phase 2-3-4 are complete and feature parity with 0.3.x is verified.
+1. **Never merge** any experimental branch **into `main`** without explicit go-ahead from Stefano.
 2. **Never force-push, rebase, or `reset --hard`** on `main` under any circumstance.
-3. **Never delete or overwrite tags** on any `0.x.x` line (covers `0.3.0` through `0.3.12` legacy stable + `0.4.0` through `0.4.5` HTTP-embedded shipped). Enforced by the `tags-protection` ruleset glob `0.*`.
+3. **Never delete or overwrite tags** on any `0.x.x` line (covers `0.3.0` through `0.3.12` legacy stable + `0.4.0` through `0.4.7` HTTP-embedded shipped). Enforced by the `tags-protection` ruleset glob `0.*`.
 4. **Never delete `0.3.x` or `0.4.x` GitHub releases** from the releases page.
-5. Bug fixes against 0.3.x are welcome — branch from `main`, PR, merge as 0.3.8 / 0.3.9 etc. This pattern preserves the stable line; it does not replace it.
+5. Bug fixes against 0.3.x are welcome — branch from `main`, PR, merge as 0.3.x etc. This pattern preserves the stable line; it does not replace it.
 6. Merging `main` → `feat/http-embedded` (the inverse direction, to keep the dev branch aligned) is **safe and encouraged** — it does not touch `main`.
 
 If a request seems likely to compromise `main`'s functionality, stop and ask before acting.
@@ -265,7 +261,7 @@ Active traps in the current tree. Historical bugs already fixed in the fork are 
   - **Stubbing `os.homedir()`**: use `spyOn(os, "homedir").mockReturnValue(tmpRoot)` — Bun/Node cache HOME early, so runtime `process.env.HOME = …` is not reliable. See `config.test.ts` and `uninstall.test.ts`.
   - **Installer integration tests** use real shell scripts as fake binaries (tmpdir, `mode: 0o755`) instead of mocking `child_process.exec`. See `status.integration.test.ts`. macOS-guarded (shebang approach is Unix-only).
 - **Still uncovered**: `installMcpServer` orchestration wrapper, `downloadFile` (HTTP + stream), Svelte component rendering (covered only by `svelte-check` and manual `bun run link` smoke tests).
-- CI: `.github/workflows/release.yml` triggers on tag push, runs `bun run release`, cross-compiles all platforms, generates SLSA provenance, uploads release artifacts. **No test step in CI yet** — keep tests green locally before merging to `myfork/main`.
+- CI: `.github/workflows/release.yml` triggers on tag push, runs `bun run release`, cross-compiles all platforms, generates SLSA provenance, uploads release artifacts. **No test step in CI yet** — keep tests green locally before merging to `main`.
 
 ## Pre-commit checklist
 
@@ -283,16 +279,11 @@ Active traps in the current tree. Historical bugs already fixed in the fork are 
 
 3. **`bun run check` at the repo root** (again) — shared-package changes cascade; both runtime packages must still type-check.
 
-## Project status (2026-05-09)
-
-Upstream `jacksteamdev/obsidian-mcp-tools` is **officially unmaintained** (declared by @jacksteamdev on issue #79 the 2026-04-24). Recommendation: migrate to MCP over HTTP. Conditional offer: link to any plugin that uses HTTP transport AND is published in the Obsidian community store.
-
-Current state of the fork:
+## Project status (2026-05-16)
 
 - `main` at **0.3.12**, stable, on BRAT, fully functional (20 MCP tools, stdio+binary architecture). Protected per the policy above. HEAD `76fa012` 2026-04-28; tag stack `0.3.0` → `0.3.12`.
-- `feat/http-embedded` at **0.4.5** + `[Unreleased]` batch staged. Tag stack `0.4.0` → `0.4.5` (6 cycle iterativi shipped 2026-05-04 → 2026-05-06: stable cut + 4 soak-driven patches + 1 feature batch). Tools: 29 (base 20 + 1 graph batch in 0.4.4: `list_tags` + `get_files_by_tag` + `get_outgoing_links` + `get_backlinks` + 2 dir tools in 0.4.5: `create_vault_directory` + `delete_vault_directory`). `minAppVersion: 1.7.2`. Live in vault TEST via symlink; BRAT-distributed for community testers (folotp + grimlor + others tracked on issue `#54`).
-- `[Unreleased]` batch on `feat/http-embedded` ready for `0.4.6` cut: #79 LRA port unhardcode (#90), #78 migration UX recurring Notice + `localTransport` field in `get_server_info` (#91), #88 `delete_vault_directory` ENOTEMPTY abs-path leak fix (#92). 0.4.6 cut gated on store PR #11919 acceptance — disciplina "no feature creep during review".
-- Community plugin store submission `obsidianmd/obsidian-releases#11919` open since 2026-04-13, automated lint cleared on 2026-04-18, **awaiting human review at week 4 of 2-8 typical window** (zero reviewer assignment as of 2026-05-09; labels `Changes requested` / `plugin` / `Additional review required` / `Skipped code scan` all from `github-actions[bot]` or `ObsidianReviewBot`, no human maintainer touch). Strategy = silence: any version bump or comment risks resetting the review queue, so post-cut work goes to `feat/http-embedded` without tagging until store accept lands.
+- `feat/http-embedded` at **0.4.7**. Tag stack `0.4.0` → `0.4.7`. Tools: 29. `minAppVersion: 1.7.2`. Live in vault TEST via symlink; BRAT-distributed for community testers.
+- Community plugin store submission `obsidianmd/obsidian-releases#11919` open since 2026-04-13, automated lint cleared on 2026-04-18, **awaiting human review** (week 6/8 typical window). Strategy = silence: any version bump or comment risks resetting the review queue, so post-cut work goes to `feat/http-embedded` without tagging until store accept lands.
 
 ## Pending work
 
@@ -301,12 +292,12 @@ Items in flight, ordered by priority:
 1. **Store PR #11919 monitor** — passive wait, week 4/8 silence is normal. Routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Mondays 07:00 UTC = 09:00 Rome CEST / 08:00 Rome CET) checks weekly and notifies only on real activity. The hourly issue `#79` watcher `trig_01Dx8sZTD78yBj7buuVYP9KE` remains active for orthogonal scope. Three older overlapping routines disabled 2026-04-25.
 2. **0.4.6 cut**: triggered by store-accept event. CHANGELOG `[Unreleased]` is populated and ready-to-promote (5 entry: 2 Added + 2 Fixed + 1 Changed). Cut runs through `bun run version patch` + tag push; CI `release.yml` produces release artifacts.
 3. **Marcoaperez next PR** (passive): inventory of 5+ tools agreed (`get_recent_files` / `get_document_map` / `get_periodic_note` family / `execute_dataview_query` / `get_vault_files`). PR #83 `list_tags` shipped 2026-05-05; next contribution stochastic in 1-2 week window. Mock infra `setMockFileStat()` already shipped in `feat/http-embedded` to be consumed when PR arrives.
-4. **Discord DM to @jacksteamdev**: gated on store accept + community listing live (per his stated conditions on issue `#79`).
+4. **Community store listing**: gated on store PR #11919 acceptance.
 
 Items resolved and out of "pending":
 
 - ~~`#3` installer 404 — fixed in 0.3.5, validated by @Metal0gic.~~
-- ~~Maintainership stance — settled by jacksteamdev's 2026-04-24 declaration; we are the continuation maintainer.~~
+- ~~Maintainership stance — settled 2026-04-24.~~
 - ~~Binary content types for `get_vault_file` — landed in 0.3.4 (#59).~~
 - ~~Phases 1-4 of the HTTP-embedded pivot — all landed in `0.4.0-alpha.1` through `0.4.0` stable (cut 2026-05-04). Native semantic search via Transformers.js verified end-to-end in vault TEST (alpha-stage `bun.config.ts` redirect `onnxruntime-node` → `onnxruntime-web` for Electron renderer is part of the bundle config).~~
 - ~~Soak rounds 1 → 6 (folotp): all closed, regression-free byte-exact across `0.4.4` + `0.4.5` cuts on the `patch_vault_file` safety surface (`#80` H2-root reject + `#81` block-in-table reject + `#84` block-in-fenced-code reject all preserved in carryover spot-check).~~
@@ -316,15 +307,15 @@ Items resolved and out of "pending":
 
 ## Soak preflight: chain identification first
 
-When a soak round comes in (folotp / marcoaperez / grimlor / any external tester), confirm **which MCP path the client is actually exercising before interpreting any verdict**. The fork now ships in two distinct architectures (`0.3.x` legacy stdio binary + Local REST API + `markdown-patch`, vs. `0.4.x` in-process HTTP-embedded), and a tester can have both installed simultaneously: the legacy upstream `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` persists from any pre-fork install unless explicitly deleted, and `claude_desktop_config.json` is not auto-rewritten by the fork install. A tester who BRAT-pinned the fork on top of a `0.3.x` upstream install can have Cowork/Claude Desktop routing through the legacy binary while the fork plugin is concurrently loaded — which makes any verdict about "the fork's behavior" suspect until the chain is identified.
+When a soak round comes in (folotp / marcoaperez / grimlor / any external tester), confirm **which MCP path the client is actually exercising before interpreting any verdict**. The plugin now ships in two distinct architectures (`0.3.x` legacy stdio binary + Local REST API + `markdown-patch`, vs. `0.4.x` in-process HTTP-embedded), and a tester can have both installed simultaneously: the legacy binary at `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` persists from any pre-0.4.x install unless explicitly deleted, and `claude_desktop_config.json` is not auto-rewritten on plugin update. A tester who BRAT-pinned the plugin on top of a `0.3.x` install can have Claude Desktop routing through the legacy binary while the 0.4.x plugin is concurrently loaded — which makes any verdict about "0.4.x behavior" suspect until the chain is identified.
 
 Three discriminators, applied as a first-line check in any soak comment **before** posting verdicts:
 
 1. **Process inventory** — `ps aux | grep -E 'mcp-server|mcp-remote'`. Legacy stdio chain shows the upstream binary process; HTTP-embedded chain shows `npx mcp-remote` (or no bridge process at all if the client speaks streamable-http natively).
 2. **`get_server_info` shape** — call the tool from the client. **Legacy chain returns `apiExtensions[]`** (the LRA extension manifest list); **HTTP-embedded returns no `apiExtensions` field** (the in-process server doesn't expose LRA's manifest concept). Field absence is a positive HTTP-embedded marker.
-3. **Tool namespace prefix on the client side** — `mcp__obsidian-mcp-tools__*` (legacy upstream binary) vs. `mcp__mcp-tools-istefox__*` (HTTP-embedded fork plugin). Visible in the client's tool list before any tool is called.
+3. **Tool namespace prefix on the client side** — `mcp__obsidian-mcp-tools__*` (legacy 0.3.x binary) vs. `mcp__mcp-tools-istefox__*` (0.4.x in-process plugin). Visible in the client's tool list before any tool is called.
 
-A soak verdict that doesn't cite at least one of these as confirmed-positive for the intended chain is provisional. The 2026-05-04 round-3 soak by folotp on `0.4.0-beta.3` mis-attributed three of its verdicts (H2-root reject, block-in-table reject, `#74` double-prefix) because the chain identification was inferred from `claude_desktop_config.json` content rather than runtime-checked; the disconnect was traced via `jacksteamdev/obsidian-mcp-tools#83`. Two of the three turned out to be real `0.4.x` regressions (filed as `#80`, `#81`), one was a legacy-chain-only artifact (`#74` resolution). Three lost cycles because the chain wasn't pinned at the start.
+A soak verdict that doesn't cite at least one of these as confirmed-positive for the intended chain is provisional. The 2026-05-04 round-3 soak by folotp on `0.4.0-beta.3` mis-attributed three of its verdicts (H2-root reject, block-in-table reject, `#74` double-prefix) because the chain identification was inferred from `claude_desktop_config.json` content rather than runtime-checked. Two of the three turned out to be real `0.4.x` regressions (filed as `#80`, `#81`), one was a legacy-chain-only artifact (`#74` resolution). Three lost cycles because the chain wasn't pinned at the start.
 
 When you ask a tester to soak a candidate cut (BRAT-pin or beta tag), include the three discriminator checks as part of the report template. When you read a soak report, scan for chain identification first; if absent, ask before drafting verdicts.
 
@@ -367,9 +358,9 @@ When a fork issue is **OPEN, authored by a validated maintainer-grade contributo
 
 ### Authority disambiguation rule
 
-When triaging or following up on a third-party issue, **read the full comment thread, not just the issue body**. If a **domain authority** has already disambiguated the framing in a prior comment — typically: the maintainer of an upstream dependency mentioned in the report (e.g. `coddingtonbear` on Local REST API issues), the original bug reporter retracting or refining the claim, or the upstream maintainer (`jacksteamdev`) on his own repo — your reply MUST acknowledge that disambiguation, not re-assert the original framing.
+When triaging or following up on a third-party issue, **read the full comment thread, not just the issue body**. If a **domain authority** has already disambiguated the framing in a prior comment — typically: the maintainer of an upstream dependency mentioned in the report (e.g. `coddingtonbear` on Local REST API issues), the original bug reporter retracting or refining the claim, or a project maintainer on their own repo — your reply MUST acknowledge that disambiguation, not re-assert the original framing.
 
-Re-asserting after a domain authority has corrected the framing reads as either inattention or insistence, both of which damage relationships with the people whose project you're indirectly building on. The 2026-05-04 stale-claim follow-up on `jacksteamdev/obsidian-mcp-tools#68` posted "the `apiExtensions` / `certificateInfo` validation that broke against LRA `v3.4.x`" — but `coddingtonbear` (LRA maintainer) had already replied 2026-02-22 explaining that nothing changed in LRA `v3.4.x` and the missing fields were the documented response shape for unauthenticated requests. The 2026-04-21 batch had also missed this. A second follow-up was needed to acknowledge the LRA maintainer's authoritative read and correct the record. Concrete check before posting: skim every prior comment in the thread, look specifically for replies from people whose repo or project is referenced in the issue body, and if they've spoken authoritatively, mirror their framing in yours.
+Re-asserting after a domain authority has corrected the framing reads as either inattention or insistence, both of which damage relationships with the people whose project you're indirectly building on. A concrete example: a 2026-05-04 follow-up on an LRA compatibility issue posted a claim that "nothing changed in LRA `v3.4.x`" — but the LRA maintainer (`coddingtonbear`) had already replied 2026-02-22 explaining that the missing fields were the documented response shape for unauthenticated requests. A second follow-up was needed to acknowledge the authoritative read and correct the record. Concrete check before posting: skim every prior comment in the thread, look specifically for replies from people whose repo or project is referenced in the issue body, and if they've spoken authoritatively, mirror their framing in yours.
 
 ### Multi-point offer acknowledgement rule
 
@@ -378,9 +369,9 @@ When a validated contributor makes a **multi-point engagement offer** (test benc
 1. **Preamble — explicit thanks for the offer shape itself**, said out loud rather than folded implicitly into the technical reply. High-investment engagement offers (continuous test bench, expanded fixture sets on demand, verify-before-cut commitment) carry a symbolic-acknowledgement cost that a purely-technical reply doesn't pay; the contributor invested effort signalling commitment, and the implicit-thanks-via-engagement loop only closes if the symbolic side is acknowledged separately. Articulate **what about the engagement shape is load-bearing for the project** — not generic gratitude.
 2. **Point-by-point acceptance**: enumerate accepted points 1, 2, 3 in the same order the contributor wrote them; pin scope per-point; link to the current flow context (e.g. "default order: wait for disambig step X, then either Y or Z").
 
-Implicit single-point responses to multi-point offers read as engagement loss — the contributor invested effort enumerating each commitment, and a generic "happy to ship X" reply only acknowledging one of them silently drops the others. The 2026-05-04 reply on `jacksteamdev/obsidian-mcp-tools#83` paraphrased one of folotp's three offer points (debug build) into a narrower scope (`vault.on('modify')` instrumentation only, not the boundary-scan instrumentation he'd specifically asked for) and didn't acknowledge the other two (verify-4-variants-before-cut, additional-variants-on-request) **or** the test-bench offer shape itself. Two follow-ups were needed to repair: one for point-by-point acceptance, a separate one for the explicit thanks. Doing both in the original reply would have been one message.
+Implicit single-point responses to multi-point offers read as engagement loss — the contributor invested effort enumerating each commitment, and a generic "happy to ship X" reply only acknowledging one of them silently drops the others. A concrete example: a 2026-05-04 reply to folotp's three-point engagement offer paraphrased the debug-build point into a narrower scope and didn't acknowledge the other two (verify-4-variants-before-cut, additional-variants-on-request) or the test-bench offer shape itself. Two follow-ups were needed to repair: one for point-by-point acceptance, a separate one for explicit thanks. Doing both in the original reply would have been one message.
 
-**Why these rules exist:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds — `jacksteamdev/obsidian-mcp-tools#83` (claimed "couldn't verify the fix" before reading `patchHelpers.ts:442`) and `#85` (mistaken "marketing-bait" before reading the full body, which was substantive peer-dev design questions). Both turned around on a 5-minute deeper look. The same-day deep re-analysis then surfaced 10 never-commented items the morning sweep had missed (since-filter blind spot), 1 stale Group B claim (#61 toolToggle in 0.4.0), 1 missed engagement on a high-quality validated-contributor proposal (#77 sat 13h with no triage comment), 1 multi-point engagement offer answered with a single-point reply (#83 reply paraphrased one of folotp's three offer points and silently dropped the other two), and 1 stale-claim follow-up that re-asserted a misframing the LRA maintainer had already corrected on the thread (#68 follow-up ignored `coddingtonbear`'s 2026-02-22 reply and propagated the "LRA changed at v3.4.x" framing for the second time). Lazy skip + filtered enumeration + un-audited prior comments + inherited passive-monitor framing + asymmetric reply to multi-point offers + un-read prior comments by domain authorities each cost reach.
+**Why these rules exist:** the 2026-05-04 outreach round initially skipped two candidates on weak grounds (couldn't verify a fix before reading the actual code, mistaken "marketing-bait" before reading the full body). Both turned around on a 5-minute deeper look. The same-day deep re-analysis surfaced: 10 never-commented items the morning sweep had missed (since-filter blind spot), 1 stale claim (#61 toolToggle in 0.4.0), 1 missed engagement on a high-quality validated-contributor proposal (#77 sat 13h with no triage), 1 multi-point engagement offer answered with a single-point reply, and 1 stale-claim follow-up that re-asserted a misframing a domain authority had already corrected on the thread. Lazy skip + filtered enumeration + un-audited prior comments + inherited passive-monitor framing + asymmetric reply to multi-point offers + un-read prior comments by domain authorities each cost reach.
 
 ## References
 
@@ -394,9 +385,8 @@ Implicit single-point responses to multi-point offers read as engagement loss �
 
 **Live project state**:
 
-- [Open issues](https://github.com/jacksteamdev/obsidian-mcp-tools/issues) / [Open PRs](https://github.com/jacksteamdev/obsidian-mcp-tools/pulls) — always cross-check GitHub for anything landed since.
+- [Open issues](https://github.com/istefox/obsidian-mcp-connector/issues) / [Open PRs](https://github.com/istefox/obsidian-mcp-connector/pulls) — always cross-check GitHub for anything landed since.
 - Discord `#maintainers` channel (invite in README) — low traffic, contains root-cause analysis for `patch_vault_file`.
-- [Jason Bates fork](https://github.com/JasonBates/obsidian-mcp-tools), commit [`8adb7dd`](https://github.com/JasonBates/obsidian-mcp-tools/commit/8adb7dd0e1c47081f15908950b89e96b7417d12a) — unsubmitted `resolveHeadingPath` fix, cherry-pick source of truth if the heading-path logic needs more work.
 
 **Upstream dependencies worth knowing**:
 

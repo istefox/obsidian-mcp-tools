@@ -17,8 +17,8 @@ import type { LegacyInstallState } from "./detect";
  *  1. **rewriteClaudeConfig** — invokes the new
  *     `updateClaudeDesktopConfig` (T3) so Claude Desktop points at
  *     the in-process HTTP endpoint via `npx mcp-remote`. Backs up
- *     the prior file to `.backup`. Removes the legacy
- *     `obsidian-mcp-tools` key.
+ *     the prior file to `.backup`. Removes the legacy plugin
+ *     config key.
  *  2. **deleteLegacyBinary** — `fs.rm` on the orphan
  *     `mcp-server`(`.exe`). Idempotent (force).
  *  3. **pruneLegacySettings** — atomically loads `data.json`,

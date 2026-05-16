@@ -40,7 +40,7 @@ describe("search_vault_simple tool", () => {
     expect((match.context as string).length).toBeLessThanOrEqual(3 + 3 + 3); // 3 before + match (3) + 3 after
   });
 
-  test("respects limit parameter (regression: upstream #62)", async () => {
+  test("respects limit parameter (regression: issue #62)", async () => {
     setMockFile("a.md", "match");
     setMockFile("b.md", "match");
     setMockFile("c.md", "match");

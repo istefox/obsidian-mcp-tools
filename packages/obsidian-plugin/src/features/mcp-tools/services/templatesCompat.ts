@@ -17,8 +17,8 @@ import { executeTemplateHandler } from "../tools/executeTemplate";
  * a pre-existing custom-id MCP server entry in `claude_desktop_config.json`
  * that still spawns the 0.3.x binary — get an HTTP 404 on every
  * `execute_template` call. The migration only cleans up the canonical
- * `obsidian-mcp-tools` legacy id and rewrites `mcp-tools-istefox`; it
- * does not touch arbitrary custom ids.
+ * legacy config key and rewrites `mcp-tools-istefox`; it does not
+ * touch arbitrary custom ids.
  *
  * This shim re-registers the route as a thin proxy onto the in-process
  * `executeTemplateHandler`, so 0.3.x binary callers keep working without

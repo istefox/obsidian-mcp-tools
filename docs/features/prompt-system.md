@@ -203,11 +203,11 @@ This section is client-specific — each MCP client surfaces prompts differently
 
 ### Claude Desktop
 
-Prompts appear in the "Attach from MCP" button at the bottom of the chat input. Click the paperclip-style icon, pick the MCP server (`obsidian-mcp-tools`), then the prompt you want. If the prompt has arguments, Claude Desktop prompts you for each one. Pressing Enter sends the rendered text as the first user message.
+Prompts appear in the "Attach from MCP" button at the bottom of the chat input. Click the paperclip-style icon, pick the MCP server (`mcp-tools-istefox`), then the prompt you want. If the prompt has arguments, Claude Desktop prompts you for each one. Pressing Enter sends the rendered text as the first user message.
 
 ### Claude Code (Anthropic CLI)
 
-Prompts appear as slash commands: `/mcp__obsidian-mcp-tools__my-prompt`. Arguments are passed inline after the slash command. See the Claude Code docs for the exact syntax, which may change between versions.
+Prompts appear as slash commands: `/mcp__mcp-tools-istefox__my-prompt`. Arguments are passed inline after the slash command. See the Claude Code docs for the exact syntax, which may change between versions.
 
 ### Other clients
 

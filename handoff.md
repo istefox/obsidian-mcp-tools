@@ -1,4 +1,4 @@
-# Handoff — `istefox/obsidian-mcp-connector` (was `obsidian-mcp-tools`)
+# Handoff — `istefox/obsidian-mcp-connector`
 
 > **Aggiornato 2026-05-15 mattina (folotp bug burst overnight: 3 NEW issues filed in 24h + triage batch posted, fix pending Stefano stasera): folotp ha aperto 2 nuove issue ieri sera (2026-05-14): [#98](https://github.com/istefox/obsidian-mcp-connector/issues/98) `pre-warm: mcp-remote --help throws ERR_INVALID_URL on Node 24` (LOW, root cause upstream `mcp-remote` parseCommandLineArgs su Node 24, plugin già detect+success ma stderr stack trace ancora visible) + [#99](https://github.com/istefox/obsidian-mcp-connector/issues/99) `search_vault_smart ignores semanticSearch.provider:"smart-connections" — always invokes native Transformers.js pipeline` (HIGH, handler `searchVaultSmart.ts` bypassa il `providerFactory` esistente + va direct a native `ensurePipeline`/`from_pretrained` regardless of setting; misleading "not ready" error). Plus [#96](https://github.com/istefox/obsidian-mcp-connector/issues/96) ancora pending (delete_vault_file trash bypass, già scoped 2026-05-13 mid-day). **Triage batch posted 2026-05-15** ([#96 comment 4457246546](https://github.com/istefox/obsidian-mcp-connector/issues/96#issuecomment-4457246546) + [#98 comment 4457246967](https://github.com/istefox/obsidian-mcp-connector/issues/98#issuecomment-4457246967) + [#99 comment 4457247133](https://github.com/istefox/obsidian-mcp-connector/issues/99#issuecomment-4457247133)) — tutti committed publicly come MIA ownership del fix-batch (`fix/96-honours-trash-setting`, etc.); marcoaperez non taggato in nessuno (conforme [[feedback-no-contributor-delegation-obsidian-mcp]]). **Code investigation done** preliminare per #98 (`preWarm.ts:138/164/192`) e #99 (`searchVaultSmart.ts` + `semantic-search/services/providerFactory.ts` + `plugin.semanticSearchState.provider` esistente in `main.ts:86`); fix surface pinned nei triage drafts. Stefano farà fix batch stasera a casa: drafts saved a `/tmp/issue96-triage.md` + `/tmp/issue98-triage.md` + `/tmp/issue99-triage.md` per reference. **Folotp engagement burst observation**: 3 bug filed in 24h, tutti con triage-grade detail (root cause traced, suggested fix, environment, repro steps). Engagement quality consistente high. Marcoaperez silenzio 48h post-#97 merge (normal stochastic). Store PR #11919 invariato 2026-05-07 (week 6/8). Upstream `jacksteamdev` silent push 2026-05-13 16:11-16:13Z (0.2.32 + lockfile + 0.2.33 + readme update) noto, no movement since.**
 >
@@ -1346,9 +1346,8 @@ Routine `trig_015yL8D3VNao7nhRKjBu95ZK` (Lun 07:00 UTC) monitorerà PR #11919 se
   - `feat/http-embedded` = **`0.4.1`** (Phase 1+2+3+4 chiuse + T14 chiuso 2026-05-04 pomeriggio + patch 0.4.1 chiuso 2026-05-04 sera; gating outreach pubblico ora su community store #11919 acceptance)
 - **Remote setup canonico:**
   - `origin` → `https://github.com/istefox/obsidian-mcp-connector.git`
-  - `upstream` → `https://github.com/jacksteamdev/obsidian-mcp-tools.git` (read-only, dichiarato unmaintained 2026-04-24)
 - **Tag latest stable:** `0.4.1` su commit `30ef3c9`. HEAD branch `97805d2` (CLAUDE.md outreach methodology expansion, post-tag).
-- **Note CLI**: `gh` di default risolve sul remote `upstream` (jacksteamdev/obsidian-mcp-tools) — usare sempre `gh ... --repo istefox/obsidian-mcp-connector` per release/run/issue del fork.
+- **Note CLI**: usare sempre `gh ... --repo istefox/obsidian-mcp-connector` per release/run/issue.
 - I 2 file `.bun-build` orfani (~118 MB totali) restano su disco ma sono gitignored.
 
 ### Release pubbliche
@@ -1466,22 +1465,15 @@ cd obsidian-mcp-connector
 
 ### 2.3 Sistema i remote
 
-Quando cloni dalla tua fork, `origin` punta già a `istefox/obsidian-mcp-connector`. Aggiungi `upstream` per seguire `jacksteamdev`:
-
-```bash
-git remote add upstream https://github.com/jacksteamdev/obsidian-mcp-tools.git
-git fetch --all
-```
+Quando cloni, `origin` punta a `istefox/obsidian-mcp-connector`.
 
 Verifica con `git remote -v`. Output atteso:
 ```
 origin    https://github.com/istefox/obsidian-mcp-connector.git (fetch)
 origin    https://github.com/istefox/obsidian-mcp-connector.git (push)
-upstream  https://github.com/jacksteamdev/obsidian-mcp-tools.git (fetch)
-upstream  https://github.com/jacksteamdev/obsidian-mcp-tools.git (push)
 ```
 
-> **NOTA STORICA:** prima della sessione del 2026-04-13 il fork si chiamava `obsidian-mcp-tools` e il remote del fork era `myfork`. La sessione di stasera ha rinominato il repo a `obsidian-mcp-connector` e ha riallineato i nomi remote alla convenzione standard (`origin` = il tuo fork, `upstream` = sorgente). Se trovi commit/script che fanno riferimento a `myfork`, sono pre-rename.
+> **NOTA STORICA:** prima della sessione del 2026-04-13 il repo si chiamava `obsidian-mcp-tools` e il remote del fork era `myfork`. Se trovi commit/script che fanno riferimento a `myfork`, sono pre-rename.
 
 ### 2.4 Install dipendenze
 

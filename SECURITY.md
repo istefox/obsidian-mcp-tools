@@ -114,10 +114,10 @@ Patches for the 0.4.x line ship as new tags on the `feat/http-embedded` → `mai
 
 ## Security Acknowledgments
 
-The following individuals and organizations have contributed to the security posture of this fork through responsible disclosure or substantive review:
+The following individuals and organizations have contributed to the security posture of this project through responsible disclosure or substantive review:
 
 - @folotp — extensive soak testing across the 0.4.0 beta cycle (rounds 1, 2, 3) surfacing multiple silent-data-corruption regressions in `patch_*_file` and `execute_template`. Reports landed as fixes in 0.3.8, 0.3.12, 0.4.0-beta.2, and 0.4.0-beta.3.
-- Upstream `jacksteamdev/obsidian-mcp-tools` — the original authorization design for `execute_obsidian_command` (issue #29 / threat model) carried forward into this fork unchanged.
+- Original authorization design for `execute_obsidian_command` (issue #29 / threat model) — carried forward from the 0.3.x codebase unchanged (MIT-licensed).
 
 ## License
 

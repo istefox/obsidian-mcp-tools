@@ -6,14 +6,6 @@
 
 [Features](#features) | [Installation](#installation) | [Quick setup for clients](#quick-setup-for-clients) | [Migration from 0.3.x](#migration-from-03x) | [Prompts](#using-prompts) | [Command execution](#command-execution) | [Troubleshooting](#troubleshooting) | [Security](#security) | [Development](#development) | [Support](#support)
 
-> **About this fork**
->
-> MCP Connector is the **community continuation** of [`jacksteamdev/obsidian-mcp-tools`](https://github.com/jacksteamdev/obsidian-mcp-tools), which the upstream maintainer officially declared **unmaintained** on 2026-04-24. This fork is maintained by [Stefano Ferri (istefox)](https://github.com/istefox) and is the active line for both bug fixes and the architectural pivot to in-process HTTP transport.
->
-> **Coming from upstream's `mcp-tools` plugin?** See [`docs/migration-from-upstream.md`](docs/migration-from-upstream.md) for the one-time switch.
->
-> **Coming from this fork's 0.3.x line?** First plugin load on 0.4.0 detects your existing setup and offers an opt-in migration modal — see [Migration from 0.3.x](#migration-from-03x) below.
-
 MCP Connector lets AI applications like Claude Desktop, Claude Code, Cursor, Cline, Continue, Windsurf, and VS Code securely access and work with your Obsidian vault through the [Model Context Protocol](https://modelcontextprotocol.io). [^2]
 
 ## Architecture
@@ -149,7 +141,7 @@ npx -y @modelcontextprotocol/inspector
 
 If you are upgrading from `0.3.x` (the binary-shipping line), the first plugin load on 0.4.0 detects your existing state and opens a **migration modal** with up to three opt-in steps:
 
-1. **Rewrite Claude Desktop config** — replaces the old binary entry in `claude_desktop_config.json` with the `mcp-remote` bridge config. A `.backup` file is written before the rewrite. The legacy `obsidian-mcp-tools` config key (if present from upstream) is removed at the same time.
+1. **Rewrite Claude Desktop config** — replaces the old binary entry in `claude_desktop_config.json` with the `mcp-remote` bridge config. A `.backup` file is written before the rewrite. The legacy plugin config key (if present from 0.3.x) is removed at the same time.
 2. **Delete the legacy binary** — the orphan `mcp-server` binary at the previous install location (`~/Library/Application Support/obsidian-mcp-tools/bin/`, `~/.local/share/obsidian-mcp-tools/bin/`, or `%APPDATA%\obsidian-mcp-tools\bin\`).
 3. **Prune legacy plugin keys** — `installLocation` and `platformOverride` keys in the plugin's `data.json` are no longer used in 0.4.0.
 
@@ -308,7 +300,7 @@ Open the plugin settings → **Open Logs** under Resources, or look at Obsidian'
 
 ### No binary shipped
 
-Starting with 0.4.0, this plugin **does not ship a platform-specific binary**. The MCP server runs in-process inside Obsidian's Electron renderer. Eliminating the binary closes the supply-chain attack surface that comes with auto-downloading and executing a signed-but-pre-built executable from GitHub Releases — the rationale upstream cited when declaring the project unmaintained.
+Starting with 0.4.0, this plugin **does not ship a platform-specific binary**. The MCP server runs in-process inside Obsidian's Electron renderer. Eliminating the binary closes the supply-chain attack surface that comes with auto-downloading and executing a signed-but-pre-built executable from GitHub Releases.
 
 ### Local-only HTTP
 
@@ -377,8 +369,8 @@ We welcome genuine contributions but maintain strict community standards. Be res
 
 ## Support
 
-- [Open an issue on this fork](https://github.com/istefox/obsidian-mcp-connector/issues) for bug reports and feature requests.
-- The original upstream Discord at https://discord.gg/q59pTrN9AA is no longer staffed for this fork — the upstream maintainer declared the project unmaintained on 2026-04-24. For help with **MCP Connector specifically**, GitHub issues are the right channel.
+- [Open an issue](https://github.com/istefox/obsidian-mcp-connector/issues) for bug reports and feature requests.
+- GitHub issues are the right channel for help with **MCP Connector**.
 
 **Please read our [Contributing Guidelines](CONTRIBUTING.md) before posting.** We maintain high community standards and have zero tolerance for toxic behavior.
 
@@ -392,7 +384,7 @@ See [GitHub Releases on this fork](https://github.com/istefox/obsidian-mcp-conne
 
 ## License
 
-[MIT License](LICENSE)
+[MIT License](LICENSE) — Licensed MIT; portions originally derived from an MIT-licensed project — see LICENSE.
 
 ## Footnotes
 
