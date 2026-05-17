@@ -237,4 +237,116 @@ describe("embedding store", () => {
     // size() reads internal state which was cleared.
     expect(store.size()).toBe(0);
   });
+
+  test("interrupted flush leaves a sentinel; next init discards rather than loading garbage", async () => {
+    const opts = {
+      adapter: mem.adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: DIM,
+    };
+    const sentinelPath = "/p/embeddings.index.json.writing";
+
+    // First store: write a clean pair so a stale (old) index/bin exists.
+    const a = createEmbeddingStore(opts);
+    await a.init();
+    await a.upsert([makeRecord({ chunkId: "old:0", vector: makeVector(1) })]);
+    await a.flush();
+    expect(await mem.adapter.exists(sentinelPath)).toBe(false);
+
+    // Second store: simulate a crash mid-flush. The bin write succeeds
+    // (a NEW, larger bin lands) but the index write throws before the
+    // index is updated, so disk holds a NEW bin + OLD index — the
+    // silent-corruption scenario.
+    const failingAdapter: VaultAdapter = {
+      ...mem.adapter,
+      async write(path, data) {
+        if (path === opts.indexPath) {
+          throw new Error("simulated crash during index write");
+        }
+        return mem.adapter.write(path, data);
+      },
+    };
+    const b = createEmbeddingStore({ ...opts, adapter: failingAdapter });
+    await b.init();
+    await b.upsert([
+      makeRecord({ chunkId: "old:0", vector: makeVector(1) }),
+      makeRecord({ chunkId: "new:0", vector: makeVector(2), filePath: "N.md" }),
+    ]);
+    await expect(b.flush()).rejects.toThrow(/simulated crash/);
+
+    // The sentinel must survive the interrupted flush.
+    expect(await mem.adapter.exists(sentinelPath)).toBe(true);
+
+    // A fresh store over this inconsistent on-disk state must NOT load
+    // the new-bin/old-index pair (which would slice garbage). It
+    // discards: records empty, dirty (so the next flush rewrites a
+    // clean pair), sentinel cleaned.
+    const c = createEmbeddingStore(opts);
+    await c.init();
+    expect(c.size()).toBe(0);
+    expect(await mem.adapter.exists(sentinelPath)).toBe(false);
+
+    // dirty === true is observable: a flush now rewrites the pair even
+    // though no upsert happened after init.
+    await c.flush();
+    const written = JSON.parse(
+      mem.files.get("/p/embeddings.index.json") ?? "{}",
+    );
+    expect(written.version).toBe(FORMAT_VERSION);
+    expect(written.records).toHaveLength(0);
+  });
+
+  test("bin shorter than a record's byteOffset+byteLength: skip that record, keep valid ones, no throw", async () => {
+    const opts = {
+      adapter: mem.adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: DIM,
+    };
+    // One valid record (DIM floats = 16 bytes) followed by an index
+    // record whose byteOffset+byteLength runs past the actual bin.
+    const v0 = makeVector(9);
+    const bin = new Float32Array(DIM);
+    bin.set(v0, 0);
+    await mem.adapter.writeBinary("/p/embeddings.bin", bin.buffer.slice(0));
+    await mem.adapter.write(
+      "/p/embeddings.index.json",
+      JSON.stringify({
+        version: FORMAT_VERSION,
+        records: [
+          {
+            chunkId: "good:0",
+            filePath: "G.md",
+            offset: 0,
+            heading: null,
+            contentHash: "g",
+            byteOffset: 0,
+            byteLength: DIM * 4,
+          },
+          {
+            chunkId: "oob:0",
+            filePath: "B.md",
+            offset: 0,
+            heading: null,
+            contentHash: "b",
+            byteOffset: DIM * 4,
+            byteLength: DIM * 4, // points past the 16-byte bin
+          },
+        ],
+      }),
+    );
+
+    const store = createEmbeddingStore(opts);
+    await store.init();
+    // Out-of-bounds record skipped; valid one survives. No throw.
+    expect(store.size()).toBe(1);
+    const seen: Record<string, EmbeddingRecord> = {};
+    for await (const r of store.scan()) seen[r.chunkId] = r;
+    expect(seen["good:0"]?.filePath).toBe("G.md");
+    expect(seen["oob:0"]).toBeUndefined();
+    for (let i = 0; i < DIM; i++) {
+      expect(seen["good:0"]?.vector[i]).toBeCloseTo(v0[i] ?? 0, 6);
+    }
+  });
 });

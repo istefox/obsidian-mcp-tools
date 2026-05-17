@@ -304,6 +304,58 @@ describe("live indexer", () => {
 
     await indexer.stop();
   });
+
+  test("transient read error while path is still listed: records preserved (not a deletion)", async () => {
+    const { vault, files, emit } = makeVault({
+      "f.md": "one---CHUNK---two",
+    });
+    const { embedder } = fakeEmbedder();
+    const indexer = createLiveIndexer({ vault, chunker: fakeChunker, embedder, store, debounceMs: 30 });
+    await indexer.start();
+    expect(store.size()).toBe(2);
+
+    // Make read() throw while getMarkdownFiles() STILL lists the path
+    // (file-lock / transient I/O — not a deletion).
+    const realRead = vault.read.bind(vault);
+    vault.read = async (p: string) => {
+      if (p === "f.md") throw new Error("EBUSY simulated file lock");
+      return realRead(p);
+    };
+    emit("modify", "f.md");
+    await indexer.flush();
+
+    // Vectors must survive: a transient error must not be treated as
+    // a deletion.
+    expect(store.size()).toBe(2);
+
+    // Recover: read works again, no records were lost.
+    vault.read = realRead;
+    emit("modify", "f.md");
+    await indexer.flush();
+    expect(store.size()).toBe(2);
+
+    await indexer.stop();
+  });
+
+  test("read error while path is absent from getMarkdownFiles: genuine deletion", async () => {
+    const { vault, files, emit } = makeVault({
+      "f.md": "one---CHUNK---two",
+    });
+    const { embedder } = fakeEmbedder();
+    const indexer = createLiveIndexer({ vault, chunker: fakeChunker, embedder, store, debounceMs: 30 });
+    await indexer.start();
+    expect(store.size()).toBe(2);
+
+    // The file is gone: removed from the map so getMarkdownFiles()
+    // no longer lists it and read() throws ENOENT.
+    files.delete("f.md");
+    emit("delete", "f.md");
+    await indexer.flush();
+
+    expect(store.size()).toBe(0);
+
+    await indexer.stop();
+  });
 });
 
 /** mtime-aware in-memory vault for the low-power tests. */

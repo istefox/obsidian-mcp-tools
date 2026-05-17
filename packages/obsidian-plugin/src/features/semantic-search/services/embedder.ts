@@ -128,6 +128,10 @@ class EmbedderImpl implements Embedder {
   async unload(): Promise<void> {
     this.pipeline = null;
     this.loadPromise = null;
+    // A cached vector belongs to the model instance that produced it;
+    // it must not survive an unload/reload and be served against a
+    // freshly constructed pipeline.
+    this.cache.clear();
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;

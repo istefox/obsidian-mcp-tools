@@ -87,13 +87,33 @@ class EmbeddingStoreImpl implements EmbeddingStore {
   private dirty = false;
   private initialized = false;
   private readonly vectorDim: number;
+  // Dirty-sentinel: written before the bin/index pair, removed only
+  // after both succeed. Its presence at init means a prior flush was
+  // interrupted, so the on-disk pair may be a new bin with a stale
+  // index (valid JSON, matching version, garbage offsets). Derived
+  // from indexPath so no extra opt is needed.
+  private readonly sentinelPath: string;
 
   constructor(private opts: EmbeddingStoreOpts) {
     this.vectorDim = opts.vectorDim ?? DEFAULT_VECTOR_DIM;
+    this.sentinelPath = `${opts.indexPath}.writing`;
   }
 
   async init(): Promise<void> {
     if (this.initialized) return;
+
+    if (await this.opts.adapter.exists(this.sentinelPath)) {
+      // A previous flush was interrupted between the bin and index
+      // writes. The pair on disk is known-inconsistent; loading it
+      // would silently slice vectors at wrong offsets. The lost index
+      // is re-derivable (the indexer re-embeds from the vault), so
+      // discard and rebuild instead of trusting garbage.
+      logger.warn("embedding store was mid-write, discarding and rebuilding");
+      await this.removeSentinel();
+      this.initialized = true;
+      this.dirty = true; // next flush rewrites a clean bin/index pair
+      return;
+    }
 
     const indexExists = await this.opts.adapter.exists(this.opts.indexPath);
     if (!indexExists) {
@@ -135,7 +155,28 @@ class EmbeddingStoreImpl implements EmbeddingStore {
     const buf = await this.opts.adapter.readBinary(this.opts.binPath);
     const all = new Float32Array(buf);
 
+    let skippedAny = false;
     for (const idx of parsed.records) {
+      // Defense-in-depth behind the sentinel: a corrupt/truncated bin
+      // or a stale index that slipped past the sentinel must never
+      // yield a wrong-dimension Float32Array. On any inconsistency,
+      // skip the record and mark dirty so the next flush self-heals.
+      if (
+        idx.byteOffset < 0 ||
+        idx.byteLength < 0 ||
+        idx.byteOffset % 4 !== 0 ||
+        idx.byteLength % 4 !== 0 ||
+        idx.byteOffset + idx.byteLength > buf.byteLength
+      ) {
+        logger.warn("embedding record out of bounds, skipping", {
+          chunkId: idx.chunkId,
+          byteOffset: idx.byteOffset,
+          byteLength: idx.byteLength,
+          bufByteLength: buf.byteLength,
+        });
+        skippedAny = true;
+        continue;
+      }
       const startFloat = idx.byteOffset / 4;
       const lenFloat = idx.byteLength / 4;
       // Copy into a fresh Float32Array so each record owns its buffer
@@ -152,7 +193,10 @@ class EmbeddingStoreImpl implements EmbeddingStore {
     }
 
     this.initialized = true;
-    this.dirty = false;
+    // If any record was skipped, the in-memory set no longer matches
+    // the on-disk pair — mark dirty so the next flush rewrites a
+    // consistent one.
+    this.dirty = skippedAny;
   }
 
   size(): number {
@@ -224,6 +268,11 @@ class EmbeddingStoreImpl implements EmbeddingStore {
       bin.byteOffset,
       bin.byteOffset + bin.byteLength,
     );
+
+    // Raise the sentinel before touching either file: if the process
+    // dies between the bin and index writes the sentinel stays,
+    // signalling the next init() that the pair is inconsistent.
+    await this.opts.adapter.write(this.sentinelPath, "1");
     await this.opts.adapter.writeBinary(this.opts.binPath, exactBuffer);
 
     const indexFile: IndexFile = {
@@ -235,7 +284,24 @@ class EmbeddingStoreImpl implements EmbeddingStore {
       JSON.stringify(indexFile),
     );
 
+    // Both writes succeeded — the pair is consistent, clear the sentinel.
+    await this.removeSentinel();
     this.dirty = false;
+  }
+
+  /** Remove the sentinel, tolerating it already being gone. */
+  private async removeSentinel(): Promise<void> {
+    try {
+      if (await this.opts.adapter.exists(this.sentinelPath)) {
+        await this.opts.adapter.remove(this.sentinelPath);
+      }
+    } catch (error) {
+      // A failed sentinel removal is non-fatal: a leftover sentinel
+      // only triggers a (safe) discard-and-rebuild on next init().
+      logger.warn("could not remove embedding store sentinel", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async close(): Promise<void> {

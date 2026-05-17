@@ -322,8 +322,11 @@ type ProcessDeps = {
  * record, embeds the rest, and replaces the path's record set
  * atomically (delete + upsert).
  *
- * Read failure is treated as "file deleted" — drop the records.
- * Empty/below-threshold content is also treated as a delete so the
+ * A read failure is disambiguated against the vault's file list: if
+ * the path is no longer listed it is a genuine deletion (drop the
+ * records); if it is still listed the failure is transient (file
+ * lock / I/O) — keep the existing vectors and retry on the next
+ * cycle. Empty/below-threshold content is still a delete so the
  * index stays consistent with what `chunker` would produce on a
  * fresh re-build.
  */
@@ -331,14 +334,23 @@ async function processOnePath(
   deps: ProcessDeps,
   path: string,
 ): Promise<void> {
-  let content: string | null;
+  let content: string;
   try {
     content = await deps.vault.read(path);
-  } catch {
-    content = null;
-  }
-
-  if (content === null) {
+  } catch (error) {
+    const stillListed = deps.vault
+      .getMarkdownFiles()
+      .some((f) => f.path === path);
+    if (stillListed) {
+      // Transient error (file lock / I/O): preserve existing vectors;
+      // the next live event or low-power cycle retries this path.
+      logger.warn("live indexer: read failed but path still in vault", {
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    // Genuine deletion: the path is gone from the vault.
     await deps.store.delete(path);
     return;
   }

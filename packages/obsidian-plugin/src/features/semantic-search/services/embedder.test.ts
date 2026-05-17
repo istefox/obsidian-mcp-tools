@@ -115,6 +115,27 @@ describe("embedder", () => {
     expect(callCount()).toBe(2);
   });
 
+  test("unload clears the query cache: same text re-embeds after reload", async () => {
+    const { factory, callCount, embedCount } = makeMockFactory();
+    const embedder = createEmbedder({
+      pipelineFactory: factory,
+      unloadWhenIdle: false,
+    });
+    const first = await embedder.embed("hello");
+    expect(callCount()).toBe(1);
+    expect(embedCount()).toBe(1);
+
+    await embedder.unload();
+
+    // Same text again. If the cache survived the unload it would
+    // return the stale array from the previous model instance without
+    // reloading; clearing it forces a fresh factory + pipeline call.
+    const second = await embedder.embed("hello");
+    expect(callCount()).toBe(2); // factory re-invoked (cache cleared)
+    expect(embedCount()).toBe(2); // pipeline re-invoked, not a cache hit
+    expect(second).not.toBe(first); // distinct array from the reload
+  });
+
   test("idle timer: pipeline unloaded after idleMs since last call", async () => {
     const { factory, callCount } = makeMockFactory();
     const embedder = createEmbedder({
