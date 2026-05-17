@@ -5,6 +5,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Security
+
+- **`fetch` now refuses non-`http(s)` and internal targets.** The
+  `url` argument is validated before any request: `file:`, `data:`,
+  `blob:` and other non-HTTP(S) schemes are rejected (closes a local
+  file-read vector), and requests to `localhost`, `*.local`,
+  loopback/link-local and RFC-1918 private ranges are refused (SSRF).
+  **Behavioural change:** fetching a local dev server or an internal
+  host via this tool no longer works. DNS-rebinding is out of scope.
+- **No-shell process execution.** The Node/npx detection and the
+  `mcp-remote` pre-warm paths replaced the shell-string command form
+  with an `execFile` + argv-array invocation, so a binary path
+  containing shell metacharacters can no longer inject.
+- **Request body cap (1 MiB)** on the local HTTP MCP server — an
+  oversized declared `Content-Length` is rejected with `413` before
+  the body is buffered (renderer OOM guard).
+- **Tool-error logs no longer include tool arguments.** On a tool
+  failure only the tool name is logged; `arguments` (which can carry
+  note content, paths, queries) are no longer written to the on-disk
+  diagnostic log.
+- **Command id is trimmed** before the permission decision, so stray
+  whitespace cannot defeat an exact-id allowlist entry.
+
+### Fixed
+
+- **Silent embedding-store corruption (data integrity).** An
+  interrupted flush could leave a new vector file paired with a stale
+  index that loaded without warning and sliced vectors at wrong
+  offsets. A write-sentinel now detects an interrupted write on the
+  next load and rebuilds cleanly; a defence-in-depth bounds check
+  skips any out-of-range record instead of producing a
+  wrong-dimension vector.
+- **Transient read errors no longer drop a note's embeddings.** A
+  file lock or I/O hiccup during indexing was treated as a deletion
+  and permanently removed that note's vectors; it is now distinguished
+  from a genuine deletion (note still in the vault → kept and retried).
+- **Cross-feature settings loss.** Concurrent settings writes from
+  different features (e.g. a permission decision while the settings UI
+  saves, or token rotation) could silently overwrite each other's
+  slice of `data.json`. All persistence now serializes through one
+  shared lock.
+- **HTTP server releases its port on disable/restart.** With an open
+  `mcp-remote` stream `server.close()` never resolved, so the port
+  "walked" on the next start and the client lost its connection;
+  connections are now drained on close.
+- **Concurrent `execute_template` calls no longer corrupt each
+  other** — template execution (which temporarily patches a shared
+  Templater function) is now serialized.
+- **`create_vault_file` / `append_to_vault_file`** return a clean
+  error instead of an uncaught failure when the target path is a
+  folder.
+- **BRAT install regression on 0.4.7 / 0.4.8 fixed.** The
+  `obsidian-plugin-*.zip` convenience asset, dropped at 0.4.7, is
+  restored to the 0.4.x release artifacts (issue
+  [#124](https://github.com/istefox/obsidian-mcp-connector/issues/124));
+  the existing 0.4.7/0.4.8 releases were back-filled.
+- Minor: the embedder model cache is cleared on unload; prompt
+  frontmatter `tags` are validated as a string array.
+
+### Changed
+
+- `fetch` clamps `maxLength` to 500 000 characters and applies a 30 s
+  request timeout (previously unbounded / could hang indefinitely).
+
 ## [0.4.8] — 2026-05-16
 
 ### Fixed
