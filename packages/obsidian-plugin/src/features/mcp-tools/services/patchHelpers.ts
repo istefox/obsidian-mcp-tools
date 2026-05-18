@@ -144,6 +144,24 @@ export function hasParentH1(lines: string[], headingLine: number): boolean {
 }
 
 /**
+ * Whether the document contains any level-1 (`# `) heading at all. Used by
+ * the #139 narrowed-A relaxation of the H2-root guard: a root-orphan H2 is
+ * only structurally ambiguous when an H1 exists *elsewhere* (a mixed
+ * document). An entirely H1-free file — the common Obsidian
+ * frontmatter-`title:` pattern, body starting at `##` — has an
+ * unambiguous root and is safe to patch.
+ *
+ * Args:
+ *   lines: The file content split on `\n`.
+ *
+ * Returns:
+ *   true if any line is a level-1 heading (`/^#\s/`), false otherwise.
+ */
+export function hasAnyH1(lines: string[]): boolean {
+  return lines.some((l) => /^#\s/.test(l));
+}
+
+/**
  * Precompute, in a single O(n) pass, whether each line sits inside an
  * open fenced code block — i.e. `fenceOpen[i]` is the value the old
  * `count ``` up to lineIdx` loop would have produced for `lineIdx = i`.
@@ -483,6 +501,7 @@ export type PatchArgs = {
   content: string;
   targetDelimiter?: string;
   createTargetIfMissing?: boolean;
+  allowRootHeadings?: boolean;
 };
 
 /**
@@ -628,20 +647,25 @@ export async function applyPatch(
     // higher level (lower number means higher in hierarchy), or EOF.
     const headingLevel = lines[headingLine].match(/^(#+)/)?.[1].length ?? 1;
 
-    // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
-    // The legacy LRA chain enforced this via markdown-patch's indexer; the
-    // 0.4.0 in-process port missed the gate (folotp round-3 regression on
-    // the actual HTTP-embedded chain — see fork #80, #83).
+    // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false
+    // (legacy LRA enforced this via markdown-patch's indexer; the 0.4.0
+    // in-process port missed it — fork #80, #83). #139 narrowed this: the
+    // section boundary is only ambiguous when an H1 exists *elsewhere* (a
+    // mixed document). An entirely H1-free file (frontmatter-`title:`
+    // pattern) has an unambiguous root and is allowed; `allowRootHeadings`
+    // is the explicit opt-in for the mixed case.
     if (
       headingLevel >= 2 &&
       !createIfMissing &&
-      !hasParentH1(lines, headingLine)
+      !hasParentH1(lines, headingLine) &&
+      !args.allowRootHeadings &&
+      hasAnyH1(lines)
     ) {
       return {
         content: [
           {
             type: "text",
-            text: `Heading "${args.target}" is a level-${headingLevel} heading at the root of the file with no level-1 (#) parent. Refusing to patch a root-orphan heading; the section boundary is ambiguous. Add an explicit level-1 heading or pass createTargetIfMissing:true to bypass.`,
+            text: `Heading "${args.target}" is a level-${headingLevel} heading with no level-1 (#) parent, while the document does contain an H1 elsewhere — the section boundary is ambiguous. Refusing to patch. Pass allowRootHeadings:true to target it explicitly, or createTargetIfMissing:true to bypass. (Files with no H1 at all are accepted automatically.)`,
           },
         ],
         isError: true,

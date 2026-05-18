@@ -4,6 +4,7 @@ import {
   resolveHeadingPath,
   findBlockPositionFromCache,
   hasParentH1,
+  hasAnyH1,
   isBlockRangeStructurallyUnsafe,
   normalizeAppendBody,
   planFrontmatterReplace,
@@ -24,6 +25,9 @@ export const patchActiveFileSchema = type({
     ),
     "targetDelimiter?": "string",
     "createTargetIfMissing?": "boolean",
+    "allowRootHeadings?": type("boolean").describe(
+      "When true, allow targeting a level-2-or-deeper heading with no level-1 (#) parent even when the document contains an H1 elsewhere (the ambiguous 'mixed' case the H2-root guard rejects with createTargetIfMissing=false). Files with no H1 at all are accepted without this flag. Default false.",
+    ),
   },
 }).describe(
   "Patches the currently active note relative to a heading, block reference, or frontmatter key.",
@@ -37,6 +41,7 @@ export type PatchActiveFileContext = {
     content: string;
     targetDelimiter?: string;
     createTargetIfMissing?: boolean;
+    allowRootHeadings?: boolean;
   };
   app: App;
 };
@@ -171,19 +176,23 @@ export async function applyPatch(
 
     // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false.
     // Mirror of the gate in services/patchHelpers.ts:applyPatch — see fork #80,
-    // #83. The two applyPatch impls are duplicated; the shared
-    // hasParentH1 helper keeps the policy in one place.
+    // #83. #139 narrowed it: ambiguous only when an H1 exists elsewhere
+    // (mixed doc); an H1-free file is allowed, `allowRootHeadings` is the
+    // explicit opt-in for the mixed case. The shared hasParentH1/hasAnyH1
+    // helpers keep the policy in one place across the two applyPatch impls.
     if (
       headingLine !== -1 &&
       headingLevel >= 2 &&
       !createIfMissing &&
-      !hasParentH1(lines, headingLine)
+      !hasParentH1(lines, headingLine) &&
+      !args.allowRootHeadings &&
+      hasAnyH1(lines)
     ) {
       return {
         content: [
           {
             type: "text",
-            text: `Heading "${args.target}" is a level-${headingLevel} heading at the root of the file with no level-1 (#) parent. Refusing to patch a root-orphan heading; the section boundary is ambiguous. Add an explicit level-1 heading or pass createTargetIfMissing:true to bypass.`,
+            text: `Heading "${args.target}" is a level-${headingLevel} heading with no level-1 (#) parent, while the document does contain an H1 elsewhere — the section boundary is ambiguous. Refusing to patch. Pass allowRootHeadings:true to target it explicitly, or createTargetIfMissing:true to bypass. (Files with no H1 at all are accepted automatically.)`,
           },
         ],
         isError: true,
