@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.4.10] — 2026-05-18
+
 ### Added
 
 - **Heading patching now works on notes with no H1.** `patch_vault_file`
