@@ -270,8 +270,12 @@ describe("patch_active_file tool", () => {
   // mis-identification was corrected (soak round 3, issues #80/#81 thread).
   // See issues #80 (H2-root) and #81 (block-in-table/fenced-code).
 
-  test("#80: rejects level-2 root-orphan heading replace when createTargetIfMissing=false", async () => {
-    setMockFile("a.md", "## RootHeading\n\nBody content.\n");
+  test("#80 (mixed doc) still rejects root-orphan H2 when an H1 exists elsewhere (createTargetIfMissing=false)", async () => {
+    // #139 narrowed the guard: an entirely H1-free file is now allowed
+    // (the legit frontmatter-title pattern). A mixed doc — H1 present but
+    // not a parent of the target H2 — remains ambiguous, so #80's reject
+    // is preserved here.
+    setMockFile("a.md", "## RootHeading\n\nBody content.\n\n# Real Title\n\nx\n");
     setMockActiveFile("a.md");
     const result = await patchActiveFileHandler({
       arguments: {
@@ -284,7 +288,26 @@ describe("patch_active_file tool", () => {
       app: mockApp(),
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/level-2 heading at the root/i);
+    expect(result.content[0].text).toMatch(/level-2 heading with no level-1/i);
+  });
+
+  test("#139 narrowed-A: entirely H1-free active file → root H2 replace succeeds (no flag)", async () => {
+    setMockFile(
+      "a.md",
+      "---\ntitle: My Note\n---\n\n## Introduction\n\nSome content.\n\n## Conclusion\n\nMore.\n",
+    );
+    setMockActiveFile("a.md");
+    const result = await patchActiveFileHandler({
+      arguments: {
+        operation: "replace",
+        targetType: "heading",
+        target: "Introduction",
+        createTargetIfMissing: false,
+        content: "Updated.\n",
+      },
+      app: mockApp(),
+    });
+    expect(result.isError).toBeUndefined();
   });
 
   test("#80: succeeds on H2 nested under H1 (control)", async () => {

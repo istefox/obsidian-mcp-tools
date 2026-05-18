@@ -21,6 +21,9 @@ export const patchVaultFileSchema = type({
     "createTargetIfMissing?": type("boolean").describe(
       "When true, creates the target if not found. Defaults to true for heading/frontmatter, false for block. Note: with the default `true` for headings, patching a level-2-or-deeper heading on a file that has no parent H1 will silently create the section instead of failing loud — pass `false` explicitly to get the H2-root reject guard if your vault treats a missing H1 as an integrity error.",
     ),
+    "allowRootHeadings?": type("boolean").describe(
+      "When true, allow targeting a level-2-or-deeper heading that has no level-1 (#) parent even in a document that contains an H1 elsewhere (the ambiguous 'mixed' case the H2-root guard otherwise rejects with createTargetIfMissing=false). Files with no H1 at all are already accepted without this flag. Default false.",
+    ),
   },
 }).describe(
   "Patches a vault file relative to a heading, block reference, or frontmatter key. Unlike patch_active_file, operates on any file by vault-relative path.",
@@ -35,6 +38,7 @@ export type PatchVaultFileContext = {
     content: string;
     targetDelimiter?: string;
     createTargetIfMissing?: boolean;
+    allowRootHeadings?: boolean;
   };
   app: App;
 };

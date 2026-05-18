@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   hasParentH1,
+  hasAnyH1,
   isInsideTableOrFencedCode,
   isBlockRangeStructurallyUnsafe,
   resolveHeadingPath,
@@ -253,6 +254,30 @@ describe("hasParentH1", () => {
   test("ignores `#` characters that are not at column 0 of a heading line", () => {
     const lines = ["Some prose with # not-a-heading", "## Real"];
     expect(hasParentH1(lines, 1)).toBe(false);
+  });
+});
+
+describe("hasAnyH1 (#139 — narrowed-A: whole-file H1 detection)", () => {
+  test("true when an H1 exists anywhere, including after the target", () => {
+    const lines = ["## Early", "", "# Later H1", "", "## Under"];
+    expect(hasAnyH1(lines)).toBe(true);
+  });
+
+  test("true when H1 is the only heading", () => {
+    expect(hasAnyH1(["# Only"])).toBe(true);
+  });
+
+  test("false for an entirely H1-free document (frontmatter + H2s)", () => {
+    const lines = ["---", "title: My Note", "---", "", "## A", "", "## B"];
+    expect(hasAnyH1(lines)).toBe(false);
+  });
+
+  test("false on empty input", () => {
+    expect(hasAnyH1([])).toBe(false);
+  });
+
+  test("ignores `#` not at column 0 of a heading line", () => {
+    expect(hasAnyH1(["prose with # not-a-heading", "## H2"])).toBe(false);
   });
 });
 

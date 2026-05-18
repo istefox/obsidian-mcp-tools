@@ -345,9 +345,13 @@ describe("patch_vault_file tool", () => {
 // (soak round 3, issues #80/#81 thread). See issues #80 and #81.
 
 describe("patch_vault_file — H2-root reject (#80)", () => {
-  test("rejects level-2 root-orphan heading replace when createTargetIfMissing=false (folotp R1)", async () => {
-    // Folotp's fixture verbatim: a root-level H2 with no H1 parent.
-    setMockFile("Notes/r1.md", "## RootHeading\n\nBody content.\n");
+  test("#80 (mixed doc) still rejects root-orphan H2 when an H1 exists elsewhere (createTargetIfMissing=false)", async () => {
+    // #139 narrowed the H2-root guard: a *mixed* document (an H1 exists
+    // somewhere, but the target H2 has no H1 parent) is still ambiguous,
+    // so the #80 reject is preserved here. The H1-free sub-case that #80
+    // originally filed is now intentionally allowed — see the #139 tests.
+    const fixture = "## RootHeading\n\nBody content.\n\n# Real Title\n\n## Under\n\nx\n";
+    setMockFile("Notes/r1.md", fixture);
     const app = mockApp();
     const result = await patchVaultFileHandler({
       arguments: {
@@ -361,12 +365,12 @@ describe("patch_vault_file — H2-root reject (#80)", () => {
       app,
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/level-2 heading at the root/i);
+    expect(result.content[0].text).toMatch(/level-2 heading with no level-1/i);
     // File content must be unchanged.
     const file = app.vault.getAbstractFileByPath("Notes/r1.md");
     if (!file) throw new Error("expected file");
     const final = await app.vault.read(file as never);
-    expect(final).toBe("## RootHeading\n\nBody content.\n");
+    expect(final).toBe(fixture);
   });
 
   test("succeeds on H2 nested under H1 (control: not root-orphan)", async () => {
@@ -403,8 +407,8 @@ describe("patch_vault_file — H2-root reject (#80)", () => {
     expect(result.isError).toBeUndefined();
   });
 
-  test("rejects level-3 root-orphan heading symmetrically (parity)", async () => {
-    setMockFile("Notes/r1d.md", "### Deep\n\nBody.\n");
+  test("#80 (mixed doc) rejects level-3 root-orphan heading symmetrically (parity)", async () => {
+    setMockFile("Notes/r1d.md", "### Deep\n\nBody.\n\n# Real Title\n\nx\n");
     const app = mockApp();
     const result = await patchVaultFileHandler({
       arguments: {
@@ -418,7 +422,83 @@ describe("patch_vault_file — H2-root reject (#80)", () => {
       app,
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/level-3 heading at the root/i);
+    expect(result.content[0].text).toMatch(/level-3 heading with no level-1/i);
+  });
+
+  // ── #139: B (explicit allowRootHeadings) + narrowed-A (H1-free file) ──
+  test("#139 narrowed-A: entirely H1-free file → root H2 replace succeeds (createTargetIfMissing=false, no flag)", async () => {
+    // folotp's #139 fixture: title via frontmatter, body starts at H2.
+    const fixture =
+      "---\ntitle: My Note\n---\n\n## Introduction\n\nSome content here.\n\n## Conclusion\n\nMore content.\n";
+    setMockFile("Notes/h1free.md", fixture);
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/h1free.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "Introduction",
+        createTargetIfMissing: false,
+        content: "Updated content.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.vault.getAbstractFileByPath("Notes/h1free.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    expect(final).toContain("Updated content.");
+    expect(final).not.toContain("Some content here.");
+    expect(final).toContain("## Conclusion");
+    expect(final).toContain("More content.");
+  });
+
+  test("#139 B: mixed doc + allowRootHeadings:true → root-orphan H2 replace bypasses the guard", async () => {
+    setMockFile(
+      "Notes/optin.md",
+      "## Orphan\n\nold\n\n# Real Title\n\n## Under\n\ny\n",
+    );
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/optin.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "Orphan",
+        createTargetIfMissing: false,
+        allowRootHeadings: true,
+        content: "REPLACED.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBeUndefined();
+    const file = app.vault.getAbstractFileByPath("Notes/optin.md");
+    if (!file) throw new Error("expected file");
+    const final = await app.vault.read(file as never);
+    expect(final).toContain("REPLACED.");
+    expect(final).not.toContain("old");
+    expect(final).toContain("# Real Title");
+  });
+
+  test("#139: mixed doc, no flag → still rejected (contract: narrowed-A does not weaken the ambiguous case)", async () => {
+    setMockFile(
+      "Notes/mixed.md",
+      "## Orphan\n\nbody\n\n# Real Title\n\n## Under\n\nz\n",
+    );
+    const app = mockApp();
+    const result = await patchVaultFileHandler({
+      arguments: {
+        path: "Notes/mixed.md",
+        operation: "replace",
+        targetType: "heading",
+        target: "Orphan",
+        createTargetIfMissing: false,
+        content: "X.\n",
+      },
+      app,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/level-2 heading with no level-1/i);
   });
 });
 
