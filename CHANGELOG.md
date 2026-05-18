@@ -5,6 +5,101 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **`rename_heading` tool** — renames a heading inside a vault file
+  and rewrites every backlinking reference (wikilinks, markdown links,
+  subheading-path links) across the vault to preserve link integrity.
+  Closes [#68](https://github.com/istefox/obsidian-mcp-connector/issues/68)
+  (@folotp RFC, triaged 2026-04-29, bridge 2026-05-13, gate-cleared
+  2026-05-16 post-store-accept).
+
+  Two-phase commit (RFC edge case #6): the pure walker in
+  `services/headingRename.ts` computes the rewrite plan first
+  (source-file patch + per-backlinker patches + collision check),
+  then the MCP wrapper in `tools/renameHeading.ts` applies it via
+  `vault.modify`. Mid-walk write failures surface as
+  `errorCode: partial-failure` with explicit `updatedFiles` and
+  `failedFiles` arrays so the caller can recover deterministically.
+
+  Schema (arktype, Option A verbatim from the RFC):
+  ```ts
+  {
+    path: string,
+    from: { text: string, level?: number },
+    to: string
+  }
+  ```
+
+  Success response:
+  ```json
+  {
+    "ok": true,
+    "updatedFiles": ["source.md", "back.md", "..."],
+    "linkRewriteCount": 7
+  }
+  ```
+
+  Error responses use the `errorCode` discriminator agreed in the
+  RFC triage:
+  - `errorCode: heading-not-found` — no heading matches `from`
+  - `errorCode: ambiguous-heading` + `candidates: [{line, level, text}]`
+    — multi-match with `from.level` omitted (or still ambiguous with it)
+  - `errorCode: heading-collision` — `to` already exists at the same
+    level in the source file (fail-loud, mirrors `rename_vault_file`
+    destination-exists bias; no-op rename `from === to` also surfaces
+    here)
+  - `errorCode: file-not-found` — source path does not resolve
+  - `errorCode: source-write-failed` — source modify rejected before any
+    backlinker was touched
+  - `errorCode: partial-failure` — source rewritten OK but ≥1
+    backlinker write failed; payload includes both `updatedFiles` and
+    `failedFiles`
+
+  Heading match is case-sensitive (RFC edge case #3 — Obsidian's link
+  resolution is case-sensitive in the metadata cache). Headings inside
+  fenced code blocks are skipped via the canonical
+  `isInsideTableOrFencedCode` guard from `services/patchHelpers.ts`
+  (RFC edge case #2). Subheading-path links (`[[note#Parent > heading]]`)
+  rewrite the matching path component whether it is leaf or non-leaf
+  (RFC edge case #4). The walker tokenises link bodies on the `first #`
+  / `last |` split so heading text containing `|` round-trips correctly
+  (RFC edge case #7). Markdown-link heading fragments are URL-decoded
+  for matching and re-encoded for writing. Frontmatter aliases are
+  explicitly out of scope for v1 (RFC edge case #5).
+
+  Self-references inside the source file (e.g. TOC entries like
+  `[[#Old]]`) are rewritten as part of the source patch — the source
+  text incorporates both the heading-line replacement and any
+  same-file link rewrites in one `vault.modify` call.
+
+  Authorisation gate matches `rename_vault_file` (no per-tool
+  allowlist; same "move-existing-data tool" fail-loud bias). Closes
+  the cluster ordering @istefox laid out across `#67` /
+  `#77` / `#68` — smallest-wins-first → smallest-wins-first → bigger
+  surface.
+
+  Pinned by 41 cases across two files:
+  - `services/headingRename.test.ts` (30 cases) — pure walker:
+    `findSourceHeading` (5), `checkHeadingCollision` (3),
+    `rewriteSourceHeadingLine` (4), `rewriteBacklinker` (12 covering
+    all four link shapes + alias + URL-encoded + subheading paths
+    leaf/non-leaf + multi-occurrence + same-file refs + `|` in heading
+    text), `planRename` integration (6 covering happy path + each
+    error code + empty backlinkers).
+  - `tools/renameHeading.test.ts` (11 cases) — wrapper end-to-end:
+    schema name, file-not-found, positive case, heading-not-found
+    forwarded, ambiguous-heading with candidates, level
+    disambiguation, heading-collision, self-ref rewriting,
+    structural-link skip, multi-rewrite accuracy, subheading-path
+    end-to-end.
+
+  Mock surface untouched — the existing `setMockResolvedLinks` +
+  `setMockMetadata` + `mockApp().metadataCache.getFirstLinkpathDest`
+  cover the wrapper's I/O contract. Aligns with the "no greenfield
+  mock infra unless needed" continuity pattern noted by @istefox in
+  the #94 review.
+
 ## [0.4.9] — 2026-05-17
 
 ### Security
