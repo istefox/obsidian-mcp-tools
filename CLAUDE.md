@@ -12,15 +12,11 @@ One shipped component on the 0.4.x line:
 
 Why operations go through Obsidian APIs rather than reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the plugin invoke other Obsidian plugins (Templater, Dataview) through their APIs.
 
-Current line: **`main` = 0.5.0** — the standalone in-process HTTP MCP server (0.4.x promoted to `main` 2026-05-16); no separate binary, native semantic search via Transformers.js. **Accepted & listed in the Obsidian community plugin store** (id `mcp-tools-istefox`, 2026-05-16; Obsidian shows a standard "not manually reviewed by Obsidian staff" disclaimer — automated review path). The `packages/mcp-server` binary and `features/mcp-server-install` installer are retired. The 0.3.x stdio/binary line is archived at `archive/main-0.3.12` (abandoned; tags retained). The `[Unreleased]` block in `CHANGELOG.md` accumulates the next cut; consult `CHANGELOG.md` for its current contents (do not enumerate here — it drifts). License: MIT.
+The `packages/mcp-server` binary and `features/mcp-server-install` installer are **retired** — the server is hosted in-process by the plugin. License: MIT. Current line/version, store-listing and the 0.3.x archive live in **Project status** below (single source of truth — do not restate elsewhere); `CHANGELOG.md`'s `[Unreleased]` drifts, consult it directly.
 
 ### Branch protection policy
 
-**`main` is the production line** — standalone in-process HTTP MCP server, currently **0.5.0** (0.4.x promoted to `main` 2026-05-16; accepted & listed in the Obsidian community store). The historical rule "don't merge `feat/http-embedded` → `main` until Stefano decides the 0.4.0 bump" is **discharged**: the promotion has happened; `main` IS the 0.4.x line. Normal branch + PR discipline now applies.
-
-`feat/http-embedded` was **retired (deleted from origin) 2026-05-16** — it was 0-ahead/29-behind `main` at the time, so nothing was lost (it was removed from the `General` ruleset first, keeping `main` protection intact). `main` is the sole, authoritative line.
-
-The 0.3.x stdio/binary line is **archived at `archive/main-0.3.12`** (do not delete it or its tags; users on old installs may reference them). Active development against 0.3.x is abandoned.
+**`main` is the production line.** The historical rule "don't merge `feat/http-embedded` → `main` until the 0.4.0 bump" is **discharged** (promotion happened 2026-05-16); normal branch + PR discipline applies. `feat/http-embedded` was retired (deleted from origin) 2026-05-16 at 0-ahead/29-behind — nothing lost. `main` is the sole authoritative line; the 0.3.x line is archived at `archive/main-0.3.12` (preservation enforced by **hard rule 5** below).
 
 **Hard rules — apply unless Stefano explicitly authorizes the specific action:**
 
@@ -324,18 +320,6 @@ Items in flight, ordered by priority:
 2. **Owner-only, non-blocking**: (a) GitHub fork-network detach is CLOSED won't-do (only path is destructive — accept the "forked from" badge + the suppressed Contributors UI); (b) Windows #100 load smoke unperformed but field-corroborated by the reporter — non-blocking; roll forward to a patch release if it ever regresses.
 
 The community-store listing is DONE (accepted & listed 2026-05-16). The fork-era external-contribution pipeline tracking no longer applies — the project is standalone; contributions are evaluated per-PR on their merits.
-
-Items resolved and out of "pending":
-
-- ~~`#3` installer 404 — fixed in 0.3.5, validated by @Metal0gic.~~
-- ~~Maintainership stance — settled 2026-04-24.~~
-- ~~Binary content types for `get_vault_file` — landed in 0.3.4 (#59).~~
-- ~~Phases 1-4 of the HTTP-embedded pivot — all landed in `0.4.0-alpha.1` through `0.4.0` stable (cut 2026-05-04). Native semantic search via Transformers.js verified end-to-end in vault TEST (alpha-stage `bun.config.ts` redirect `onnxruntime-node` → `onnxruntime-web` for Electron renderer is part of the bundle config).~~
-- ~~Soak rounds 1 → 6 (folotp): all closed, regression-free byte-exact across `0.4.4` + `0.4.5` cuts on the `patch_vault_file` safety surface (`#80` H2-root reject + `#81` block-in-table reject + `#84` block-in-fenced-code reject all preserved in carryover spot-check).~~
-- ~~`patch_vault_file` safety regressions — all reported variants closed: `#76` heading blank-line in `0.4.1`, `#80` + `#81` in `0.4.2`, `#84` in `0.4.3`. Helpers `hasParentH1` + `isInsideTableOrFencedCode` exported from `patchHelpers.ts`.~~
-- ~~Marcoaperez `list_tags` (PR #83) — merged 2026-05-05 in cycle 5, second external maintainer-grade contributor confirmed.~~
-- ~~Folotp `#86` (parent dir mkdirp + 2 dir tools) — shipped in 0.4.5, cycle 6 closed bilaterally.~~
-
 ## Soak preflight: chain identification first
 
 When a soak round comes in (folotp / marcoaperez / grimlor / any external tester), confirm **which MCP path the client is actually exercising before interpreting any verdict**. The current (0.4.x) architecture is in-process HTTP-embedded; the legacy 0.3.x stdio/binary line is archived and abandoned. However, a tester can have both installed simultaneously: the legacy binary at `~/Library/Application Support/obsidian-mcp-tools/bin/mcp-server` persists from any pre-0.4.x install unless explicitly deleted, and `claude_desktop_config.json` is not auto-rewritten on plugin update. A tester who BRAT-pinned the plugin on top of a `0.3.x` install can have Claude Desktop routing through the legacy binary while the 0.4.x plugin is concurrently loaded — which makes any verdict about "0.4.x behavior" suspect until the chain is identified.

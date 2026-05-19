@@ -175,6 +175,9 @@ dist
 # IntelliJ based IDEs
 .idea
 
+# VS Code workspace settings (personal/machine-specific; not shipped)
+.vscode/
+
 # Finder (MacOS) folder config
 .DS_Store
 
