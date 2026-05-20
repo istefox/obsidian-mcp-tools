@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Continuous integration
+
+- Drop the retired `feat/http-embedded` branch from `ci.yml`
+  push/pull-request triggers (deleted from origin 2026-05-16 at
+  0-ahead). Prevents an accidental future recreation of that branch
+  name from reactivating CI on an unprotected ref. Stale references
+  in `CLAUDE.md` (Stack-table CI row, Testing & CI section) are
+  removed in the same change; historical mentions (discharge note,
+  ruleset history) are preserved. (#154)
+
+### Documentation
+
+- `.gitignore` `main.js` block condensed from 5 lines to 2; the full
+  outage context already lives in `CLAUDE.md` Gotchas. (#155)
+- `CLAUDE.md` Stack-table `Toolchain pinning` row now explicitly says
+  the `1.3.12` pin applies to `release.yml` only — `ci.yml`
+  deliberately runs on `bun-version: latest` (deferred divergence
+  documented in #150). (#155)
+
 ## [0.5.0] — 2026-05-18
 
 ### Added
