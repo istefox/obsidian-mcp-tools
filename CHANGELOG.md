@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Removed
+
+- **Dead 0.3.x HTTP handlers in `main.ts`.** `handleTemplateExecution`
+  and `handleSearchRequest` were Express-style request handlers from
+  the pre-0.4.x line; they survived the in-process HTTP-embedded pivot
+  as private methods with no call site (verified: no reference, binding,
+  or reflection dispatch). Removed (~180 LOC) along with the now-orphan
+  imports. No behaviour change — template execution and smart search
+  run through the in-process MCP path (`executeTemplate` /
+  `templatesCompat`, `search_vault_smart`).
+
 ### Continuous integration
 
 - Drop the retired `feat/http-embedded` branch from `ci.yml`
