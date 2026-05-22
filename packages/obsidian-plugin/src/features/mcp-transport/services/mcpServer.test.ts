@@ -1,6 +1,10 @@
 import { describe, expect, test, afterEach, beforeEach } from "bun:test";
 import { mockApp, mockPlugin, resetMockVault } from "$/test-setup";
-import { createMcpService, destroyMcpService, type McpService } from "./mcpServer";
+import {
+  createMcpService,
+  destroyMcpService,
+  type McpService,
+} from "./mcpServer";
 
 beforeEach(() => resetMockVault());
 
@@ -11,7 +15,11 @@ afterEach(async () => {
 
 describe("createMcpService", () => {
   test("exposes a request handler compatible with StreamableHTTPServerTransport", async () => {
-    const svc = await createMcpService({ app: mockApp(), plugin: mockPlugin(), pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({
+      app: mockApp(),
+      plugin: mockPlugin(),
+      pluginVersion: "0.4.0-alpha.1",
+    });
     active.push(svc);
     expect(typeof svc.handleRequest).toBe("function");
   });
@@ -20,7 +28,11 @@ describe("createMcpService", () => {
 describe("end-to-end: HTTP → McpServer", () => {
   test("tools/list responds with get_server_info registered", async () => {
     const { startHttpServer } = await import("./httpServer");
-    const svc = await createMcpService({ app: mockApp(), plugin: mockPlugin(), pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({
+      app: mockApp(),
+      plugin: mockPlugin(),
+      pluginVersion: "0.4.0-alpha.1",
+    });
     active.push(svc);
 
     const server = await startHttpServer({
@@ -60,7 +72,11 @@ describe("end-to-end: HTTP → McpServer", () => {
     // the tool stops being exposed via MCP. A failure here means either the
     // registry shrunk (missing tool) or grew (new tool needs the list updated).
     const { startHttpServer } = await import("./httpServer");
-    const svc = await createMcpService({ app: mockApp(), plugin: mockPlugin(), pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({
+      app: mockApp(),
+      plugin: mockPlugin(),
+      pluginVersion: "0.4.0-alpha.1",
+    });
     active.push(svc);
 
     const server = await startHttpServer({
@@ -86,13 +102,16 @@ describe("end-to-end: HTTP → McpServer", () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       const tools = body?.result?.tools ?? [];
-      const names = (tools as Array<{ name: string }>).map((t) => t.name).sort();
+      const names = (tools as Array<{ name: string }>)
+        .map((t) => t.name)
+        .sort();
       expect(names).toEqual([
         "append_to_active_file",
         "append_to_vault_file",
         "create_vault_directory",
         "create_vault_file",
         "delete_active_file",
+        "delete_note_property",
         "delete_vault_directory",
         "delete_vault_file",
         "execute_obsidian_command",
@@ -101,12 +120,14 @@ describe("end-to-end: HTTP → McpServer", () => {
         "get_active_file",
         "get_backlinks",
         "get_files_by_tag",
+        "get_note_property",
         "get_outgoing_links",
         "get_recent_files",
         "get_server_info",
         "get_vault_file",
         "get_vault_file_partial",
         "list_obsidian_commands",
+        "list_property_values",
         "list_tags",
         "list_vault_files",
         "patch_active_file",
@@ -116,10 +137,11 @@ describe("end-to-end: HTTP → McpServer", () => {
         "search_vault",
         "search_vault_simple",
         "search_vault_smart",
+        "set_note_property",
         "show_file_in_obsidian",
         "update_active_file",
       ]);
-      expect(names).toHaveLength(30);
+      expect(names).toHaveLength(34);
     } finally {
       await new Promise<void>((r) => server.server.close(() => r()));
     }
@@ -127,7 +149,11 @@ describe("end-to-end: HTTP → McpServer", () => {
 
   test("tools/call get_server_info returns health payload", async () => {
     const { startHttpServer } = await import("./httpServer");
-    const svc = await createMcpService({ app: mockApp(), plugin: mockPlugin(), pluginVersion: "0.4.0-alpha.1" });
+    const svc = await createMcpService({
+      app: mockApp(),
+      plugin: mockPlugin(),
+      pluginVersion: "0.4.0-alpha.1",
+    });
     active.push(svc);
 
     const server = await startHttpServer({

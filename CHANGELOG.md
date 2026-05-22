@@ -21,6 +21,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   it is corrected and joined by fixtures for `[[note#A|B|C]]`, a
   `|`-named heading skipped via wikilink, and a `|`-named heading
   rewritten via markdown link. (#158)
+### Added
+
+- **Atomic frontmatter property tools (4).** `get_note_property`,
+  `set_note_property`, `delete_note_property`, and `list_property_values`
+  give single-key access to note frontmatter without the whole-block
+  read-modify-write of `patch_vault_file targetType:"frontmatter"`.
+  Writes go through Obsidian's atomic `processFrontMatter`;
+  reads/enumeration use the metadata cache (no file I/O).
+  `set_note_property` auto-inits a missing block and treats `value:null`
+  as delete; `list_property_values` is scale-safe
+  (`limit`/`truncated`/`totalDistinct`). Tool count 30 → 34. (ADR-0001)
+
+### Removed
+
+- **Dead 0.3.x HTTP handlers in `main.ts`.** `handleTemplateExecution`
+  and `handleSearchRequest` were Express-style request handlers from
+  the pre-0.4.x line; they survived the in-process HTTP-embedded pivot
+  as private methods with no call site (verified: no reference, binding,
+  or reflection dispatch). Removed (~180 LOC) along with the now-orphan
+  imports. No behaviour change — template execution and smart search
+  run through the in-process MCP path (`executeTemplate` /
+  `templatesCompat`, `search_vault_smart`).
 
 ### Continuous integration
 

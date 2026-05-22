@@ -2,8 +2,14 @@ import type { App } from "obsidian";
 import type McpToolsPlugin from "$/main";
 import type { ToolRegistry } from "$/features/mcp-transport/services/toolRegistry";
 
-import { getServerInfoHandler, getServerInfoSchema } from "./tools/getServerInfo";
-import { getActiveFileHandler, getActiveFileSchema } from "./tools/getActiveFile";
+import {
+  getServerInfoHandler,
+  getServerInfoSchema,
+} from "./tools/getServerInfo";
+import {
+  getActiveFileHandler,
+  getActiveFileSchema,
+} from "./tools/getActiveFile";
 import {
   updateActiveFileHandler,
   updateActiveFileSchema,
@@ -89,6 +95,22 @@ import {
   getFilesByTagSchema,
 } from "./tools/getFilesByTag";
 import {
+  getNotePropertyHandler,
+  getNotePropertySchema,
+} from "./tools/getNoteProperty";
+import {
+  setNotePropertyHandler,
+  setNotePropertySchema,
+} from "./tools/setNoteProperty";
+import {
+  deleteNotePropertyHandler,
+  deleteNotePropertySchema,
+} from "./tools/deleteNoteProperty";
+import {
+  listPropertyValuesHandler,
+  listPropertyValuesSchema,
+} from "./tools/listPropertyValues";
+import {
   getRecentFilesHandler,
   getRecentFilesSchema,
 } from "./tools/getRecentFiles";
@@ -100,10 +122,7 @@ import {
   getOutgoingLinksHandler,
   getOutgoingLinksSchema,
 } from "./tools/getOutgoingLinks";
-import {
-  getBacklinksHandler,
-  getBacklinksSchema,
-} from "./tools/getBacklinks";
+import { getBacklinksHandler, getBacklinksSchema } from "./tools/getBacklinks";
 
 export type RegisterToolsContext = {
   app: App;
@@ -195,6 +214,18 @@ export async function registerTools(
   registry.register(getFilesByTagSchema, async ({ arguments: args }) =>
     getFilesByTagHandler({ arguments: args, app: ctx.app }),
   );
+  registry.register(getNotePropertySchema, async ({ arguments: args }) =>
+    getNotePropertyHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(setNotePropertySchema, async ({ arguments: args }) =>
+    setNotePropertyHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(deleteNotePropertySchema, async ({ arguments: args }) =>
+    deleteNotePropertyHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(listPropertyValuesSchema, async ({ arguments: args }) =>
+    listPropertyValuesHandler({ arguments: args, app: ctx.app }),
+  );
   registry.register(getRecentFilesSchema, async ({ arguments: args }) =>
     getRecentFilesHandler({ arguments: args, app: ctx.app }),
   );
@@ -233,14 +264,12 @@ export async function registerTools(
   registry.register(listObsidianCommandsSchema, async ({ arguments: args }) =>
     listObsidianCommandsHandler({ arguments: args, app: ctx.app }),
   );
-  registry.register(
-    executeObsidianCommandSchema,
-    async ({ arguments: args }) =>
-      executeObsidianCommandHandler({
-        arguments: args,
-        app: ctx.app,
-        plugin: ctx.plugin,
-      }),
+  registry.register(executeObsidianCommandSchema, async ({ arguments: args }) =>
+    executeObsidianCommandHandler({
+      arguments: args,
+      app: ctx.app,
+      plugin: ctx.plugin,
+    }),
   );
 
   // Misc
