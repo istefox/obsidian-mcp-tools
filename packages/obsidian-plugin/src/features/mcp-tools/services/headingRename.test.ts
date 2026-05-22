@@ -260,21 +260,55 @@ describe("headingRename — rewriteBacklinker", () => {
     expect(r.rewriteCount).toBe(1);
   });
 
-  test("RFC edge case #7 — heading text containing `|` does not break tokenization", () => {
-    // Heading text `A|B` is rare but legal. The wikilink for it would be
-    // `[[source#A|B]]` which is ambiguous with `[[source#A` + alias `B]]`.
-    // Per Obsidian's grammar the LAST `|` separates the alias, so this
-    // round-trips correctly when there is no alias (treats `B]]` as the
-    // heading suffix and rewrites it intact).
+  // RFC edge case #7 (#158): Obsidian's wikilink grammar splits the alias
+  // on the FIRST `|`. A heading whose text contains `|` is unaddressable by
+  // wikilink; the `|` is always the alias separator. Verified via
+  // get_outgoing_links in a scratch vault (see #68/#158).
+  test("#158 — wikilink alias splits on the FIRST `|` (heading=`A`, alias=`B|C`)", () => {
+    // `[[source#A|B|C]]` targets heading `A` with alias `B|C`. Renaming
+    // heading `A` rewrites only the heading segment; the alias is preserved
+    // verbatim.
     const r = rewriteBacklinker(
-      "Look at [[source#A|B|alias]] here.",
+      "Look at [[source#A|B|C]] here.",
+      "A",
+      "Z",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Look at [[source#Z|B|C]] here.");
+    expect(r.rewriteCount).toBe(1);
+  });
+
+  test("#158 — a heading literally named `A|B` is NOT rewritten via a wikilink", () => {
+    // `[[source#A|B]]` is heading `A` + alias `B` per Obsidian's grammar, so
+    // it does NOT reference a heading named `A|B`. Renaming `A|B` must leave
+    // this wikilink untouched (the link points at heading `A`, not `A|B`).
+    const r = rewriteBacklinker(
+      "Look at [[source#A|B]] here.",
       "A|B",
       "C|D",
       "source.md",
       "back.md",
       resolveBasic,
     );
-    expect(r.newText).toBe("Look at [[source#C|D|alias]] here.");
+    expect(r.newText).toBe("Look at [[source#A|B]] here.");
+    expect(r.rewriteCount).toBe(0);
+  });
+
+  test("#158 — a heading literally named `A|B` IS rewritten via a markdown link", () => {
+    // Markdown-link fragments keep `|` literal, so `[txt](source.md#A|B)`
+    // genuinely addresses the heading `A|B`. Renaming it rewrites the
+    // fragment.
+    const r = rewriteBacklinker(
+      "Look at [txt](source.md#A|B) here.",
+      "A|B",
+      "C|D",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Look at [txt](source.md#C|D) here.");
     expect(r.rewriteCount).toBe(1);
   });
 });

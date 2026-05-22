@@ -331,8 +331,14 @@ export function rewriteBacklinker(
   let rewriteCount = 0;
 
   // Tokenizer approach (RFC edge case #7): for each link, split on the
-  // FIRST `#` (note vs heading), then on the LAST `|` (alias). Regex-only
-  // solutions struggle with `|` inside the alias text.
+  // FIRST `#` (note vs heading), then on the FIRST `|` (alias). Obsidian's
+  // wikilink grammar treats the first `|` as the alias separator and does
+  // not allow escaping it inside `[[ ]]`, so `[[note#A|B|C]]` is heading
+  // `A` + alias `B|C` (verified via get_outgoing_links, see #158/#68).
+  // A heading whose text literally contains `|` is therefore unaddressable
+  // by any wikilink — it is only reachable via a markdown link, where the
+  // post-`#` fragment keeps `|` literal (handled in the md-link branch
+  // below without splitting).
   const wikilinkRe = /\[\[([^\]]+?)\]\]/g;
   const mdLinkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
 
@@ -343,7 +349,7 @@ export function rewriteBacklinker(
       if (hashIdx === -1) return full; // no heading fragment → leave it
       const notePart = (inner as string).slice(0, hashIdx);
       const rest = (inner as string).slice(hashIdx + 1);
-      const pipeIdx = rest.lastIndexOf("|");
+      const pipeIdx = rest.indexOf("|");
       const headingPart = pipeIdx === -1 ? rest : rest.slice(0, pipeIdx);
       const aliasPart = pipeIdx === -1 ? "" : rest.slice(pipeIdx);
 
