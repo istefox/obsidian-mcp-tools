@@ -111,6 +111,7 @@ describe("end-to-end: HTTP → McpServer", () => {
         "create_vault_directory",
         "create_vault_file",
         "delete_active_file",
+        "delete_note_property",
         "delete_vault_directory",
         "delete_vault_file",
         "execute_obsidian_command",
@@ -119,12 +120,14 @@ describe("end-to-end: HTTP → McpServer", () => {
         "get_active_file",
         "get_backlinks",
         "get_files_by_tag",
+        "get_note_property",
         "get_outgoing_links",
         "get_recent_files",
         "get_server_info",
         "get_vault_file",
         "get_vault_file_partial",
         "list_obsidian_commands",
+        "list_property_values",
         "list_tags",
         "list_vault_files",
         "patch_active_file",
@@ -134,10 +137,11 @@ describe("end-to-end: HTTP → McpServer", () => {
         "search_vault",
         "search_vault_simple",
         "search_vault_smart",
+        "set_note_property",
         "show_file_in_obsidian",
         "update_active_file",
       ]);
-      expect(names).toHaveLength(30);
+      expect(names).toHaveLength(34);
     } finally {
       await new Promise<void>((r) => server.server.close(() => r()));
     }
