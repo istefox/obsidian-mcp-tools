@@ -154,24 +154,37 @@ for single-key ops.
 - Returns the existing note if present, otherwise creates it and returns
   the new file. `created: boolean` reflects which path was taken.
 
-#### `append_to_daily_note(content, date?, underHeading?) → { path, appended }`
+#### `append_to_periodic_note(period?, content, date?, underHeading?) → { path, appended }`
 
+> **Revised post-#160**: generalised from `append_to_daily_note` to all
+> periods, so weekly/monthly/quarterly/yearly notes get a one-call append
+> too. `period` defaults to `"daily"` to keep the common case ergonomic.
+
+- `period?: "daily" | "weekly" | "monthly" | "quarterly" | "yearly"` —
+  default `"daily"`.
 - `content: string` — markdown to append.
-- `date?` as above.
+- `date?` — ISO 8601, period-specific (same forms as
+  `get_or_create_periodic_note`).
 - `underHeading?: string` — if provided, appends inside that heading's
   section (reuses the existing `patchActiveFile` heading walker). Default:
   end-of-file append (like `append_to_vault_file`).
-- If the daily note does not exist, it is auto-created first (same path as
-  `get_or_create_daily_note`).
-- **`underHeading` resolution on an auto-created daily**: if the freshly
+- If the target periodic note does not exist, it is auto-created first
+  (same path as `get_or_create_periodic_note`).
+- **`underHeading` resolution on an auto-created note**: if the freshly
   created file (empty or rendered from template) does not contain the
   requested heading, the tool returns `errorCode: "heading_not_found"`.
   The auto-created file is **left in place** (no rollback) — its
   existence is the right end state regardless of whether this single
   append landed. The model can then add the heading (`patch_vault_file`
-  or a subsequent `append_to_daily_note` without `underHeading`) and
+  or a subsequent `append_to_periodic_note` without `underHeading`) and
   retry. Strict-by-default, no silent end-of-file fallback (consistent
   with `patch_vault_file targetType:"heading"`).
+
+Structured writes to periodic notes (set a frontmatter field, replace
+under a heading, edit a block) are **not** a dedicated tool — compose
+`get_or_create_periodic_note` with `set_note_property` (Module D) or
+`patch_vault_file` on the resolved path. Rationale in ADR-0002
+Alternatives #7–#8 (raised in #160).
 
 #### `get_or_create_periodic_note(period, date?) → { path, content, created }`
 
@@ -208,8 +221,8 @@ unit-tested independently.
 | `date` malformed for the chosen period (e.g. `2026-W99`) | Pre-validated by ArkType regex; `errorCode: "invalid_date_for_period"`. |
 | Daily note exists with custom non-ISO format the plugin generates | Detector reads the plugin's format setting and matches. Without the plugin, only ISO is recognised. |
 | Plugin returns the wrong note (race during user setting change) | Out of scope — single source of truth is the plugin's API; we don't second-guess. |
-| `append_to_daily_note` with `underHeading` that doesn't exist (existing daily) | Error from the heading walker (same as `patch_vault_file` today). |
-| `append_to_daily_note` with `underHeading` that doesn't exist (auto-created daily, this call) | `errorCode: "heading_not_found"`; auto-created file is **not** rolled back. Model adds heading + retries. |
+| `append_to_periodic_note` with `underHeading` that doesn't exist (existing note) | Error from the heading walker (same as `patch_vault_file` today). |
+| `append_to_periodic_note` with `underHeading` that doesn't exist (auto-created note, this call) | `errorCode: "heading_not_found"`; auto-created file is **not** rolled back. Model adds heading + retries. |
 | User disables the Daily Notes plugin **after** notes have been created with its custom format | Subsequent calls without the plugin fall back to ISO format → may create a second note that day with the ISO path while the custom-format note is orphaned. Documented; not auto-recovered. Recommend re-enabling the plugin to keep continuity. |
 | Template that calls Templater | Daily Notes API uses the configured template engine; if Templater is configured + enabled, it runs. If template references undefined variables, the plugin handles it. Out of our hands. |
 

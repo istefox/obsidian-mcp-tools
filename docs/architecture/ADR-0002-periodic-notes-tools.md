@@ -17,11 +17,13 @@ Constraints (`CLAUDE.md`): never touch the vault filesystem directly from a hand
 
 ## Decision
 
-### Tool surface — 3 tools, daily-dedicated split
+### Tool surface — 3 tools
 
-- `get_or_create_daily_note(date?) → { path, content, created }` — `date?` is ISO `YYYY-MM-DD`, default today (server-local timezone).
-- `append_to_daily_note(content, date?, underHeading?) → { path, appended }` — auto-creates the daily note if missing; `underHeading?` reuses the existing heading-walker from `patch_vault_file`; default is end-of-file append.
+- `get_or_create_daily_note(date?) → { path, content, created }` — `date?` is ISO `YYYY-MM-DD`, default today (server-local timezone). Daily is ~90% of the read/create workflow, so it keeps a dedicated shortcut.
+- `append_to_periodic_note(period?, content, date?, underHeading?) → { path, appended }` — `period?` defaults to `"daily"`; auto-creates the note if missing; `underHeading?` reuses the existing heading-walker from `patch_vault_file`; default is end-of-file append. **Revised post-#160** (was `append_to_daily_note`): generalised to all periods so weekly/monthly/quarterly/yearly notes get a one-call append too, while the `period="daily"` default keeps the common case ergonomic.
 - `get_or_create_periodic_note(period, date?) → { path, content, created }` — `period: "daily" | "weekly" | "monthly" | "quarterly" | "yearly"`.
+
+The minor asymmetry (two get/create tools — daily-dedicated + generic — but one generalised append) is deliberate: daily get/create is the dominant case and earns its shortcut, while a single `append_to_periodic_note` with a `daily` default covers the common append without a second tool.
 
 ### Date format — ISO 8601 strict, period-specific
 
@@ -66,6 +68,12 @@ We do **not** second-guess the plugin's API — if it returns the wrong note dur
 5. **Read plugin config but reimplement creation in-house** (avoid the dependency on the plugin's API surface). **Rejected**: misses template interpolation (Daily Notes runs the configured template engine, including Templater hooks if present); reimplementing template execution would duplicate logic the plugin already owns and inevitably drift. The plugin's API is the source of truth; we call it.
 
 6. **Add Periodic Notes plugin as a hard dependency** (require it installed). **Rejected**: violates the feature-setup contract — features must degrade gracefully; forcing a community plugin install on users who only want daily-note ergonomics is unacceptable; the fallback (ISO + root + no template) is a coherent vanilla baseline.
+
+7. **A dedicated `patch_periodic_note`** (heading/block/frontmatter replace/prepend/append), surfaced from a prior production implementation in #160. **Rejected**: the cited workflows compose with tools that now exist on `main` — *set a monthly-note frontmatter field* (`status: reviewed`) → `get_or_create_periodic_note` then **`set_note_property`** (single-key atomic, ADR-0001 / Module D); *replace under a weekly `## Highlights`* → `patch_vault_file(targetType:"heading", operation:"replace")`; *block edits* → `patch_vault_file(targetType:"block")`. A `patch_periodic_note` would duplicate `patch_vault_file` + `set_note_property` and add only inline path-resolution. Note the timing: when this ADR was first written the only frontmatter write path was whole-block `patch_vault_file`; Module D's `set_note_property` landed in between and is what makes the compose path clean. The two-call cost (resolve path, then patch) is sub-10 ms in-process. Documented as the prescribed pattern in `get_or_create_periodic_note`'s `.describe()`.
+
+8. **A `format: "json"` option on the periodic get** (parsed frontmatter + tags + stat in one call), also from #160. **Rejected**: `get_vault_file(path, format:"json")` already returns exactly that shape; `get_or_create_periodic_note` → `get_vault_file(format:"json")` composes it without duplicating the structured-read logic.
+
+The underlying asymmetry #160 raises — daily had an append shortcut while the other periods and all structured writes had none — is resolved by (a) generalising append to all periods (see Decision) and (b) routing structured writes through `set_note_property` / `patch_vault_file` on the resolved path, not by adding period-specific patch/read variants.
 
 ## Consequences
 
