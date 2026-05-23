@@ -25,6 +25,7 @@
 		"arktype": "^2.0.0-rc.30",
 		"express": "^4.21.2",
 		"fs-extra": "^11.2.0",
+		"obsidian-daily-notes-interface": "^0.9.4",
 		"obsidian-local-rest-api": "^2.5.4",
 		"radash": "^12.1.0",
 		"rxjs": "^7.8.1",

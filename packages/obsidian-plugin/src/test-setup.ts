@@ -20,6 +20,7 @@
  */
 
 import { mock } from "bun:test";
+import moment from "moment";
 
 // Obsidian injects `activeWindow` as a global (points to the focused Window
 // in popout-window scenarios). Tests run outside Obsidian, so we stub it to
@@ -176,6 +177,13 @@ void mock.module("obsidian", () => {
     Modal,
     Platform,
     getAllTags,
+    // Obsidian re-exports the `moment` library at runtime; pin to the real
+    // npm package in tests so code that does `import { moment } from "obsidian"`
+    // (e.g. the periodic-notes detector) resolves without crashing at module
+    // load. Production paths that actually invoke moment (plugin-delegation
+    // branches) are exercised in tests by seeding the periodicNotes mock
+    // state below.
+    moment,
     requestUrl: async (req: { url: string } | string) => {
       const url = typeof req === "string" ? req : req.url;
       const r = _mockState.requestUrlResponses.get(url);
@@ -238,6 +246,121 @@ void mock.module("svelte", () => ({
   unmount: (ref: unknown) => {
     svelteMockCalls.unmount.push(ref);
   },
+}));
+
+// === Mock for obsidian-daily-notes-interface (Module C / PR #2) ============
+//
+// The real library reads `window.app` + the Daily Notes / Periodic Notes
+// plugin settings to decide where to put periodic notes and how to render
+// the template. Tests don't have those plugins — so we mock the whole
+// module and let each test seed the plugin-on flags and settings per
+// period via `setMockPeriodicNotesPlugin(...)`. Defaults: all 5 periods
+// OFF (so the detector falls back to vault root + ISO format + empty file,
+// which is the expected behaviour when neither plugin is installed).
+//
+// The `createXNote(date)` stubs mirror the real library's effect: they
+// compute the path from the mocked settings using the same `date.format()`
+// the real lib uses, then commit the file via the existing mock vault
+// (`_mockState.files`) so the tool under test can observe it. This keeps
+// the seam at the lib boundary — the detector still does its own path
+// computation for `exists`, and the same path is reproduced by the mock
+// create stub, so the tool sees a coherent "resolved + created" state.
+
+export type MockPeriodType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly";
+
+export interface MockPeriodicNoteSettings {
+  loaded: boolean;
+  folder?: string;
+  format?: string;
+  template?: string;
+}
+
+const _mockPeriodicNotesState: Record<MockPeriodType, MockPeriodicNoteSettings> =
+  {
+    daily: { loaded: false },
+    weekly: { loaded: false },
+    monthly: { loaded: false },
+    quarterly: { loaded: false },
+    yearly: { loaded: false },
+  };
+
+/**
+ * Seed plugin state for a single period. Pass `{ loaded: true, folder,
+ * format, template? }` to simulate Daily Notes (or the daily slot of
+ * Periodic Notes) being enabled with those settings. Use the default
+ * "all off" state for fallback-path tests.
+ */
+export function setMockPeriodicNotesPlugin(
+  period: MockPeriodType,
+  settings: MockPeriodicNoteSettings,
+): void {
+  _mockPeriodicNotesState[period] = { ...settings };
+}
+
+export function resetMockPeriodicNotes(): void {
+  for (const k of Object.keys(_mockPeriodicNotesState) as MockPeriodType[]) {
+    _mockPeriodicNotesState[k] = { loaded: false };
+  }
+}
+
+function _defaultFormat(period: MockPeriodType): string {
+  switch (period) {
+    case "daily":
+      return "YYYY-MM-DD";
+    case "weekly":
+      return "gggg-[W]ww";
+    case "monthly":
+      return "YYYY-MM";
+    case "quarterly":
+      return "YYYY-[Q]Q";
+    case "yearly":
+      return "YYYY";
+  }
+}
+
+function _createPeriodicNote(period: MockPeriodType, date: unknown): unknown {
+  const s = _mockPeriodicNotesState[period];
+  const fmt = s.format ?? _defaultFormat(period);
+  // `date` is a Moment instance; use real `.format()` via duck-type.
+  const formatted = (date as { format: (fmt: string) => string }).format(fmt);
+  const filename = `${formatted}.md`;
+  const folder = s.folder ?? "";
+  const path = folder ? `${folder}/${filename}` : filename;
+  if (folder && !_mockState.folders.has(folder)) {
+    _mockState.folders.add(folder);
+  }
+  _mockState.files.set(path, s.template ?? "");
+  return fileFromPath(path);
+}
+
+void mock.module("obsidian-daily-notes-interface", () => ({
+  appHasDailyNotesPluginLoaded: (): boolean =>
+    _mockPeriodicNotesState.daily.loaded,
+  appHasWeeklyNotesPluginLoaded: (): boolean =>
+    _mockPeriodicNotesState.weekly.loaded,
+  appHasMonthlyNotesPluginLoaded: (): boolean =>
+    _mockPeriodicNotesState.monthly.loaded,
+  appHasQuarterlyNotesPluginLoaded: (): boolean =>
+    _mockPeriodicNotesState.quarterly.loaded,
+  appHasYearlyNotesPluginLoaded: (): boolean =>
+    _mockPeriodicNotesState.yearly.loaded,
+  getDailyNoteSettings: () => ({ ..._mockPeriodicNotesState.daily }),
+  getWeeklyNoteSettings: () => ({ ..._mockPeriodicNotesState.weekly }),
+  getMonthlyNoteSettings: () => ({ ..._mockPeriodicNotesState.monthly }),
+  getQuarterlyNoteSettings: () => ({ ..._mockPeriodicNotesState.quarterly }),
+  getYearlyNoteSettings: () => ({ ..._mockPeriodicNotesState.yearly }),
+  createDailyNote: async (date: unknown) => _createPeriodicNote("daily", date),
+  createWeeklyNote: async (date: unknown) => _createPeriodicNote("weekly", date),
+  createMonthlyNote: async (date: unknown) =>
+    _createPeriodicNote("monthly", date),
+  createQuarterlyNote: async (date: unknown) =>
+    _createPeriodicNote("quarterly", date),
+  createYearlyNote: async (date: unknown) => _createPeriodicNote("yearly", date),
 }));
 
 // === Phase 2 mock vault state for tool tests ===
@@ -369,6 +492,7 @@ export function resetMockVault(): void {
   _mockState.deletedPaths = [];
   _mockState.modifyFailPaths.clear();
   _mockState.readMutations.clear();
+  resetMockPeriodicNotes();
 }
 
 /** Make `vault.modify(file)` reject for `path` (rename_heading #143 M2). */
