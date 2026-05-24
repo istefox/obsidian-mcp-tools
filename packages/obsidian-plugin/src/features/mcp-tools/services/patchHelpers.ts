@@ -59,6 +59,28 @@ export function resolveHeadingPath(
 }
 
 /**
+ * Find the first line that is a heading (`#`–`######` followed by a space and
+ * text) whose trimmed text equals `leafHeading`. Returns the 0-based line
+ * index and the heading level (count of leading `#`), or `null` if absent.
+ *
+ * Shared by `patch_vault_file` and `append_to_periodic_note` so both locate a
+ * leaf heading identically. The level is the `#{1,6}` capture length, which
+ * for any line that matches equals a separate `/^(#+)/` count.
+ */
+export function findLeafHeadingLine(
+  lines: string[],
+  leafHeading: string,
+): { line: number; level: number } | null {
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+)$/);
+    if (m && m[2].trim() === leafHeading) {
+      return { line: i, level: m[1].length };
+    }
+  }
+  return null;
+}
+
+/**
  * Ensure appended content ends with whitespace so the next section in the
  * document remains visually separated. markdown-patch does not insert any
  * separation on its own, so `**bold**` appended under a heading would
@@ -659,16 +681,9 @@ export async function applyPatch(
     // Find the heading line by comparing the full path.
     const targetParts = resolvedTarget.split(targetDelimiter);
     const leafHeading = targetParts[targetParts.length - 1];
-    let headingLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(#{1,6})\s+(.+)$/);
-      if (m && m[2].trim() === leafHeading) {
-        headingLine = i;
-        break;
-      }
-    }
+    const found = findLeafHeadingLine(lines, leafHeading);
 
-    if (headingLine === -1) {
+    if (found === null) {
       // Heading not found — respect createTargetIfMissing.
       if (!createIfMissing) {
         return {
@@ -684,9 +699,10 @@ export async function applyPatch(
       return { content: [{ type: "text", text: "File patched successfully" }] };
     }
 
+    const { line: headingLine, level: headingLevel } = found;
+
     // Find the end of this heading's section: the next heading of same or
     // higher level (lower number means higher in hierarchy), or EOF.
-    const headingLevel = lines[headingLine].match(/^(#+)/)?.[1].length ?? 1;
 
     // 0.3.9 #16 parity: reject root-orphan H2+ when createTargetIfMissing=false
     // (legacy LRA enforced this via markdown-patch's indexer; the 0.4.0
