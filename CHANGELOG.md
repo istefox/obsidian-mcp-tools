@@ -5,22 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
-### Fixed
+## [0.6.0] — 2026-05-24
 
-- **`rename_heading`: wikilink alias tokenizer split on the last `|`
-  instead of the first.** `rewriteBacklinker` parsed
-  `[[note#A|B|C]]` as heading `A|B` / alias `C` rather than heading
-  `A` / alias `B|C`, so a backlinker reference with a piped alias
-  could be skipped on rename (lost link integrity). Obsidian's
-  wikilink grammar treats the first `|` as the alias separator;
-  `lastIndexOf("|")` → `indexOf("|")` aligns the tokenizer with it.
-  A heading whose text literally contains `|` is unaddressable by
-  wikilink and is only reachable via a markdown link (handled
-  correctly already — the md-link branch keeps the post-`#` fragment
-  literal). The prior edge-case-#7 test asserted the buggy behaviour;
-  it is corrected and joined by fixtures for `[[note#A|B|C]]`, a
-  `|`-named heading skipped via wikilink, and a `|`-named heading
-  rewritten via markdown link. (#158)
 ### Added
 
 - **Atomic frontmatter property tools (4).** `get_note_property`,
@@ -68,6 +54,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   imports. No behaviour change — template execution and smart search
   run through the in-process MCP path (`executeTemplate` /
   `templatesCompat`, `search_vault_smart`).
+
+### Fixed
+
+- **`rename_heading`: wikilink alias tokenizer split on the last `|`
+  instead of the first.** `rewriteBacklinker` parsed
+  `[[note#A|B|C]]` as heading `A|B` / alias `C` rather than heading
+  `A` / alias `B|C`, so a backlinker reference with a piped alias
+  could be skipped on rename (lost link integrity). Obsidian's
+  wikilink grammar treats the first `|` as the alias separator;
+  `lastIndexOf("|")` → `indexOf("|")` aligns the tokenizer with it.
+  A heading whose text literally contains `|` is unaddressable by
+  wikilink and is only reachable via a markdown link (handled
+  correctly already — the md-link branch keeps the post-`#` fragment
+  literal). The prior edge-case-#7 test asserted the buggy behaviour;
+  it is corrected and joined by fixtures for `[[note#A|B|C]]`, a
+  `|`-named heading skipped via wikilink, and a `|`-named heading
+  rewritten via markdown link. (#158)
 
 ### Continuous integration
 
