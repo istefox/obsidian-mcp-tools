@@ -123,6 +123,18 @@ import {
   getOutgoingLinksSchema,
 } from "./tools/getOutgoingLinks";
 import { getBacklinksHandler, getBacklinksSchema } from "./tools/getBacklinks";
+import {
+  getOrCreateDailyNoteHandler,
+  getOrCreateDailyNoteSchema,
+} from "./tools/getOrCreateDailyNote";
+import {
+  getOrCreatePeriodicNoteHandler,
+  getOrCreatePeriodicNoteSchema,
+} from "./tools/getOrCreatePeriodicNote";
+import {
+  appendToPeriodicNoteHandler,
+  appendToPeriodicNoteSchema,
+} from "./tools/appendToPeriodicNote";
 
 export type RegisterToolsContext = {
   app: App;
@@ -270,6 +282,19 @@ export async function registerTools(
       app: ctx.app,
       plugin: ctx.plugin,
     }),
+  );
+
+  // Periodic notes
+  registry.register(getOrCreateDailyNoteSchema, async ({ arguments: args }) =>
+    getOrCreateDailyNoteHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(
+    getOrCreatePeriodicNoteSchema,
+    async ({ arguments: args }) =>
+      getOrCreatePeriodicNoteHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(appendToPeriodicNoteSchema, async ({ arguments: args }) =>
+    appendToPeriodicNoteHandler({ arguments: args, app: ctx.app }),
   );
 
   // Misc

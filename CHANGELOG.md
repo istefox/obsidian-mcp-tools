@@ -32,6 +32,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   `set_note_property` auto-inits a missing block and treats `value:null`
   as delete; `list_property_values` is scale-safe
   (`limit`/`truncated`/`totalDistinct`). Tool count 30 → 34. (ADR-0001)
+- **Periodic notes tools (3).** `get_or_create_daily_note(date?)`,
+  `get_or_create_periodic_note(period, date?)`, and
+  `append_to_periodic_note(period?='daily', content, date?, underHeading?)`
+  give one-call access to daily / weekly / monthly / quarterly / yearly
+  notes without the agent having to know the user's folder layout or
+  date format. When the Daily Notes core plugin or the community
+  Periodic Notes plugin is enabled, creation delegates to the plugin's
+  API (via `obsidian-daily-notes-interface`) so the configured template
+  + `{{date}}` / `{{title}}` interpolations run; otherwise the note is
+  created as an empty file at the ISO path under the vault root.
+  `append_to_periodic_note` reuses the `patch_vault_file` heading walker
+  for `underHeading`, with strict `errorCode: "heading_not_found"` and
+  **no rollback** of an auto-created file (the file's existence is the
+  right end state — add the heading via `patch_vault_file` and retry).
+  Structured writes compose: get the resolved path, then
+  `set_note_property` or `patch_vault_file` — there is no dedicated
+  `patch_periodic_note` (ADR-0002 Alternatives #7–#8, raised in #160).
+  Path / existence / creation centralised in
+  `services/periodicNotesDetector.ts` (`resolvePeriodicNote(app, period,
+  date?) → {path, exists, create()}`) so future periodic-aware tools
+  reuse the same seam. Per-period ISO date validation
+  (`errorCode: "invalid_date_for_period"` on shape or value mismatch).
+  `obsidian-daily-notes-interface` promoted from transitive (via LRA)
+  to direct dependency of `packages/obsidian-plugin`. Tool count
+  34 → 37. (ADR-0002, #160)
 
 ### Removed
 

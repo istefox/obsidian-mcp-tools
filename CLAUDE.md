@@ -8,7 +8,7 @@ Guidance for Claude Code (and similar AI agents) working in this repository.
 
 One shipped component on the 0.4.x line:
 
-1. **Obsidian plugin** — hosts an in-process HTTP MCP server (port 27200 default), writes `claude_desktop_config.json`, exposes all 34 MCP tools and prompts over streamable-HTTP. No separate binary. Semantic search via native Transformers.js (no Smart Connections dependency).
+1. **Obsidian plugin** — hosts an in-process HTTP MCP server (port 27200 default), writes `claude_desktop_config.json`, exposes all 37 MCP tools and prompts over streamable-HTTP. No separate binary. Semantic search via native Transformers.js (no Smart Connections dependency).
 
 Why operations go through Obsidian APIs rather than reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the plugin invoke other Obsidian plugins (Templater, Dataview) through their APIs.
 
@@ -149,7 +149,7 @@ Rules:
 
 Capabilities declared: **`tools`** and **`prompts`**. No MCP resources are exposed.
 
-### Tools (34 total, 0.4.x)
+### Tools (37 total, 0.4.x)
 
 **Vault file management** — `packages/obsidian-plugin/src/features/mcp-tools/tools/`:
 
@@ -187,6 +187,14 @@ Capabilities declared: **`tools`** and **`prompts`**. No MCP resources are expos
 | Tool | Purpose |
 |---|---|
 | `execute_template` | Execute a Templater template with dynamic arguments, optionally creating a new file at `targetPath`. Arguments are validated dynamically from the template's parameter syntax. |
+
+**Periodic notes** — `features/mcp-tools/tools/` + `services/periodicNotesDetector.ts` (Module C, ADR-0002):
+
+| Tool | Purpose |
+|---|---|
+| `get_or_create_daily_note` | Read today's daily note (or one at a passed `YYYY-MM-DD`), creating it if missing. Daily Notes / Periodic Notes plugin API runs the user's template when enabled; ISO+root fallback otherwise. |
+| `get_or_create_periodic_note` | Same shape for `period: "daily"\|"weekly"\|"monthly"\|"quarterly"\|"yearly"`, with period-specific ISO date format. |
+| `append_to_periodic_note` | One-call append (EOF or `underHeading`) on any period, defaulting to daily. Auto-creates the note if missing; reuses the `patch_vault_file` heading walker; strict `heading_not_found` with no rollback. |
 
 **Web fetch** — `features/fetch/index.ts`:
 
