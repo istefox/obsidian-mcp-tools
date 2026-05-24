@@ -9,6 +9,7 @@ import {
 } from "$/features/mcp-tools/services/periodicNotesDetector";
 import {
   findHeadingSectionEnd,
+  findLeafHeadingLine,
   normalizeAppendBody,
   resolveHeadingPath,
 } from "$/features/mcp-tools/services/patchHelpers";
@@ -100,18 +101,9 @@ export async function appendToPeriodicNoteHandler(
     const targetParts = resolvedTarget.split(HEADING_DELIMITER);
     const leafHeading = targetParts[targetParts.length - 1];
 
-    let headingLine = -1;
-    let headingLevel = 1;
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(/^(#{1,6})\s+(.+)$/);
-      if (m && m[2].trim() === leafHeading) {
-        headingLine = i;
-        headingLevel = m[1].length;
-        break;
-      }
-    }
+    const found = findLeafHeadingLine(lines, leafHeading);
 
-    if (headingLine === -1) {
+    if (found === null) {
       // Strict-by-default: do NOT silently fall back to EOF, do NOT
       // rollback an auto-created file (the file's existence is the
       // right end state regardless of this single append — see ADR-0002
@@ -128,6 +120,7 @@ export async function appendToPeriodicNoteHandler(
       );
     }
 
+    const { line: headingLine, level: headingLevel } = found;
     const sectionEnd = findHeadingSectionEnd(lines, headingLine, headingLevel);
     const newLines = [
       ...lines.slice(0, sectionEnd),

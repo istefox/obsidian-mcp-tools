@@ -377,6 +377,92 @@ describe("headingRename — rewriteBacklinker fenced-code guard (#143 C2)", () =
   });
 });
 
+describe("headingRename — rewriteBacklinker embeds & degenerate links", () => {
+  // Embeds `![[…]]` are wikilinks with a leading `!`. The wikilink regex
+  // matches the `[[…]]` span and leaves the `!` untouched, so an embed of a
+  // renamed heading must follow the rename exactly like a plain wikilink.
+  test("rewrites an embed `![[note#heading]]`, preserving the leading `!`", () => {
+    const r = rewriteBacklinker(
+      "Transclude: ![[source#Old]] below.",
+      "Old",
+      "New",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Transclude: ![[source#New]] below.");
+    expect(r.rewriteCount).toBe(1);
+  });
+
+  test("rewrites a same-file section embed `![[#heading]]`", () => {
+    const r = rewriteBacklinker(
+      "Inline: ![[#Old]] here.",
+      "Old",
+      "New",
+      "source.md",
+      "source.md", // empty notePart resolves to the backlinker (self) itself
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Inline: ![[#New]] here.");
+    expect(r.rewriteCount).toBe(1);
+  });
+
+  test("rewrites an embed targeting a subheading-path leaf", () => {
+    const r = rewriteBacklinker(
+      "Transclude: ![[source#Parent > Old]] below.",
+      "Old",
+      "New",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Transclude: ![[source#Parent > New]] below.");
+    expect(r.rewriteCount).toBe(1);
+  });
+
+  test("does NOT rewrite an embed pointing at a different note", () => {
+    const r = rewriteBacklinker(
+      "Transclude: ![[other#Old]] below.",
+      "Old",
+      "New",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Transclude: ![[other#Old]] below.");
+    expect(r.rewriteCount).toBe(0);
+  });
+
+  // Degenerate alias shapes: per the first-`|` tokenizer (#158), everything
+  // after the first `|` is the alias and is preserved verbatim — including a
+  // leading `|` (double-pipe) or an empty alias (trailing `|`).
+  test("degenerate double-pipe `[[note#A||C]]` — heading=`A`, alias `|C` preserved", () => {
+    const r = rewriteBacklinker(
+      "Look at [[source#A||C]] here.",
+      "A",
+      "Z",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Look at [[source#Z||C]] here.");
+    expect(r.rewriteCount).toBe(1);
+  });
+
+  test("degenerate empty alias `[[note#Old|]]` — trailing pipe preserved", () => {
+    const r = rewriteBacklinker(
+      "Look at [[source#Old|]] here.",
+      "Old",
+      "New",
+      "source.md",
+      "back.md",
+      resolveBasic,
+    );
+    expect(r.newText).toBe("Look at [[source#New|]] here.");
+    expect(r.rewriteCount).toBe(1);
+  });
+});
+
 describe("headingRename — rewriteSourceHeadingLine level fallback (#143 H2)", () => {
   test("H2: regex-miss fallback uses the known level, not hardcoded H1", () => {
     // `##Old` (no space after the hashes) does not match the heading-line
