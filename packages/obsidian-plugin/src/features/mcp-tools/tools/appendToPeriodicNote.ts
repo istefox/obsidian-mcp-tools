@@ -48,12 +48,7 @@ export async function appendToPeriodicNoteHandler(
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 }> {
-  const {
-    period = "daily",
-    content,
-    date,
-    underHeading,
-  } = ctx.arguments;
+  const { period = "daily", content, date, underHeading } = ctx.arguments;
 
   if (date !== undefined) {
     if (!DATE_REGEX_BY_PERIOD[period].test(date)) {
@@ -175,11 +170,7 @@ function errorPayload(
     content: [
       {
         type: "text",
-        text: JSON.stringify(
-          { error: message, errorCode, ...extras },
-          null,
-          2,
-        ),
+        text: JSON.stringify({ error: message, errorCode, ...extras }, null, 2),
       },
     ],
     isError: true,

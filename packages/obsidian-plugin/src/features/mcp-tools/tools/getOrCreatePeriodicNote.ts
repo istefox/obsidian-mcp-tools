@@ -18,7 +18,7 @@ export const getOrCreatePeriodicNoteSchema = type({
     ),
   },
 }).describe(
-  'Reads the periodic note for the given `period` (and optional `date`), creating it if missing. Returns `{path, content, created}`. When the Daily Notes core plugin or the community Periodic Notes plugin covers the period, the note is created via the plugin\'s API so the configured template + interpolations run; otherwise it is created as an empty file at the ISO path under the vault root. **Structured writes to the resolved note** (set a frontmatter field, replace under a heading, edit a block) compose: get the path, then `set_note_property` (Module D) or `patch_vault_file` — there is no dedicated `patch_periodic_note` (ADR-0002 Alt #7).',
+  "Reads the periodic note for the given `period` (and optional `date`), creating it if missing. Returns `{path, content, created}`. When the Daily Notes core plugin or the community Periodic Notes plugin covers the period, the note is created via the plugin's API so the configured template + interpolations run; otherwise it is created as an empty file at the ISO path under the vault root. **Structured writes to the resolved note** (set a frontmatter field, replace under a heading, edit a block) compose: get the path, then `set_note_property` (Module D) or `patch_vault_file` — there is no dedicated `patch_periodic_note` (ADR-0002 Alt #7).",
 );
 
 export type GetOrCreatePeriodicNoteContext = {

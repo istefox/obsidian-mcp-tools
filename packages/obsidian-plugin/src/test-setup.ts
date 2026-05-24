@@ -280,14 +280,16 @@ export interface MockPeriodicNoteSettings {
   template?: string;
 }
 
-const _mockPeriodicNotesState: Record<MockPeriodType, MockPeriodicNoteSettings> =
-  {
-    daily: { loaded: false },
-    weekly: { loaded: false },
-    monthly: { loaded: false },
-    quarterly: { loaded: false },
-    yearly: { loaded: false },
-  };
+const _mockPeriodicNotesState: Record<
+  MockPeriodType,
+  MockPeriodicNoteSettings
+> = {
+  daily: { loaded: false },
+  weekly: { loaded: false },
+  monthly: { loaded: false },
+  quarterly: { loaded: false },
+  yearly: { loaded: false },
+};
 
 /**
  * Seed plugin state for a single period. Pass `{ loaded: true, folder,
@@ -355,12 +357,14 @@ void mock.module("obsidian-daily-notes-interface", () => ({
   getQuarterlyNoteSettings: () => ({ ..._mockPeriodicNotesState.quarterly }),
   getYearlyNoteSettings: () => ({ ..._mockPeriodicNotesState.yearly }),
   createDailyNote: async (date: unknown) => _createPeriodicNote("daily", date),
-  createWeeklyNote: async (date: unknown) => _createPeriodicNote("weekly", date),
+  createWeeklyNote: async (date: unknown) =>
+    _createPeriodicNote("weekly", date),
   createMonthlyNote: async (date: unknown) =>
     _createPeriodicNote("monthly", date),
   createQuarterlyNote: async (date: unknown) =>
     _createPeriodicNote("quarterly", date),
-  createYearlyNote: async (date: unknown) => _createPeriodicNote("yearly", date),
+  createYearlyNote: async (date: unknown) =>
+    _createPeriodicNote("yearly", date),
 }));
 
 // === Phase 2 mock vault state for tool tests ===
