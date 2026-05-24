@@ -57,7 +57,13 @@ jobs:
         with:
           generate_release_notes: true
           draft: false
-          prerelease: false
+          # Pre-release tags carry a SemVer suffix with a hyphen
+          # (`0.7.0-beta.1`, `-rc.1`, `-alpha.2`). Mark those prerelease
+          # so GitHub does NOT move `/releases/latest` to them — otherwise
+          # the community store + BRAT-default users would pull an
+          # unfinished beta as "latest". Stable tags (`0.6.0`) have no
+          # hyphen, so prerelease resolves to false.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
