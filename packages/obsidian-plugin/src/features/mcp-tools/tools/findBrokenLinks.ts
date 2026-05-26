@@ -74,8 +74,7 @@ export async function findBrokenLinksHandler(
       const entry: BrokenLinkEntry = {
         source_path: file.path,
         // frontmatterLinks have no position; use 0 as sentinel.
-        line_number:
-          raw.position != null ? raw.position.start.line + 1 : 0,
+        line_number: raw.position != null ? raw.position.start.line + 1 : 0,
         link_target: raw.link,
         link_type: kind,
         original: raw.original,
