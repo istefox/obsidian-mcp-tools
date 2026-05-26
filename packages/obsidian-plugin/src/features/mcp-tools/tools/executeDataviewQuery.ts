@@ -121,7 +121,9 @@ export async function executeDataviewQueryHandler(
     // so the caller sees exactly what Dataview rejected. DQL validation is
     // Dataview's job, not ours. Use String() in case the real plugin returns
     // an Error object rather than a plain string.
-    return errorPayload(String(result.error), "dataview_query_failed", { query });
+    return errorPayload(String(result.error), "dataview_query_failed", {
+      query,
+    });
   }
 
   // Dataview can return rich objects (Link, DateTime, TFile) that contain
