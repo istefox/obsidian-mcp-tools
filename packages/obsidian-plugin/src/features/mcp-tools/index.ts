@@ -139,6 +139,26 @@ import {
   executeDataviewQueryHandler,
   executeDataviewQuerySchema,
 } from "./tools/executeDataviewQuery";
+import {
+  findBrokenLinksHandler,
+  findBrokenLinksSchema,
+} from "./tools/findBrokenLinks";
+import {
+  findOrphanedNotesHandler,
+  findOrphanedNotesSchema,
+} from "./tools/findOrphanedNotes";
+import {
+  searchAndReplaceHandler,
+  searchAndReplaceSchema,
+} from "./tools/searchAndReplace";
+import {
+  getNoteOutlineHandler,
+  getNoteOutlineSchema,
+} from "./tools/getNoteOutline";
+import {
+  listBookmarksHandler,
+  listBookmarksSchema,
+} from "./tools/listBookmarks";
 
 export type RegisterToolsContext = {
   app: App;
@@ -255,6 +275,23 @@ export async function registerTools(
   );
   registry.register(getBacklinksSchema, async ({ arguments: args }) =>
     getBacklinksHandler({ arguments: args, app: ctx.app }),
+  );
+
+  // Vault intelligence
+  registry.register(findBrokenLinksSchema, async ({ arguments: args }) =>
+    findBrokenLinksHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(findOrphanedNotesSchema, async ({ arguments: args }) =>
+    findOrphanedNotesHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(searchAndReplaceSchema, async ({ arguments: args }) =>
+    searchAndReplaceHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(getNoteOutlineSchema, async ({ arguments: args }) =>
+    getNoteOutlineHandler({ arguments: args, app: ctx.app }),
+  );
+  registry.register(listBookmarksSchema, async ({ arguments: args }) =>
+    listBookmarksHandler({ arguments: args, app: ctx.app }),
   );
 
   // Search

@@ -451,6 +451,30 @@ export function resetMockDataview(): void {
   _mockDataview.calls = [];
 }
 
+// === Mock for Obsidian core Bookmarks plugin (ADR-0004) ===================
+// list_bookmarks reads app.internalPlugins.plugins.bookmarks at call time.
+// Tests seed via setMockBookmarksState(...). Default: disabled.
+
+type MockBookmarkItem = Record<string, unknown>;
+
+const _mockBookmarks = {
+  enabled: false,
+  items: [] as MockBookmarkItem[],
+};
+
+export function setMockBookmarksState(state: {
+  enabled: boolean;
+  items?: MockBookmarkItem[];
+}): void {
+  _mockBookmarks.enabled = state.enabled;
+  _mockBookmarks.items = state.items ?? [];
+}
+
+export function resetMockBookmarks(): void {
+  _mockBookmarks.enabled = false;
+  _mockBookmarks.items = [];
+}
+
 // === Phase 2 mock vault state for tool tests ===
 
 type MockVaultState = {
@@ -582,6 +606,7 @@ export function resetMockVault(): void {
   _mockState.readMutations.clear();
   resetMockPeriodicNotes();
   resetMockDataview();
+  resetMockBookmarks();
 }
 
 /** Make `vault.modify(file)` reject for `path` (rename_heading #143 M2). */
@@ -1136,6 +1161,25 @@ export function mockApp(): App {
     },
   };
 
+  // Core-plugin registry surface (`app.internalPlugins.plugins[id]`). The
+  // bookmarks slot is backed by `_mockBookmarks` so tests can seed it via
+  // `setMockBookmarksState(...)` (ADR-0004). Additional core plugins can be
+  // added to the Proxy the same way.
+  const internalPlugins = {
+    plugins: {
+      bookmarks: {
+        get enabled() {
+          return _mockBookmarks.enabled;
+        },
+        get instance() {
+          return _mockBookmarks.enabled
+            ? { items: _mockBookmarks.items }
+            : undefined;
+        },
+      },
+    },
+  };
+
   // Community-plugin registry surface (`app.plugins.plugins[id]`). Synthesised
   // from `_mockDataview.state` at read time so tests can switch state mid-run
   // without re-creating the App. Only the `dataview` slot is wired today —
@@ -1178,6 +1222,7 @@ export function mockApp(): App {
     fileManager,
     commands,
     plugins,
+    internalPlugins,
   } as unknown as App;
 }
 

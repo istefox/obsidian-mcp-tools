@@ -8,7 +8,7 @@ Guidance for Claude Code (and similar AI agents) working in this repository.
 
 One shipped component on the 0.4.x line:
 
-1. **Obsidian plugin** — hosts an in-process HTTP MCP server (port 27200 default), writes `claude_desktop_config.json`, exposes all 38 MCP tools and prompts over streamable-HTTP. No separate binary. Semantic search via native Transformers.js (no Smart Connections dependency).
+1. **Obsidian plugin** — hosts an in-process HTTP MCP server (port 27200 default), writes `claude_desktop_config.json`, exposes all 43 MCP tools and prompts over streamable-HTTP. No separate binary. Semantic search via native Transformers.js (no Smart Connections dependency).
 
 Why operations go through Obsidian APIs rather than reading `.md` files directly: it preserves Obsidian's metadata cache, respects file locks on open notes, and lets the plugin invoke other Obsidian plugins (Templater, Dataview) through their APIs.
 
@@ -149,7 +149,7 @@ Rules:
 
 Capabilities declared: **`tools`** and **`prompts`**. No MCP resources are exposed.
 
-### Tools (38 total, 0.4.x)
+### Tools (43 total, 0.4.x)
 
 **Vault file management** — `packages/obsidian-plugin/src/features/mcp-tools/tools/`:
 
@@ -176,6 +176,16 @@ Capabilities declared: **`tools`** and **`prompts`**. No MCP resources are expos
 | `search_vault` | Search via Dataview DQL or JsonLogic query (LRA-coupled — kept for backward compatibility). |
 | `execute_dataview_query` | Run a Dataview DQL query in-process via the plugin API; returns the native typed result (`{type:"table"\|"list"\|"task"\|"calendar", …}`). No LRA required. Three-state detection (`dataview_not_installed` / `dataview_not_ready` / query-failed). Prefer over `search_vault`'s DQL for new workflows. |
 | `search_vault_simple` | Plain text search with context window. |
+
+**Vault intelligence** — `features/mcp-tools/tools/` (Module E, ADR-0004):
+
+| Tool | Purpose |
+|---|---|
+| `find_broken_links` | Vault-wide broken-link scan (wiki, markdown, embed, frontmatter). Per-link: source, line, type, original syntax. |
+| `find_orphaned_notes` | Notes with zero incoming resolved links. Exclude folders configurable; links from excluded folders still count as references. |
+| `search_and_replace` | Regex find-and-replace across vault or scoped paths. `dry_run:"true"` (default) previews without writing. |
+| `get_note_outline` | Heading TOC for a single note: level, text, 1-based line, anchor slug. |
+| `list_bookmarks` | Native Obsidian bookmark hierarchy (file, folder, search, heading, block, group). |
 
 **Semantic search** — `features/semantic-search/` (native Transformers.js MiniLM embedder, WASM CDN-pinned, in-process — no Smart Connections required):
 
@@ -422,3 +432,18 @@ Implicit single-point responses to multi-point offers read as engagement loss �
 - [Model Context Protocol spec](https://modelcontextprotocol.io) — for boolean/schema shape gotchas.
 - [Obsidian Local REST API plugin](https://github.com/coddingtonbear/obsidian-local-rest-api) — the HTTPS bridge this server depends on.
 - [Local REST API OpenAPI reference](https://coddingtonbear.github.io/obsidian-local-rest-api/) — especially `PATCH /vault/{filename}`, whose header-based request format is hard to generate correctly.
+
+## Decisioni dal chain Modulo E - Vault intelligence
+
+ADR: `docs/architecture/ADR-0004-vault-intelligence-tools.md` — tool count 38 → 43.
+
+Five new tools registered under a `// Vault intelligence` block in `mcp-tools/index.ts`:
+`find_broken_links`, `find_orphaned_notes`, `search_and_replace`, `get_note_outline`, `list_bookmarks`.
+
+**Key decisions to carry forward:**
+
+- **`search_and_replace` default `dry_run: "true"`** — the only vault-scale write tool in the suite; the default is the safety gate. Do not flip it without an ADR. The `"g"` flag is always injected if absent (silent first-match-only footgun otherwise); surfaced as `flags_used` in the response.
+- **`find_orphaned_notes` exclusion semantics** — `exclude_folders` filters the *output* (which notes are reported), not the link graph. Links from excluded folders still count as incoming. The same note is always either orphaned or not, regardless of which exclusion list is passed.
+- **`list_bookmarks` uses `app.internalPlugins`**, not `app.plugins.plugins`. Bookmarks is a core plugin. Community plugin path returns `undefined` for it. Access pattern: `(app.internalPlugins as unknown as { plugins: { bookmarks?: … } }).plugins.bookmarks` — same `unknown` cast pattern as `listTags` / `getRecentFiles`.
+- **`find_broken_links` uses per-file cache**, not `unresolvedLinks` map — required for line numbers and link-type context. `frontmatterLinks` have no position field; emit `line_number: 0` as sentinel (documented in `.describe()`).
+- **`mockApp()` in `test-setup.ts` needs an `internalPlugins` slot** — additive extension, no existing test affected. See ADR-0004 for the mock shape.
