@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-26
+
 ### Added
 
 - **Vault Intelligence tools (5, Module E).** `find_broken_links`,
