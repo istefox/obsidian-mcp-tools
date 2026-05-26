@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **Vault Intelligence tools (5, Module E).** `find_broken_links`,
+  `find_orphaned_notes`, `search_and_replace`, `get_note_outline`, and
+  `list_bookmarks` add vault graph maintenance, bulk editing with a safe
+  dry-run gate, heading navigation, and access to native Obsidian bookmarks.
+  All tools use Obsidian's metadata cache (no direct file system access).
+  Tool count 38 → 43. (ADR-0004)
+
 ## [0.7.0] — 2026-05-26
 
 ### Added

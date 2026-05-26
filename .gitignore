@@ -198,3 +198,7 @@ tmp/
 
 # Local strategy / private notes & session scaffolding (never in the public repo)
 handoff*.md
+.claude/.triage-fix-last-*.json
+.remember/
+CLAUDE.md.bak-*
+docs/superpowers/plans/
