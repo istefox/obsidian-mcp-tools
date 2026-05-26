@@ -1,7 +1,8 @@
 # ADR-0003 — `execute_dataview_query` in-process tool
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-24
+- **Accepted**: 2026-05-26 — implemented in PR #173 (marcoaperez), hardened and merged via PR #174 (`860a626`)
 - **Scope**: RFC #166 — 1 new in-process MCP tool. PR authored by an external contributor against the surface this ADR settles.
 
 ## Context
