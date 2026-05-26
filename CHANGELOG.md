@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-26
+
 ### Added
 
 - **`execute_dataview_query` — in-process Dataview DQL tool.** New tool that
@@ -26,6 +28,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
   truncated at the tool level; `.describe()` recommends in-DQL `LIMIT`.
   Tool count 37 → 38. **The LRA-coupled count stays at 1** —
   `search_vault` is the only remaining LRA-coupled tool. (ADR-0003, #166)
+
+### Fixed
+
+- **`execute_dataview_query` — hardened against runtime exceptions.** Wrapped
+  `plugin.api.query()` and `JSON.stringify(result.value)` in try/catch so
+  internal Dataview throws (broken index, torn-down plugin) and non-serialisable
+  results (circular `Link`/`DateTime`/`TFile` objects) return a structured
+  `{ isError: true, errorCode: "dataview_query_failed" }` instead of an
+  unhandled rejection. `String()` coercion on `result.error` guards against
+  the real plugin returning an `Error` object instead of a plain string. (#174)
+
+- **`set_note_property` — arrays sent as JSON-encoded strings are now coerced
+  to native YAML lists.** LLM clients (including Claude) sometimes serialize
+  array values as JSON-encoded strings (`'["a","b","c"]'`) instead of native
+  JSON arrays when constructing tool calls. The handler now detects and unwraps
+  homogeneous `string[]` or `number[]` values before passing them to
+  `processFrontMatter`, so `tags: '["a","b","c"]'` no longer appears in
+  frontmatter — you get the proper YAML list instead. Mixed-type arrays and
+  plain bracket strings are left unchanged. (#176)
 
 ## [0.6.0] — 2026-05-24
 
