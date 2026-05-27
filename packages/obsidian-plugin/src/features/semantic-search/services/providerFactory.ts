@@ -27,6 +27,19 @@ import type { Embedder } from "./embedder";
 import type { EmbeddingStore } from "./store";
 import type { EmbeddingStoreRegistry } from "./storeRegistry";
 
+/**
+ * Canonical list of all known provider keys. Used by main.ts to scan
+ * for stale per-provider index directories without hard-coding a
+ * separate array.
+ */
+export const ALL_PROVIDER_KEYS = [
+  "native-minilm-l6-v2",
+  "embedding-gemma-300m",
+  "multilingual-e5-base",
+] as const;
+
+export type ProviderKey = (typeof ALL_PROVIDER_KEYS)[number];
+
 export type ProviderFactoryDeps = {
   plugin: McpToolsPlugin;
   embedder: Embedder;

@@ -1,4 +1,4 @@
-# BRAINSTORM — Multilingual embedding providers for search_vault_smart
+# BRAINSTORM — Transformers.js v4 upgrade + ONNX IR v10 compatibility fix
 
 **Data:** 2026-05-27
 **Fonte requisiti:** SPEC.md at `/Users/stefanoferri/Developer/Obsidian_MCP/obsidian-mcp-tools/SPEC.md`
@@ -8,78 +8,68 @@
 
 ## Problema riformulato (first-principles)
 
-Il risultato irriducibile è **trovare note pertinenti in qualsiasi lingua, senza dipendenze cloud, con continuità operativa durante l'aggiornamento del modello**. Il vettore denso è uno strumento, non il fine; il modello locale è un vincolo fisso (dato non lascia il dispositivo). La dimensionalità e il provider specifico sono dettagli tecnici subordinati a questo obiettivo.
+Il risultato irriducibile è **EmbeddingGemma 300M deve caricare e produrre embedding validi dentro Obsidian, senza dipendenze cloud**. L'errore IR v10 è un sintomo; la causa è che il runtime ONNX è fermo a IR ≤ v8. La soluzione è aggiornare il runtime — non il modello. Qualsiasi altra strada (esportazione alternativa del modello, shim IR, downgrade del modello) è un workaround che non risolve la causa strutturale e accumula debito tecnico.
 
 ---
 
 ## Assunzioni sfidate
 
-- **768 dimensioni fisse** — esito: **aperta** — Matryoshka permette di servire 256/384/512/768d dallo stesso modello; il trade-off qualità/storage/latenza va esplorato nell'ADR. Non è un requisito fisico, è una scelta conservativa.
-- **Re-index totale al cambio provider** — esito: **confermata** — spazi vettoriali di provider diversi sono incompatibili; non ha senso mixarli. Il DLC pattern non evita il rebuild, ma può renderlo non-bloccante (native rimane attivo durante la build).
-- **Selezione provider sempre esplicita** — esito: **sfidabile** — l'utente vuole un `auto`-mode esteso che rilevi la lingua dominante della vault e scelga il provider ottimale senza richiedere selezione manuale.
+- **IR v10 richiede obbligatoriamente @huggingface/transformers v4** — esito: **da verificare** — potrebbe esistere un export del modello in IR ≤ v8 su HuggingFace (Task 0 del piano: verifica prima di scrivere codice). Se esiste, il fix diventa un aggiornamento di model-ID senza cambio di dipendenza. Improbabile ma non impossibile.
+- **v4 funziona nell'Obsidian Electron loader** — esito: **da verificare** — CLAUDE.md documenta che un test passato ha rotto il loader per `import.meta.url`. Il rischio è reale; il piano lo gestisce con un Task 1 spike prima di qualsiasi altra implementazione. Se fallisce, il fallback è Bug 2+3 null-guards senza upgrade.
+- **FORMAT_VERSION bump deve essere silenzioso** — esito: **sfidabile** — l'utente potrebbe non aspettarsi che l'aggiornamento cancelli il suo indice Gemma. La migrazione dovrebbe mostrare un dialog esplicito (non solo un banner) prima del wipe, specialmente se l'indice ha richiesto ore di build.
+- **WebGPU è stabile su tutti i desktop Obsidian** — esito: **da verificare** — alcuni driver GPU causano crash silenzioso nelle sessioni ONNX WebGPU. Il fallback automatico a WASM deve essere robusto (try/catch sulla sessione, non solo sulla detection di `navigator.gpu`).
 
 ---
 
 ## Alternative di approccio
 
-### Alternativa A — SPEC fedele + DLC UX
+### Alternativa A — Model-ID hunt first
 
-- **Idea:** Implementa la SPEC esattamente (EmbeddingProvider interface, native refactored, EmbeddingGemma + e5-base, chunker upgrade, migration path) ma adotta il pattern DLC per l'UX: la ricerca native rimane attiva durante il download del modello e la build dell'indice. Il nuovo provider si attiva solo quando il suo indice è pronto. Nessun blackout.
-- **Asse di differenza:** dati + UX (store per-providerKey, nessun momento in cui la ricerca è completamente disabilitata)
-- **Pro:** scope preciso, nessuna deviazione dalla SPEC concordata; DLC UX riduce la friction senza aumentare la complessità architetturale
-- **Contro:** bundle largo (EmbeddingGemma 190 MB + e5-base ~100 MB); tre provider da mantenere; PR potenzialmente grande
-- **Costo/tempo indicativo:** alto
+- **Idea:** Prima di toccare dipendenze, verificare se esiste un export di EmbeddingGemma 300M con ONNX IR ≤ v8 su HuggingFace (namespace diverso, versione più vecchia del modello). Se esiste, il fix è solo un aggiornamento di model-ID in una riga. Se non esiste, si passa ad Alt C.
+- **Asse di differenza:** deployment (zero cambio di dipendenza vs. aggiornamento pesante del runtime)
+- **Pro:** zero rischio di rompere il loader; nessun FORMAT_VERSION bump necessario; ore di lavoro risparmiate se l'export esiste
+- **Contro:** l'export probabilmente non esiste (Gemma 300M è stato esportato direttamente in IR v10); se non esiste, il tempo speso nella ricerca è overhead; posticipa la soluzione strutturale
+- **Costo/tempo indicativo:** basso (ma solo come primo check; non come alternativa finale)
 
-### Alternativa B — e5-base MVP multilingue
+### Alternativa B — Two-PR: runtime fix first, WebGPU second
 
-- **Idea:** Implementa l'EmbeddingProvider interface e aggiunge solo `multilingual-e5-base` come provider multilingue (MIT, ~100 MB, 512 context). EmbeddingGemma deferred. Chunker upgrade incluso.
-- **Asse di differenza:** deployment (meno download, meno complessità ONNX, feature parziale ma funzionante prima)
-- **Pro:** download dimezzato (~100 MB vs 190 MB); meno surface ONNX da gestire; rilascio più rapido; e5-base è già ben supportato da transformers.js
-- **Contro:** nessuna vault a 2K context; qualità inferiore su query lunghe; EmbeddingGemma richiede un secondo ciclo
-- **Costo/tempo indicativo:** medio
+- **Idea:** PR 1 si occupa solo dell'upgrade di runtime (`@xenova` → `@huggingface/transformers` v4, `onnxruntime-web` ≥ 1.20, model-ID verify, FORMAT_VERSION 2→3, migration guard) con device forzato a WASM. PR 2 aggiunge WebGPU auto-detect come feature separata, dopo validazione.
+- **Asse di differenza:** temporalità (disaccoppia fix critico da feature nuova)
+- **Pro:** blast radius minimo per PR 1 (solo runtime, nessuna nuova logica dispositivo); WebGPU va in produzione solo dopo testing dedicato su hardware reale; separazione netta di responsabilità
+- **Contro:** due cicli di review e due merge; WebGPU rimane assente finché PR 2 non è pronta; utente dovrà re-fare il PR review process
+- **Costo/tempo indicativo:** medio (due PR medie invece di una grande)
 
-### Alternativa C — Interface-first, models deferred
+### Alternativa C — Single-PR con spike obbligatorio come Task 1
 
-- **Idea:** PR 1: EmbeddingProvider interface + migration path (flat → per-providerKey) + chunker upgrade. PR 2 (follow-up): aggiunta dei due provider multilingue. La suite test coprì l'esistente prima di toccare la logica di embedding.
-- **Asse di differenza:** temporalità (disaccoppia refactor strutturale dall'aggiunta di nuove dipendenze pesanti)
-- **Pro:** massimizza la copertura test sul path native prima del rischio di regressione; ogni PR è più piccola e reviewable; il refactor strutturale è prezioso anche senza i nuovi modelli
-- **Contro:** due cicli separati; la feature "multilingue" non è utilizzabile fino alla PR 2; richiede disciplina per non riaprire la PR 1
-- **Costo/tempo indicativo:** medio (ma distribuito)
-
-### Alternativa D — Auto-detect esteso + DLC (ibrido A + auto)
-
-- **Idea:** Come A, ma il provider `"auto"` viene esteso con language detection sulla vault (campionamento di note, rilevamento lingua dominante). Se il vault è prevalentemente non-inglese e EmbeddingGemma è disponibile, auto seleziona il provider ottimale con un banner di suggerimento. La selezione esplicita resta sempre possibile.
-- **Asse di differenza:** confini di responsabilità (il sistema assume decisione di selezione, non l'utente)
-- **Pro:** UX zero-config per la maggior parte degli utenti multilingue; coerente con la logica già presente in `"auto"` per SC vs native
-- **Contro:** language detection aggiunge complessità e un possibile punto di errore; "auto che scarica 190 MB silenziosamente" è un rischio UX se non comunicato chiaramente
-- **Costo/tempo indicativo:** alto
+- **Idea:** Un'unica PR che include tutto (runtime upgrade, WebGPU auto-detect, FORMAT_VERSION bump, migration). Ma Task 1 è uno spike esplicito: verifica la compatibilità con il loader Obsidian PRIMA di implementare qualsiasi altra cosa. Se lo spike fallisce, la PR si ferma e produce solo i null-guards di Bug 2+3. Se passa, l'implementazione completa prosegue.
+- **Asse di differenza:** temporalità + confini (decision gate embedded nel piano, non nella struttura PR)
+- **Pro:** un solo ciclo di review; WebGPU incluso fin dall'inizio; il gate di compatibilità è esplicito nel piano e bloccante; meno contesto da riaprire in una seconda PR
+- **Contro:** se lo spike rivela problemi parziali (es. WebGPU OK ma threading problematico), la PR diventa più complessa da ritagliare; rischio che il reviewer veda una PR grande
+- **Costo/tempo indicativo:** medio-alto (una PR, ma potenzialmente ampia)
 
 ---
 
 ## Rischi emersi (inversione / pre-mortem)
 
-- **Setup friction** (modello troppo pesante) → l'utente avvia il download di 190 MB, aspetta 30 minuti, e abbandona il setup. Mitigazione: DLC pattern (native resta attivo), stima visibile di dimensione e tempo prima del click, possibilità di usare e5-base come alternativa più leggera.
-- **Regressioni sul path native** → il refactor del chunker o della store introduce un bug silenzioso nella ricerca inglese per chi non cambia mai provider. Mitigazione: test suite completa sul path native prima di toccare qualsiasi shared code; chunker upgrade come step separato e verificato indipendentemente.
-- **Complessità di manutenzione esplosa** → tre provider, due index path, migration code, chunker nuovo: ogni PR tocca tutto e i test non coprono l'integrazione. Mitigazione: `TransformersProvider` base class condivisa; indici per-providerKey isolati (un bug in Gemma non corrompe native); integration test per il migration path.
+- **FORMAT_VERSION wipe silenzioso** → l'utente ha appena finito di re-indicizzare 5000 note con Gemma (2 ore di lavoro) e l'aggiornamento cancella l'indice senza avvisarlo chiaramente. Mitigazione: dialog esplicito prima del wipe (non solo banner in background), con stima del tempo di re-index basata sulla dimensione del vault.
+- **WebGPU crash su driver instabili** → `navigator.gpu` è disponibile ma la sessione ONNX crasha silenziosamente a metà inference, producendo embedding corrotti o parziali. Mitigazione: il fallback WASM deve scattare su errore di sessione, non solo su assenza di `navigator.gpu`; test con un modello piccolo prima di caricare Gemma 300M.
+- **Bundle size growth inatteso** → `@huggingface/transformers` v4 porta WASM workers, threading, e backend aggiuntivi che gonfiano il bundle. Mitigazione: audit del bundle post-build; `external` declarations in `bun.config.ts` aggiornate se necessario; smoke test su Obsidian reale, non solo su `bun build`.
+- **import.meta.url non risolto in v4** → Task 1 spike fallisce: il loader Obsidian non riesce a caricare il plugin. Mitigazione: piano di fallback documentato nella SPEC (Bug 2+3 null-guards); lo spike deve fallire esplicitamente con un errore chiaro, non silenziosamente.
 
 ---
 
 ## Idee adiacenti emerse
 
-- **Ricerca ibrida vettori + BM25** — batterebbe il puro vettoriale su query corte; architetturalmente richiederebbe un layer di fusion score non previsto. [future]
-- **Matryoshka dim configurabile** (slider 256/512/768d in settings per EmbeddingGemma) — il modello lo supporta nativamente; dimensioni ridotte = indice ~2x più piccolo + ricerca più veloce, con leggera perdita di qualità. [future — da annotare come opzione nell'ADR senza implementare]
-- **Bundle e5-base nel plugin** (nessun download, +~100 MB sul plugin scaricato) — non praticabile: l'Obsidian store ha limiti di dimensione del plugin e i 100 MB a freddo penalizzano tutti gli utenti anche quelli che non usano la feature. [esplicitamente esclusa]
+- **Lazy DLC per Gemma** — invece di scaricare il modello al primo avvio, mostrare un banner "Gemma disponibile" e scaricare solo su click esplicito dell'utente. Risolverebbe il problema setup-friction (190 MB a freddo). [future — non nel scope di questo upgrade]
+- **Matryoshka dim configurabile per Gemma** — il modello supporta 256/384/512/768d nativamente; esporre come slider nelle settings riduce storage e latenza con piccola perdita di qualità. [future — annotare nell'ADR come opzione]
 
 ---
 
 ## Raccomandazione preliminare
 
-**Alternativa A** (SPEC fedele) è la scelta più solida, con due integrazioni dal brainstorm che non aumentano il costo ma riducono i rischi:
+**Ibrido B+C**: struttura single-PR (un solo ciclo di review) ma con Task 1 spike bloccante come da Alt C, e WebGPU incluso ma validato post-session da folotp prima del merge come da Alt B. In pratica: piano in 6-8 task, Task 1 è il compatibilità-spike (se fallisce → fallback; se passa → tutto il resto), Task finale è la validazione su vault reale.
 
-1. **DLC UX**: la ricerca native rimane attiva durante il download e il rebuild — nessun blackout. Questo elimina il rischio setup friction senza aggiungere complessità architetturale.
-2. **Auto-mode esteso** (Alternativa D semplificata): `"auto"` suggerisce EmbeddingGemma via banner se rileva contenuto non-inglese, ma non scarica nulla senza consenso esplicito. Language detection superficiale (campione di note, heuristica su caratteri non-ASCII).
-
-Se il team vuole ridurre il rischio di regressione e il tempo al primo rilascio, **Alternativa C** (interface-first) è la seconda scelta: il refactor strutturale è prezioso da solo e permette di verificare l'esistente prima di aggiungere i nuovi modelli pesanti.
+Task 0 (model-ID hunt, ~30 minuti) va eseguito prima del dispatch del coder, come check rapido: se un export IR ≤ v8 esiste, l'intera catena viene bypassata.
 
 **Dichiarata come raccomandazione preliminare**: da validare dall'architect.
 
@@ -87,8 +77,7 @@ Se il team vuole ridurre il rischio di regressione e il tempo al primo rilascio,
 
 ## Note per l'architect
 
-- **Matryoshka dim**: valutare se esporre dim come parametro dell'`EmbeddingProvider` interface (es. `readonly dimensions: number`) in modo che un futuro provider possa dichiarare dimensioni variabili, senza implementare il configuratore ora. Annotare come `future` nell'ADR.
-- **DLC UX e stato store**: il provider attivo nelle settings può divergere dall'indice disponibile. L'architect deve chiarire quale è la source of truth durante il rebuild e come gestire query concorrenti al vecchio indice mentre il nuovo si costruisce.
-- **Language detection per auto-mode**: la detection può essere lazy (sul primo accesso alle note) o eager (al caricamento del plugin). L'eager detection può rallentare il plugin load su vault grandi. Valutare soglia o campionamento.
-- **Migration path testing**: il migration test (flat `embeddings/` → `embeddings/native-minilm-l6-v2/`) va coperto con un integration test che usa un filesystem reale (non mock) — la logica coinvolge path-join e rename, difficile da testare in isolamento.
-- **Requisiti nuovi da riportare in SPEC**: l'auto-mode esteso con language detection non è esplicitamente in SPEC; se si adotta, aggiungere un paragrafo al comportamento di `"auto"`.
+- **Task 0 pre-spike**: verificare l'esistenza di un export IR ≤ v8 di EmbeddingGemma 300M su HuggingFace prima di scrivere codice. Se trovato, l'upgrade di runtime diventa opzionale — l'ADR deve documentare questa verifica e il suo esito.
+- **FORMAT_VERSION bump**: l'ADR deve specificare esattamente quando scatta il dialog di conferma wipe — al plugin load, al primo utilizzo di search, o su provider-switch. Il comportamento attuale (banner in background) è insufficiente per un wipe distruttivo.
+- **WebGPU fallback granularity**: il fallback non deve scattare solo su `!navigator.gpu` ma su qualsiasi errore di inizializzazione sessione. L'ADR deve specificare quale errore è recuperabile (retry WASM) e quale è terminale (log + disable provider).
+- **Requisiti nuovi da riportare in SPEC**: il dialog esplicito pre-wipe non è esplicitamente nella SPEC attuale; se si adotta, aggiungere un edge case con il comportamento atteso.

@@ -14,8 +14,8 @@
  *    is dropped 60s after the last call (RAM saver for memory-
  *    constrained users). The next call cold-reloads.
  *
- * Production code injects `realPipelineFactory` (dynamic import of
- * `@xenova/transformers`) so Transformers.js is not pulled into the
+ * Production code injects `realPipelineFactory` (static import of
+ * `@huggingface/transformers`) so Transformers.js is not pulled into the
  * bundle eager-side. Tests inject a deterministic mock factory: no
  * model download, no WASM, no sharp transitive resolution.
  */
@@ -193,14 +193,14 @@ export function createEmbedder(opts: EmbedderOpts): Embedder {
 // our text-only path). `onnxruntime-node` is REDIRECTED to
 // `onnxruntime-web` at bundle time — see bun.config.ts for the rationale
 // (Electron renderer reports `process.release.name === 'node'`, so
-// Transformers.js v2.17.2 picks the node branch; routing it to the WASM
-// runtime is the only way to actually run inference here).
+// Transformers.js picks the node branch; routing it to the WASM runtime
+// is the only way to actually run inference here).
 //
-// Pinned to @xenova/transformers v2.17.2. The successor
-// @huggingface/transformers v4 was tested 2026-04-26 in a spike; it
-// uses `import.meta.url` at runtime which Obsidian's eval-based plugin
-// loader cannot parse. Reverting to v2 keeps the plugin loadable.
-import { pipeline as _xenovaPipeline } from "@xenova/transformers";
+// @huggingface/transformers v4.2.0 — upgraded from @xenova/transformers
+// v2.17.2. Spike (2026-04-26) found import.meta.url failures; a later
+// re-spike confirmed v4 loads cleanly with the bun.config.ts define block
+// already in place (import.meta.url + __dirname/__filename neutralized).
+import { pipeline as _hfPipeline } from "@huggingface/transformers";
 import { configureEnv } from "./onnxEnv";
 
 export async function realPipelineFactory(
@@ -208,8 +208,8 @@ export async function realPipelineFactory(
   onProgress?: ProgressCallback,
 ): Promise<PipelineFn> {
   configureEnv();
-  const pipe = await _xenovaPipeline("feature-extraction", model, {
+  const pipe = await _hfPipeline("feature-extraction", model, {
     progress_callback: onProgress,
-  } as Parameters<typeof _xenovaPipeline>[2]);
+  } as Parameters<typeof _hfPipeline>[2]);
   return pipe as unknown as PipelineFn;
 }

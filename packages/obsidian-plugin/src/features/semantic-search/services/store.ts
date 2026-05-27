@@ -6,7 +6,7 @@
  *   per chunk, dimensions implicit from the model (default 384 for
  *   MiniLM-L6-v2). Vectors are written contiguously; the JSON index
  *   carries the byteOffset/byteLength to slice them back out.
- * - `<dir>/embeddings.index.json` — `{ version: 1, records: [...] }`.
+ * - `<dir>/embeddings.index.json` — `{ version: 3, records: [...] }`.
  *   Each record maps a chunkId to its `(filePath, offset, heading,
  *   contentHash, byteOffset, byteLength)`. Bumping `version` triggers
  *   a clean re-index on next `init()` (logged warning, no error).
@@ -65,7 +65,7 @@ export type EmbeddingStoreOpts = {
   vectorDim?: number;
 };
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 const DEFAULT_VECTOR_DIM = 384;
 
 type IndexRecord = {
@@ -136,7 +136,10 @@ class EmbeddingStoreImpl implements EmbeddingStore {
       return;
     }
 
-    if (parsed.version !== FORMAT_VERSION && parsed.version !== 1) {
+    // v1 is intentionally not grandfathered: all v1 stores were migrated
+    // to v2 by migrateV1FlatStore; any remaining v1 index is stale and
+    // is treated as a version mismatch (triggers re-index).
+    if (parsed.version !== FORMAT_VERSION) {
       logger.warn("embedding index format version mismatch, re-indexing", {
         expected: FORMAT_VERSION,
         found: parsed.version,
@@ -196,10 +199,7 @@ class EmbeddingStoreImpl implements EmbeddingStore {
     }
 
     this.initialized = true;
-    // v1 index: records are valid but version marker is stale —
-    // mark dirty so the next flush upgrades the index to v2.
-    // If any record was also skipped, that further requires a flush.
-    this.dirty = skippedAny || parsed.version === 1;
+    this.dirty = skippedAny;
   }
 
   size(): number {
@@ -315,6 +315,7 @@ class EmbeddingStoreImpl implements EmbeddingStore {
   async close(): Promise<void> {
     await this.flush();
     this.records.clear();
+    this.dirty = false;
     this.initialized = false;
   }
 }

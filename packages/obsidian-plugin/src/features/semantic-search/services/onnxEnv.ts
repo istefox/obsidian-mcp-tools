@@ -12,14 +12,12 @@
  *   import.meta.url))`. Bun's CJS bundle does not preserve
  *   `import.meta.url` meaningfully, so the loader 404s. Pointing at
  *   the matching CDN sidesteps the `import.meta.url` dance. Pinned to
- *   1.14.0 to match @xenova/transformers@2.17.2; updating the lib
- *   requires updating this URL or the WASM ABI may not match the JS
- *   glue.
+ *   the version bundled with @huggingface/transformers@4.2.0; updating
+ *   the lib requires updating this URL or the WASM ABI may not match
+ *   the JS glue.
  * * `env.backends.onnx.wasm.numThreads = 1`: Electron's renderer does
  *   not have COOP/COEP cross-origin isolation, so SharedArrayBuffer is
  *   restricted. Single-threaded WASM avoids the worker spin-up path.
- * * `env.allowLocalModels = false`: always use the remote (Hugging
- *   Face Hub) so the lazy first-call download flow drives the UI.
  * * `env.useBrowserCache = true`: persist the downloaded model to the
  *   Cache API so subsequent loads are fast.
  */
@@ -27,30 +25,43 @@
 // Static import required: Obsidian's eval-based plugin loader cannot
 // resolve node_modules at runtime; a bundled require() works, a
 // dynamic `import(...)` would 404.
-import { env as _xenovaEnv } from "@xenova/transformers";
+import { env as _hfEnv } from "@huggingface/transformers";
+import { logger } from "$/shared/logger";
 
+// Pre-release dev build bundled with @huggingface/transformers@4.2.0; required for ONNX IR v10 support. Stable target: onnxruntime-web ≥ 1.20.
 const ORT_WASM_PATHS =
-  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/";
+  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/";
 
 let _envConfigured = false;
 
 export function configureEnv(): void {
   if (_envConfigured) return;
   _envConfigured = true;
-  const e = _xenovaEnv as unknown as {
+
+  const e = _hfEnv as unknown as {
     backends?: {
       onnx?: {
         wasm?: { numThreads?: number; simd?: boolean; wasmPaths?: string };
       };
     };
-    allowLocalModels?: boolean;
     useBrowserCache?: boolean;
   };
+
   if (e.backends?.onnx?.wasm) {
     e.backends.onnx.wasm.wasmPaths = ORT_WASM_PATHS;
     e.backends.onnx.wasm.numThreads = 1;
-    e.backends.onnx.wasm.simd = true;
+    // simd: leave unset — onnxruntime-web auto-detects SIMD capability.
+    // Forcing true causes silent load failures on older Electron builds
+    // (pre-22) and in enterprise lockdown environments.
+  } else {
+    logger.warn(
+      "onnxEnv: expected WASM backend shape not found — CDN paths not configured",
+    );
   }
-  e.allowLocalModels = false;
-  e.useBrowserCache = true;
+  // Guard: `navigator` is undefined in bun test (no DOM); Cache API is a production-only concern.
+  if (typeof navigator !== "undefined") {
+    e.useBrowserCache = true;
+  }
+
+  // WebGPU: deferred — requires requestAdapter() + pipeline call wiring.
 }

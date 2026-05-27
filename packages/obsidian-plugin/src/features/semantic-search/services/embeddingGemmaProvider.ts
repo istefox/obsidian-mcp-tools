@@ -1,3 +1,4 @@
+// Model: onnx-community/embeddinggemma-300m-ONNX (ONNX IR v10; requires onnxruntime-web ≥ 1.20 / the dev build pinned in onnxEnv.ts).
 import type { EmbeddingProvider } from "../types";
 import type { PipelineFactory } from "./embedder";
 import { createTransformersProvider } from "./transformersProvider";

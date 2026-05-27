@@ -208,6 +208,14 @@ describe("embedding store", () => {
     });
     await store.init();
     expect(store.size()).toBe(0);
+    // Flush on empty store should produce a zero-records bin artifact.
+    await store.flush();
+    const emptyWritten = JSON.parse(
+      mem.files.get("/p/embeddings.index.json") ?? "{}",
+    );
+    expect(emptyWritten.records).toHaveLength(0);
+    const emptyBin = mem.bins.get("/p/embeddings.bin");
+    expect(emptyBin !== undefined ? emptyBin.byteLength : 0).toBe(0);
     // Subsequent upsert + flush should overwrite with the current version.
     await store.upsert([makeRecord({ chunkId: "a:0" })]);
     await store.flush();
@@ -307,7 +315,7 @@ describe("embedding store", () => {
     expect(written.records).toHaveLength(0);
   });
 
-  test("FORMAT_VERSION 2 round-trip: flushed index carries version 2", async () => {
+  test("FORMAT_VERSION 3 round-trip: flushed index carries version 3", async () => {
     const opts = {
       adapter: mem.adapter,
       binPath: "/p/embeddings.bin",
@@ -322,17 +330,19 @@ describe("embedding store", () => {
       mem.files.get("/p/embeddings.index.json") ?? "{}",
     );
     expect(written.version).toBe(FORMAT_VERSION);
-    expect(FORMAT_VERSION).toBe(2);
+    expect(FORMAT_VERSION).toBe(3);
   });
 
-  test("v1 index readable without re-index; dirty=true upgrades to v2 on flush", async () => {
+  test("v1 index treated as stale (version mismatch); re-init from scratch", async () => {
     const opts = {
       adapter: mem.adapter,
       binPath: "/p/embeddings.bin",
       indexPath: "/p/embeddings.index.json",
       vectorDim: DIM,
     };
-    // Craft a v1 index with one record.
+    // v1 indexes are no longer grandfathered: migrateV1FlatStore handles
+    // the path-rename migration (v1→v2); any remaining v1 on-disk index
+    // is treated as stale and wiped on next init().
     const v1Vec = makeVector(3);
     const bin = new Float32Array(DIM);
     bin.set(v1Vec, 0);
@@ -357,18 +367,15 @@ describe("embedding store", () => {
 
     const store = createEmbeddingStore(opts);
     await store.init();
-    // Records must be loaded (not discarded).
-    expect(store.size()).toBe(1);
-    const seen: EmbeddingRecord[] = [];
-    for await (const r of store.scan()) seen.push(r);
-    expect(seen[0]?.chunkId).toBe("legacy:0");
-    // Flush should write a version-2 index.
+    // Version mismatch → re-init from scratch, no records loaded.
+    expect(store.size()).toBe(0);
+    // Flush should write a FORMAT_VERSION index with no records.
     await store.flush();
     const written = JSON.parse(
       mem.files.get("/p/embeddings.index.json") ?? "{}",
     );
     expect(written.version).toBe(FORMAT_VERSION);
-    expect(written.records).toHaveLength(1);
+    expect(written.records).toHaveLength(0);
   });
 
   test("bin shorter than a record's byteOffset+byteLength: skip that record, keep valid ones, no throw", async () => {

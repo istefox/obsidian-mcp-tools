@@ -101,9 +101,45 @@ void mock.module("obsidian", () => {
    * `close()` triggering `onClose()` exactly once even when called
    * multiple times, so we track that with a flag.
    */
+  /**
+   * Minimal stub for an Obsidian DOM element created by `contentEl.createEl`.
+   * Records the tag, text, and every event listener attached via
+   * `addEventListener` so tests can inspect what was rendered and
+   * simulate clicks without a real browser DOM.
+   */
+  class MockEl {
+    readonly tag: string;
+    readonly text: string;
+    readonly listeners: Map<string, () => void> = new Map();
+    constructor(tag: string, opts?: { text?: string }) {
+      this.tag = tag;
+      this.text = opts?.text ?? "";
+    }
+    addEventListener(event: string, handler: () => void) {
+      this.listeners.set(event, handler);
+    }
+  }
+
+  /**
+   * Stub of Obsidian's `contentEl` container. Supports `createEl` (which
+   * Obsidian injects on every HTMLElement at runtime) and `empty`. Created
+   * elements accumulate in `_created` so tests can query them by tag.
+   */
+  class MockContentEl {
+    readonly _created: MockEl[] = [];
+    createEl(tag: string, opts?: { text?: string }): MockEl {
+      const el = new MockEl(tag, opts);
+      this._created.push(el);
+      return el;
+    }
+    empty() {
+      this._created.length = 0;
+    }
+  }
+
   class Modal {
     app: unknown;
-    contentEl: { empty: () => void } = { empty: () => {} };
+    contentEl: MockContentEl = new MockContentEl();
     private _closed = false;
     constructor(app: unknown) {
       this.app = app;

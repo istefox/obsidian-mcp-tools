@@ -35,6 +35,10 @@ import {
   createEmbedder,
   realPipelineFactory,
 } from "./features/semantic-search/services/embedder";
+import {
+  ALL_PROVIDER_KEYS,
+  type ProviderKey,
+} from "./features/semantic-search/services/providerFactory";
 import { createNativeEmbeddingProvider } from "./features/semantic-search/services/nativeEmbeddingProvider";
 import {
   createEmbeddingStoreRegistry,
@@ -44,6 +48,8 @@ import { createEmbeddingGemmaProvider } from "./features/semantic-search/service
 import { createMultilingualE5Provider } from "./features/semantic-search/services/multilingualE5Provider";
 import { detectNonAsciiRatio } from "./features/semantic-search/services/langDetect";
 import type { VaultAdapter } from "./features/semantic-search/services/store";
+import { FORMAT_VERSION } from "./features/semantic-search/services/store";
+import { IndexWipeMigrationModal } from "./features/semantic-search/services/indexWipeMigrationModal";
 import {
   createLiveIndexer,
   createLowPowerIndexer,
@@ -388,6 +394,57 @@ export default class McpToolsPlugin extends Plugin {
 
       // Migrate v1 flat store before constructing any registry entry.
       await migrateV1FlatStore(ssAdapter, pluginDir);
+
+      // Detect stale per-providerKey stores (version < FORMAT_VERSION).
+      // If any exist, show a blocking dialog before wiping them.
+      const embeddingsBaseDir = `${pluginDir}/embeddings`;
+      const staleProviderKeys: ProviderKey[] = [];
+      for (const key of ALL_PROVIDER_KEYS) {
+        const indexPath = `${embeddingsBaseDir}/${key}/embeddings.index.json`;
+        try {
+          if (await ssAdapter.exists(indexPath)) {
+            const text = await ssAdapter.read(indexPath);
+            const parsed = JSON.parse(text) as { version?: number };
+            if (
+              typeof parsed.version === "number" &&
+              parsed.version < FORMAT_VERSION
+            ) {
+              staleProviderKeys.push(key);
+            }
+          }
+        } catch {
+          // Unreadable index is already handled by store.init(); skip here.
+        }
+      }
+
+      if (staleProviderKeys.length > 0) {
+        await new Promise<void>((resolve) => {
+          const modal = new IndexWipeMigrationModal({
+            app: this.app,
+            onConfirm: resolve,
+            onCancel: resolve,
+          });
+          modal.open();
+        });
+        for (const key of staleProviderKeys) {
+          const dirPath = `${embeddingsBaseDir}/${key}`;
+          try {
+            await ssAdapter.remove(`${dirPath}/embeddings.bin`);
+            await ssAdapter.remove(`${dirPath}/embeddings.index.json`);
+            await ssAdapter
+              .remove(`${dirPath}/embeddings.index.json.writing`)
+              .catch(() => {});
+          } catch (err) {
+            logger.warn(
+              "semantic-search: failed to wipe stale index directory",
+              {
+                dir: dirPath,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            );
+          }
+        }
+      }
 
       const registry = createEmbeddingStoreRegistry(
         ssAdapter,

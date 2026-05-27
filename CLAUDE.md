@@ -489,3 +489,17 @@ ADR: `docs/architecture/ADR-0006-mcp-prompts-in-process.md`
 - **`PromptFrontmatterSchema` richiede `tags` come array** — `metadataCache.frontmatter.tags` può essere una stringa scalare YAML (`tags: mcp-tools-prompt`). Aggiungere coercizione in `promptDiscovery.ts` prima della validazione ArkType.
 - **Discovery usa `app.vault.getMarkdownFiles()` + `metadataCache`** — non HTTP calls a Local REST API. Flat directory (`Prompts/` root only, no subfolders). File senza tag `mcp-tools-prompt` esclusi silenziosamente.
 - **Nota**: la sezione "### Prompts" sopra descrive il comportamento 0.3.x (Templater + `/templates/execute`). Aggiornare quella sezione nella stessa PR che shippa ADR-0006.
+
+## Decisioni dal chain transformersjs-v4-upgrade-onnx-ir10-fix
+
+ADR: `docs/architecture/ADR-0007-transformersjs-v4-upgrade-onnx-ir10-fix.md`
+
+**Key decisions to carry forward:**
+
+- **Task 0 + Task 1 sono gate bloccanti** — prima di toccare qualsiasi codice, Task 0 verifica se esiste un export ONNX IR ≤ v8 di EmbeddingGemma 300M su HuggingFace (se sì, fix = solo model-ID); Task 1 spike verifica la compatibilità di `@huggingface/transformers` v4 con il loader Electron di Obsidian (bun bundler). Se Task 1 fallisce, il fallback è null-guards su Bug 2+3 senza upgrade runtime.
+- **`@xenova/transformers` → `@huggingface/transformers` v4** — package rename stabile da v3; `onnxruntime-web` ≥ 1.20 è il requisito minimo per supportare ONNX IR v10. Il redirect `onnxruntime-node → onnxruntime-web` in `bun.config.ts` resta necessario (Electron renderer espone `process.release.name === 'node'`); verificare se ancora richiesto dopo l'upgrade.
+- **`FORMAT_VERSION` 2 → 3: `IndexWipeMigrationModal` obbligatoria** — a differenza di v1→v2 (path rename, nessuna perdita dati), v2→v3 distrugge l'indice esistente. Prima del wipe deve apparire un `Modal` bloccante (`IndexWipeMigrationModal`, ~30 righe, pattern `CommandPermissionModal`) con un unico bottone "Rebuild now". Nessun dismiss silenzioso.
+- **`store.test.ts` line 325: literal `toBe(2)` va aggiornato a `toBe(3)`** — unico punto nel test suite che asserisce il valore letterale di `FORMAT_VERSION` anziché usare la costante esportata. Tutti gli altri test già referenziano `FORMAT_VERSION` per nome e rimangono validi dopo il bump.
+- **WebGPU fallback a livello di session-init** — il fallback a WASM non scatta solo su `!navigator.gpu` ma su qualsiasi errore durante l'inizializzazione della sessione ONNX (driver crash, `requestAdapter()` failure). Try/catch sull'intero probe; log WARN; graceful degradation a WASM.
+- **`onnxruntime-web` CDN URL in `onnxEnv.ts`** — aggiornare il path CDN dalla versione 1.14.0 pinned alla versione installata con v4 (verificare con `bun pm ls onnxruntime-web` post-install).
+- **Spike fallback documentato** — se Task 1 fallisce, l'errore esatto del loader va annotato in un commento inline in cima a `embedder.ts` per il prossimo tentativo di upgrade.
