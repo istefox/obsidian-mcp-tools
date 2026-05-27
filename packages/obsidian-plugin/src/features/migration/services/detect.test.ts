@@ -208,6 +208,37 @@ describe("detectLegacyInstall", () => {
     expect(state.hasLegacyClaudeConfigEntry).toBe(false);
   });
 
+  test("Claude config has 0.4.0 entry with absolute npx path → hasLegacyClaudeConfigEntry=false", async () => {
+    // Regression: when npx is at an absolute path (e.g. /opt/homebrew/bin/npx)
+    // the entry is still 0.4.0-shape and must NOT be flagged as legacy.
+    const configPath = path.join(tmpRoot, "claude_desktop_config.json");
+    await fsp.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          "mcp-tools-istefox": {
+            command: "/opt/homebrew/bin/npx",
+            args: [
+              "-y",
+              "mcp-remote",
+              "http://127.0.0.1:27200/mcp",
+              "--header",
+              "Authorization: Bearer xxx",
+            ],
+          },
+        },
+      }),
+    );
+
+    const state = await detectLegacyInstall({
+      pluginData: {},
+      claudeConfigPath: configPath,
+      binaryInstallDirOverride: path.join(tmpRoot, "nope"),
+    });
+
+    expect(state.hasLegacyClaudeConfigEntry).toBe(false);
+  });
+
   test("Claude config has the entry with command=npx but args missing mcp-remote → still legacy", async () => {
     // Defensive: someone hand-edited the config to use npx but for an
     // entirely different package. We must not silently treat that as

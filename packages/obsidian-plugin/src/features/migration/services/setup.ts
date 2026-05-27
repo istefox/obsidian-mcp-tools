@@ -208,7 +208,7 @@ const LINGERING_NOTICE_MS = 8000;
 function emitLingeringLegacyNotice(state: LegacyInstallState): void {
   const which = lingeringSignalDescription(state);
   new Notice(
-    `MCP Connector: legacy 0.3.x state still detected (${which}). Re-run the migration check from Settings → Migration from 0.3.x.`,
+    `MCP Connector: legacy 0.3.x state still detected (${which}). Disable and re-enable the plugin to run the migration wizard.`,
     LINGERING_NOTICE_MS,
   );
   logger.info("migration: legacy state persists after dismissal", {
