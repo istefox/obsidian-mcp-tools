@@ -24,6 +24,7 @@ import {
 } from "./services/indexer";
 import { createNativeProvider } from "./services/nativeProvider";
 import type { Embedder } from "./services/embedder";
+import { createNativeEmbeddingProvider } from "./services/nativeEmbeddingProvider";
 
 const VOCAB = [
   "apple",
@@ -105,6 +106,7 @@ function memVaultAdapter(): VaultAdapter {
       f.delete(p);
       b.delete(p);
     },
+    async mkdir() {},
   };
 }
 
@@ -174,7 +176,7 @@ describe("Phase 3 end-to-end integration", () => {
     const indexer = createLiveIndexer({
       vault,
       chunker: integrationChunker,
-      embedder,
+      embedder: createNativeEmbeddingProvider(embedder),
       store,
       debounceMs: 30,
     });
@@ -215,7 +217,7 @@ describe("Phase 3 end-to-end integration", () => {
     const indexer = createLiveIndexer({
       vault,
       chunker: integrationChunker,
-      embedder,
+      embedder: createNativeEmbeddingProvider(embedder),
       store,
       debounceMs: 30,
     });
@@ -265,7 +267,7 @@ describe("Phase 3 end-to-end integration", () => {
     const indexer = createLiveIndexer({
       vault,
       chunker: integrationChunker,
-      embedder,
+      embedder: createNativeEmbeddingProvider(embedder),
       store,
       debounceMs: 30,
     });
@@ -305,7 +307,7 @@ describe("Phase 3 end-to-end integration", () => {
     const indexer1 = createLiveIndexer({
       vault,
       chunker: integrationChunker,
-      embedder,
+      embedder: createNativeEmbeddingProvider(embedder),
       store: store1,
       debounceMs: 30,
     });

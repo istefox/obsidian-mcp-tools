@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { chunk, countTokens, hashChunk } from "./chunker";
+import {
+  chunk,
+  countTokens,
+  hashChunk,
+  wrapChunkerWithOverlap,
+} from "./chunker";
 
 const lorem = (words: number): string => {
   const base = "lorem ipsum dolor sit amet consectetur adipiscing elit ";
@@ -22,7 +27,7 @@ describe("chunker", () => {
     expect(chunks[0]?.contentHash).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  test("H1 + multiple H2 → one chunk per section, frontmatter merged with first", async () => {
+  test("H1 + multiple H2 → one chunk per section, small frontmatter dropped", async () => {
     const content = [
       "---",
       "tags: [research, ai]",
@@ -43,18 +48,18 @@ describe("chunker", () => {
 
     const chunks = await chunk(content);
 
+    // Frontmatter has ~5 tokens (below minTokens=20) → dropped, not merged.
     expect(chunks).toHaveLength(3);
     expect(chunks[0]?.heading).toBe("Top");
     expect(chunks[1]?.heading).toBe("Section A");
     expect(chunks[2]?.heading).toBe("Section B");
 
-    // Frontmatter merged into the first chunk only.
-    expect(chunks[0]?.text).toContain("tags: [research, ai]");
-    expect(chunks[0]?.text).toContain("title: Notes");
+    // No body chunk carries frontmatter.
+    expect(chunks[0]?.text).not.toContain("tags:");
     expect(chunks[1]?.text).not.toContain("tags:");
     expect(chunks[2]?.text).not.toContain("tags:");
 
-    // IDs ordinal across the file.
+    // IDs ordinal across body chunks.
     expect(chunks.map((c) => c.id)).toEqual(["0", "1", "2"]);
   });
 
@@ -135,11 +140,12 @@ describe("chunker", () => {
     expect(chunks).toHaveLength(0);
   });
 
-  test("frontmatter-only large enough → single chunk when no body", async () => {
+  test("frontmatter-only large enough → single #frontmatter chunk when no body", async () => {
     const fm = lorem(40);
     const content = `---\nnotes: |\n  ${fm}\n---\n`;
     const chunks = await chunk(content);
     expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks[0]?.id).toBe("#frontmatter");
     expect(chunks[0]?.text).toContain("notes:");
   });
 
@@ -162,5 +168,121 @@ describe("chunker", () => {
     expect(chunks).toHaveLength(2);
     expect(chunks[0]?.offset).toBe(0);
     expect(chunks[1]?.offset).toBeGreaterThan(0);
+  });
+
+  // New: frontmatter large enough to meet minTokens
+  test("frontmatter large enough emitted as #frontmatter chunk before body", async () => {
+    const fm = lorem(30);
+    const content = [
+      "---",
+      `notes: ${fm}`,
+      "---",
+      "# Body",
+      "",
+      lorem(30),
+    ].join("\n");
+
+    const chunks = await chunk(content);
+
+    expect(chunks[0]?.id).toBe("#frontmatter");
+    expect(chunks[0]?.heading).toBeNull();
+    expect(chunks[0]?.text).toContain("notes:");
+
+    // Body chunk does not carry frontmatter.
+    expect(chunks[1]?.id).toBe("0");
+    expect(chunks[1]?.text).not.toContain("notes:");
+
+    expect(chunks.map((c) => c.id)).toEqual(["#frontmatter", "0"]);
+  });
+
+  // New: H3 sub-split
+  test("H3 sub-split fires when H2 section exceeds maxTokens", async () => {
+    const content = [
+      "## Parent",
+      "",
+      lorem(30),
+      "",
+      "### Sub A",
+      "",
+      lorem(300),
+      "",
+      "### Sub B",
+      "",
+      lorem(300),
+    ].join("\n");
+
+    // Section ≈ 630 tokens (30 + 300 + 300 + headings) > 512 default maxTokens.
+    const chunks = await chunk(content);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks.map((c) => c.heading)).toEqual(["Parent", "Sub A", "Sub B"]);
+    // Each chunk is within the token limit.
+    for (const c of chunks) {
+      expect(countTokens(c.text)).toBeLessThanOrEqual(514);
+    }
+  });
+
+  // New: code fence atomic
+  test("oversized code fence kept as single chunk", async () => {
+    // 150 lines × ~4 tokens each ≈ 600 tokens > default maxTokens 512.
+    const codeLines = Array.from(
+      { length: 150 },
+      (_, i) => `const x${i} = ${i};`,
+    ).join("\n");
+    const content = `## Section\n\n\`\`\`typescript\n${codeLines}\n\`\`\``;
+
+    const chunks = await chunk(content, { maxTokens: 512 });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.text).toContain("```typescript");
+    expect(chunks[0]?.heading).toBe("Section");
+  });
+
+  // New: overlap wrapper
+  test("wrapChunkerWithOverlap prepends last sentence of previous chunk", async () => {
+    // Section body must exceed minTokens (20); lorem(20) + 2 sentences = ~29 tokens.
+    const content = [
+      "# First",
+      "",
+      lorem(20) + " Opening sentence. This is the final sentence.",
+      "",
+      "# Second",
+      "",
+      lorem(30),
+    ].join("\n");
+
+    const wrapped = wrapChunkerWithOverlap(chunk);
+    const chunks = await wrapped(content);
+
+    // No frontmatter — two body chunks.
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]?.id).toBe("0");
+    expect(chunks[1]?.id).toBe("1");
+    // Second chunk starts with the last sentence of the first.
+    expect(chunks[1]?.text.startsWith("This is the final sentence.")).toBe(
+      true,
+    );
+    // First chunk is unchanged.
+    expect(chunks[0]?.text.startsWith("# First")).toBe(true);
+  });
+
+  test("wrapChunkerWithOverlap: #frontmatter chunk not used as overlap source", async () => {
+    const fm = lorem(30);
+    const content = [
+      "---",
+      `notes: ${fm}`,
+      "---",
+      "# Body",
+      "",
+      lorem(30),
+    ].join("\n");
+
+    const wrapped = wrapChunkerWithOverlap(chunk);
+    const chunks = await wrapped(content);
+
+    // #frontmatter is chunks[0]; body chunk is chunks[1].
+    expect(chunks[0]?.id).toBe("#frontmatter");
+    // Body chunk should NOT have frontmatter overlap prepended.
+    expect(chunks[1]?.text.startsWith("# Body")).toBe(true);
   });
 });

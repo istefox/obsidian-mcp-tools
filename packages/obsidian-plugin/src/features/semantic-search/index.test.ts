@@ -186,6 +186,7 @@ describe("semantic-search setup — provider factory integration (T8)", () => {
         memFiles.delete(p);
         memBins.delete(p);
       },
+      async mkdir() {},
     };
     const store = createEmbeddingStore({
       adapter,
@@ -240,6 +241,7 @@ describe("semantic-search setup — provider factory integration (T8)", () => {
       async remove() {
         return undefined;
       },
+      async mkdir() {},
     };
     const store = createEmbeddingStore({
       adapter,
@@ -312,6 +314,7 @@ describe("applySettings — UI swap path (T12)", () => {
       async remove() {
         return;
       },
+      async mkdir() {},
     };
     const store = createEmbeddingStore({
       adapter,
@@ -357,5 +360,141 @@ describe("applySettings — UI swap path (T12)", () => {
     expect((getStorage().semanticSearch as { provider: string }).provider).toBe(
       "native",
     );
+  });
+
+  test("DLC: embedding-gemma with store not ready sets pendingProvider and keeps old provider", async () => {
+    const { plugin } = makePluginStub();
+    const { createEmbeddingStore } = await import("./services/store");
+    const { createEmbeddingStoreRegistry } = await import(
+      "./services/storeRegistry"
+    );
+    const adapter = {
+      async exists() {
+        return false;
+      },
+      async read(): Promise<string> {
+        throw new Error("nope");
+      },
+      async write() {
+        return;
+      },
+      async readBinary(): Promise<ArrayBuffer> {
+        throw new Error("nope");
+      },
+      async writeBinary() {
+        return;
+      },
+      async remove() {
+        return;
+      },
+      async mkdir() {},
+    };
+    const store = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: 4,
+    });
+    await store.init();
+    const embedder = {
+      embed: async () => new Float32Array(4),
+      embedBatch: async (ts: string[]) => ts.map(() => new Float32Array(4)),
+      unload: async () => undefined,
+      isLoaded: () => true,
+    };
+    const registry = createEmbeddingStoreRegistry(adapter, "/p/embeddings");
+
+    const result = await setup(plugin, {
+      factoryDeps: { plugin, embedder, store, registry },
+    });
+    if (!result.success) throw new Error(result.error);
+    result.state.registry = registry;
+    const initialProvider = result.state.provider;
+
+    await applySettings(plugin, result.state, {
+      ...result.state.settings,
+      provider: "embedding-gemma",
+    });
+
+    // Store not marked ready → pendingProvider set, live provider unchanged.
+    expect(result.state.pendingProvider).toBe("embedding-gemma-300m");
+    expect(result.state.provider).toBe(initialProvider);
+  });
+
+  test("DLC: embedding-gemma with store ready swaps provider and clears pendingProvider", async () => {
+    const { plugin } = makePluginStub();
+    const { createEmbeddingStore } = await import("./services/store");
+    const { createEmbeddingStoreRegistry } = await import(
+      "./services/storeRegistry"
+    );
+    const adapter = {
+      async exists() {
+        return false;
+      },
+      async read(): Promise<string> {
+        throw new Error("nope");
+      },
+      async write() {
+        return;
+      },
+      async readBinary(): Promise<ArrayBuffer> {
+        throw new Error("nope");
+      },
+      async writeBinary() {
+        return;
+      },
+      async remove() {
+        return;
+      },
+      async mkdir() {},
+    };
+    const store = createEmbeddingStore({
+      adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: 4,
+    });
+    await store.init();
+    const embedder = {
+      embed: async () => new Float32Array(4),
+      embedBatch: async (ts: string[]) => ts.map(() => new Float32Array(4)),
+      unload: async () => undefined,
+      isLoaded: () => true,
+    };
+    const registry = createEmbeddingStoreRegistry(adapter, "/p/embeddings");
+    registry.markReady("embedding-gemma-300m");
+    // Seed the gemma store so the chooser can build the NativeProvider.
+    const gemmaStore = registry.storeFor("embedding-gemma-300m", 768);
+    await gemmaStore.init();
+
+    const fakeGemmaEp = {
+      providerKey: "embedding-gemma-300m" as const,
+      dimensions: 768,
+      maxInputTokens: 2048,
+      embed: async (texts: string[]) => texts.map(() => new Float32Array(768)),
+      isAvailable: async () => true,
+      getModelSizeBytes: () => 0,
+    };
+
+    const result = await setup(plugin, {
+      factoryDeps: {
+        plugin,
+        embedder,
+        store,
+        registry,
+        embeddingProviders: { "embedding-gemma-300m": fakeGemmaEp },
+      },
+    });
+    if (!result.success) throw new Error(result.error);
+    result.state.registry = registry;
+    const initialProvider = result.state.provider;
+
+    await applySettings(plugin, result.state, {
+      ...result.state.settings,
+      provider: "embedding-gemma",
+    });
+
+    expect(result.state.pendingProvider).toBeNull();
+    expect(result.state.provider).not.toBe(initialProvider);
   });
 });

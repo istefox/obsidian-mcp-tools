@@ -447,3 +447,18 @@ Five new tools registered under a `// Vault intelligence` block in `mcp-tools/in
 - **`list_bookmarks` uses `app.internalPlugins`**, not `app.plugins.plugins`. Bookmarks is a core plugin. Community plugin path returns `undefined` for it. Access pattern: `(app.internalPlugins as unknown as { plugins: { bookmarks?: … } }).plugins.bookmarks` — same `unknown` cast pattern as `listTags` / `getRecentFiles`.
 - **`find_broken_links` uses per-file cache**, not `unresolvedLinks` map — required for line numbers and link-type context. `frontmatterLinks` have no position field; emit `line_number: 0` as sentinel (documented in `.describe()`).
 - **`mockApp()` in `test-setup.ts` needs an `internalPlugins` slot** — additive extension, no existing test affected. See ADR-0004 for the mock shape.
+
+## Decisioni dal chain Multilingual Embedding Providers
+
+ADR: `docs/architecture/ADR-0005-multilingual-embedding-providers.md`
+
+**Key decisions to carry forward:**
+
+- **`EmbeddingProvider` ≠ `SemanticSearchProvider`** — two distinct interfaces. `EmbeddingProvider` (embedding layer, `types.ts`) is the dependency of `indexer.ts`; `SemanticSearchProvider` (search-side, unchanged) is the dependency of `searchVaultSmartHandler`. Do not merge them.
+- **DLC concurrency via per-providerKey store directories** — `EmbeddingStoreRegistry` holds both the active store and the building store; they are physically isolated paths. No locking needed. `state.provider` swaps only after `rebuildAll()` completes. A partially-built store triggers the re-index banner on next load (flat-sentinel mechanism handles mid-flush crashes).
+- **`TransformersProvider` base class** parameterized by model ID + `TaskPromptFn` — both `EmbeddingGemmaProvider` (768d, 2K ctx, `"task: search result | query: "`) and `MultilingualE5Provider` (768d, 512 ctx, `"query: "` / `"passage: "`) extend it. `configureEnv()` lives in a shared `onnxEnv.ts` to avoid double-initialization.
+- **`@xenova/transformers` v2.17.2 is pinned** — v4 breaks under Obsidian's plugin loader (`import.meta.url`). Any new ONNX provider must be smoke-tested against v2.17.2 in Electron/WASM before merge. `device: 'wasm'` must be set explicitly.
+- **Store migration (v1 flat → per-providerKey)** — `migrateV1FlatStore` renames the flat pair to `embeddings/native-minilm-l6-v2/` on first load. Must be wrapped in try/catch; NFS/permission failures leave the flat store in place and surface the re-index banner rather than crashing.
+- **Chunker: 1-sentence overlap applied at embed time, not stored** — `wrapChunkerWithOverlap` is applied in `processOnePath`, not in `chunk()`. Stored `Chunk.text` is overlap-free; hash comparisons and delta detection remain stable. `#frontmatter` chunks receive no overlap from a non-existent prior chunk.
+- **`"auto"` provider language detection** — 50-note sample, non-ASCII character ratio. If >30%, surfaces a settings banner suggesting EmbeddingGemma. No auto-download; no provider switch without explicit user action.
+- **`FORMAT_VERSION` 1 → 2** is a path change only; the binary format is unchanged. The integration test for migration must use a real `FileSystemAdapter` tmpdir (not a mock) — path-rename logic is not safely testable in isolation.

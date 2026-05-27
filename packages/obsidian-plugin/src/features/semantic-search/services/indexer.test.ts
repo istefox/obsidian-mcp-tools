@@ -5,7 +5,7 @@ import {
   type VaultEvent,
   type VaultLike,
 } from "./indexer";
-import type { Embedder } from "./embedder";
+import type { EmbeddingProvider } from "../types";
 import {
   createEmbeddingStore,
   type EmbeddingRecord,
@@ -74,6 +74,7 @@ function memAdapter(): VaultAdapter {
       f.delete(p);
       b.delete(p);
     },
+    async mkdir() {},
   };
 }
 
@@ -109,25 +110,25 @@ async function fakeChunker(content: string): Promise<Chunk[]> {
   }));
 }
 
-function fakeEmbedder(): {
-  embedder: Embedder;
+function fakeEmbeddingProvider(): {
+  embedder: EmbeddingProvider;
   embeds: () => string[];
 } {
   const calls: string[] = [];
-  const embedder: Embedder = {
-    embed: async (text) => {
-      calls.push(text);
-      const v = new Float32Array(DIM);
-      v[0] = text.length;
-      return v;
+  const embedder: EmbeddingProvider = {
+    providerKey: "test-provider",
+    dimensions: DIM,
+    maxInputTokens: 512,
+    embed: async (texts, _role) => {
+      for (const text of texts) calls.push(text);
+      return texts.map((text) => {
+        const v = new Float32Array(DIM);
+        v[0] = text.length;
+        return v;
+      });
     },
-    embedBatch: async (texts) => {
-      const out: Float32Array[] = [];
-      for (const t of texts) out.push(await embedder.embed(t));
-      return out;
-    },
-    unload: async () => undefined,
-    isLoaded: () => true,
+    isAvailable: async () => true,
+    getModelSizeBytes: () => 0,
   };
   return { embedder, embeds: () => [...calls] };
 }
@@ -152,7 +153,7 @@ describe("live indexer", () => {
       "a.md": "alpha",
       "b.md": "bravo---CHUNK---bravo two",
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -165,7 +166,7 @@ describe("live indexer", () => {
 
     expect(store.size()).toBe(3); // 1 + 2
     expect(embeds()).toEqual(
-      expect.arrayContaining(["alpha", "bravo", "bravo two"]),
+      expect.arrayContaining(["alpha", "bravo", "bravo\nbravo two"]),
     );
     const recs = await collect(store);
     expect(new Set(recs.map((r) => r.filePath))).toEqual(
@@ -177,7 +178,7 @@ describe("live indexer", () => {
     const { vault, files, emit } = makeVault({
       "f.md": "one---CHUNK---two---CHUNK---three",
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -187,7 +188,7 @@ describe("live indexer", () => {
     });
     await indexer.start();
 
-    expect(embeds()).toEqual(["one", "two", "three"]);
+    expect(embeds()).toEqual(["one", "one\ntwo", "two\nthree"]);
 
     // Edit: replace chunk 2 only.
     files.set("f.md", "one---CHUNK---TWO!---CHUNK---three");
@@ -195,8 +196,9 @@ describe("live indexer", () => {
     await indexer.flush();
 
     // Only "TWO!" is new — "one" and "three" reuse their existing
-    // vectors via contentHash match.
-    expect(embeds()).toEqual(["one", "two", "three", "TWO!"]);
+    // vectors via contentHash match. Overlap prepends the last sentence
+    // of the previous chunk's original text.
+    expect(embeds()).toEqual(["one", "one\ntwo", "two\nthree", "one\nTWO!"]);
     expect(store.size()).toBe(3);
 
     await indexer.stop();
@@ -204,7 +206,7 @@ describe("live indexer", () => {
 
   test("create event embeds new chunks", async () => {
     const { vault, files, emit } = makeVault({});
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -231,7 +233,7 @@ describe("live indexer", () => {
       "doomed.md": "a---CHUNK---b---CHUNK---c",
       "kept.md": "x",
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -258,7 +260,7 @@ describe("live indexer", () => {
     const { vault, files, emit } = makeVault({
       "f.md": "v1",
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -292,7 +294,7 @@ describe("live indexer", () => {
 
   test("stop unsubscribes from vault events (no further processing)", async () => {
     const { vault, files, emit } = makeVault({});
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -317,7 +319,7 @@ describe("live indexer", () => {
       "a.md": "one",
       "b.md": "two",
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -344,7 +346,7 @@ describe("live indexer", () => {
     const { vault, files, emit } = makeVault({
       "f.md": "content",
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -367,7 +369,7 @@ describe("live indexer", () => {
     const { vault, files, emit } = makeVault({
       "f.md": "one---CHUNK---two",
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -401,11 +403,59 @@ describe("live indexer", () => {
     await indexer.stop();
   });
 
+  test("rebuildAll skips processing when isAvailable returns false", async () => {
+    const { vault } = makeVault({ "a.md": "content" });
+    const embeds: string[] = [];
+    const unavailableProvider: EmbeddingProvider = {
+      providerKey: "unavailable",
+      dimensions: DIM,
+      maxInputTokens: 512,
+      embed: async (texts, _role) => {
+        for (const t of texts) embeds.push(t);
+        return texts.map(() => new Float32Array(DIM));
+      },
+      isAvailable: async () => false,
+      getModelSizeBytes: () => 0,
+    };
+    const indexer = createLiveIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder: unavailableProvider,
+      store,
+      debounceMs: 30,
+    });
+    await indexer.start();
+    await indexer.stop();
+
+    expect(embeds).toEqual([]);
+    expect(store.size()).toBe(0);
+  });
+
+  test("overlap context is prepended to consecutive chunk embed inputs", async () => {
+    const { vault } = makeVault({
+      "f.md": "first---CHUNK---second---CHUNK---third",
+    });
+    const { embedder, embeds } = fakeEmbeddingProvider();
+    const indexer = createLiveIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      debounceMs: 30,
+    });
+    await indexer.start();
+    await indexer.stop();
+
+    // No punctuation → extractLastSentence returns the full previous text.
+    // chunk[1] gets "first\nsecond"; chunk[2] gets "second\nthird".
+    expect(embeds()).toEqual(["first", "first\nsecond", "second\nthird"]);
+  });
+
   test("read error while path is absent from getMarkdownFiles: genuine deletion", async () => {
     const { vault, files, emit } = makeVault({
       "f.md": "one---CHUNK---two",
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLiveIndexer({
       vault,
       chunker: fakeChunker,
@@ -482,6 +532,7 @@ function countingAdapter(): {
       f.delete(p);
       b.delete(p);
     },
+    async mkdir() {},
   };
   return { adapter, writeBinaryCount: () => writeBinary };
 }
@@ -493,7 +544,7 @@ describe("low-power indexer", () => {
       "a.md": { content: "alpha", mtime: 100 },
       "b.md": { content: "bravo", mtime: 200 },
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,
@@ -512,7 +563,7 @@ describe("low-power indexer", () => {
     const { vault, files } = makeMtimeVault({
       "a.md": { content: "alpha", mtime: 100 },
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,
@@ -541,7 +592,7 @@ describe("low-power indexer", () => {
       "doomed.md": { content: "go away", mtime: 100 },
       "kept.md": { content: "stays", mtime: 100 },
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,
@@ -577,7 +628,7 @@ describe("low-power indexer", () => {
       "b.md": { content: "bravo", mtime: 100 },
       "c.md": { content: "charlie", mtime: 100 },
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,
@@ -598,7 +649,7 @@ describe("low-power indexer", () => {
     const { vault } = makeMtimeVault({
       "a.md": { content: "alpha", mtime: 100 },
     });
-    const { embedder, embeds } = fakeEmbedder();
+    const { embedder, embeds } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,
@@ -623,7 +674,7 @@ describe("low-power indexer", () => {
     const { vault } = makeMtimeVault({
       "a.md": { content: "alpha", mtime: 100 },
     });
-    const { embedder } = fakeEmbedder();
+    const { embedder } = fakeEmbeddingProvider();
     const indexer = createLowPowerIndexer({
       vault,
       chunker: fakeChunker,

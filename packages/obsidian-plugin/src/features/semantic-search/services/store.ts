@@ -43,6 +43,7 @@ export interface VaultAdapter {
   readBinary(path: string): Promise<ArrayBuffer>;
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   remove(path: string): Promise<void>;
+  mkdir(path: string): Promise<void>;
 }
 
 export interface EmbeddingStore {
@@ -64,7 +65,7 @@ export type EmbeddingStoreOpts = {
   vectorDim?: number;
 };
 
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 const DEFAULT_VECTOR_DIM = 384;
 
 type IndexRecord = {
@@ -135,7 +136,7 @@ class EmbeddingStoreImpl implements EmbeddingStore {
       return;
     }
 
-    if (parsed.version !== FORMAT_VERSION) {
+    if (parsed.version !== FORMAT_VERSION && parsed.version !== 1) {
       logger.warn("embedding index format version mismatch, re-indexing", {
         expected: FORMAT_VERSION,
         found: parsed.version,
@@ -195,10 +196,10 @@ class EmbeddingStoreImpl implements EmbeddingStore {
     }
 
     this.initialized = true;
-    // If any record was skipped, the in-memory set no longer matches
-    // the on-disk pair — mark dirty so the next flush rewrites a
-    // consistent one.
-    this.dirty = skippedAny;
+    // v1 index: records are valid but version marker is stale —
+    // mark dirty so the next flush upgrades the index to v2.
+    // If any record was also skipped, that further requires a flush.
+    this.dirty = skippedAny || parsed.version === 1;
   }
 
   size(): number {
@@ -239,6 +240,11 @@ class EmbeddingStoreImpl implements EmbeddingStore {
 
   async flush(): Promise<void> {
     if (!this.dirty) return;
+
+    // Ensure the parent directory exists before writing — on a fresh
+    // install the per-providerKey subdirectory may not exist yet.
+    const dir = this.opts.binPath.split("/").slice(0, -1).join("/");
+    if (dir) await this.opts.adapter.mkdir(dir);
 
     const recordList = Array.from(this.records.values());
     let totalFloats = 0;

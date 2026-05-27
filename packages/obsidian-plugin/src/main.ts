@@ -30,7 +30,14 @@ import {
   createEmbedder,
   realPipelineFactory,
 } from "./features/semantic-search/services/embedder";
-import { createEmbeddingStore } from "./features/semantic-search/services/store";
+import { createNativeEmbeddingProvider } from "./features/semantic-search/services/nativeEmbeddingProvider";
+import {
+  createEmbeddingStoreRegistry,
+  migrateV1FlatStore,
+} from "./features/semantic-search/services/storeRegistry";
+import { createEmbeddingGemmaProvider } from "./features/semantic-search/services/embeddingGemmaProvider";
+import { createMultilingualE5Provider } from "./features/semantic-search/services/multilingualE5Provider";
+import { detectNonAsciiRatio } from "./features/semantic-search/services/langDetect";
 import type { VaultAdapter } from "./features/semantic-search/services/store";
 import {
   createLiveIndexer,
@@ -323,13 +330,14 @@ export default class McpToolsPlugin extends Plugin {
         readBinary: (p) => this.app.vault.adapter.readBinary(p),
         writeBinary: (p, d) => this.app.vault.adapter.writeBinary(p, d),
         remove: (p) => this.app.vault.adapter.remove(p),
+        mkdir: (p) => this.app.vault.adapter.mkdir(p),
       };
 
       const ssVault: VaultLike = {
         getMarkdownFiles: () =>
           this.app.vault.getMarkdownFiles().map((f) => ({
             path: f.path,
-            mtime: f.stat.mtime,
+            mtime: f.stat?.mtime,
           })),
         read: async (path) => {
           const f = this.app.vault.getAbstractFileByPath(path);
@@ -357,54 +365,87 @@ export default class McpToolsPlugin extends Plugin {
         return text.slice(_offset, _offset + maxLen);
       };
 
-      const downloader = createModelDownloader({
+      const pluginDir =
+        this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`;
+
+      // Migrate v1 flat store before constructing any registry entry.
+      await migrateV1FlatStore(ssAdapter, pluginDir);
+
+      const registry = createEmbeddingStoreRegistry(
+        ssAdapter,
+        `${pluginDir}/embeddings`,
+      );
+
+      // Native MiniLM — eager init; always available.
+      const nativeDownloader = createModelDownloader({
         innerFactory: realPipelineFactory,
       });
       const embedder = createEmbedder({
-        pipelineFactory: downloader.factory,
+        pipelineFactory: nativeDownloader.factory,
       });
+      const nativeEp = createNativeEmbeddingProvider(embedder);
+      const nativeStore = registry.storeFor("native-minilm-l6-v2", 384);
+      await nativeStore.init();
+      registry.markReady("native-minilm-l6-v2");
 
-      const pluginDir =
-        this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`;
-      const store = createEmbeddingStore({
-        adapter: ssAdapter,
-        binPath: `${pluginDir}/embeddings.bin`,
-        indexPath: `${pluginDir}/embeddings.index.json`,
-        vectorDim: 384,
+      // DLC providers — pipeline loads lazily on first embed call.
+      const gemmaDownloader = createModelDownloader({
+        innerFactory: realPipelineFactory,
       });
-      await store.init();
+      const gemmaProvider = createEmbeddingGemmaProvider(
+        gemmaDownloader.factory,
+      );
+      const e5Downloader = createModelDownloader({
+        innerFactory: realPipelineFactory,
+      });
+      const e5Provider = createMultilingualE5Provider(e5Downloader.factory);
+
+      const embeddingProviders = {
+        "embedding-gemma-300m": gemmaProvider,
+        "multilingual-e5-base": e5Provider,
+      };
 
       const semanticResult = await semanticSearchSetup(this, {
         factoryDeps: {
           plugin: this,
           embedder,
-          store,
+          store: nativeStore,
           excerptResolver: ssExcerpt,
+          registry,
+          embeddingProviders,
         },
       });
 
       if (semanticResult.success) {
         const state = semanticResult.state;
-        state.downloader = downloader;
-        state.store = store;
+        state.downloader = nativeDownloader;
+        state.store = nativeStore;
+        state.registry = registry;
 
-        // Construct the indexer matching the saved indexing mode but
-        // do NOT auto-start (Q4 = lazy). The search tool will call
-        // startIndexerIfNeeded() on first use, kicking off the full
-        // build + the model download in background.
+        // Check whether DLC stores are already built from a prior session.
+        for (const [key, dim] of [
+          ["embedding-gemma-300m", 768],
+          ["multilingual-e5-base", 768],
+        ] as const) {
+          const dlcStore = registry.storeFor(key, dim);
+          await dlcStore.init();
+          if (dlcStore.size() > 0) registry.markReady(key);
+        }
+
+        // Native indexer — lazy start on first search tool call.
         const indexer =
           state.settings.indexingMode === "low-power"
             ? createLowPowerIndexer({
                 vault: ssVault,
                 chunker: semanticChunk,
-                embedder,
-                store,
+                embedder: nativeEp,
+                store: nativeStore,
               })
             : createLiveIndexer({
                 vault: ssVault,
                 chunker: semanticChunk,
-                embedder,
-                store,
+                embedder: nativeEp,
+                store: nativeStore,
               });
         state.indexer = indexer;
 
@@ -419,12 +460,67 @@ export default class McpToolsPlugin extends Plugin {
           });
         };
 
+        // Language detection for multilingual provider suggestion (fire-and-forget).
+        detectNonAsciiRatio(ssVault)
+          .then((ratio) => {
+            if (
+              ratio > 0.3 &&
+              state.settings.provider !== "embedding-gemma" &&
+              state.settings.provider !== "multilingual-e5-base"
+            ) {
+              state.autoSuggestProvider = "embedding-gemma-300m";
+            }
+          })
+          .catch(() => {
+            // best-effort — non-ASCII sampling failure must not affect startup
+          });
+
+        // DLC rebuild hook — download + full index for one provider.
+        const _rebuildingProviders = new Set<string>();
+        state.startRebuildFor = (providerKey: string) => {
+          if (_rebuildingProviders.has(providerKey)) return;
+          _rebuildingProviders.add(providerKey);
+          const ep =
+            embeddingProviders[providerKey as keyof typeof embeddingProviders];
+          if (!ep) {
+            _rebuildingProviders.delete(providerKey);
+            return;
+          }
+          const dlcStore = registry.storeFor(providerKey, ep.dimensions);
+          const dlcIndexer = createLiveIndexer({
+            vault: ssVault,
+            chunker: semanticChunk,
+            embedder: ep,
+            store: dlcStore,
+          });
+          dlcIndexer
+            .rebuildAll()
+            .then(async () => {
+              await dlcStore.flush();
+              registry.markReady(providerKey);
+              if (state.pendingProvider === providerKey)
+                state.pendingProvider = null;
+              if (state.chooser) {
+                state.provider = state.chooser(state.settings);
+              }
+            })
+            .catch((err) => {
+              logger.error("semantic-search: DLC rebuild failed", {
+                providerKey,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            })
+            .finally(() => {
+              _rebuildingProviders.delete(providerKey);
+            });
+        };
+
         state.teardown = async () => {
           if (indexerStarted) {
             try {
               await indexer.stop();
             } catch {
-              // best-effort: don't block plugin unload
+              // best-effort
             }
           }
           try {
@@ -433,7 +529,7 @@ export default class McpToolsPlugin extends Plugin {
             // best-effort
           }
           try {
-            await store.close();
+            await registry.closeAll();
           } catch {
             // best-effort
           }

@@ -1,19 +1,17 @@
 /**
  * Heading-section chunker for vault markdown.
  *
- * Splits content on H1/H2 boundaries (H3+ stay inside their parent
- * section). Sections that exceed `maxTokens` (default 512) are split
- * further with a token-based sliding window using `overlapTokens`
- * (default 64). Sections shorter than `minTokens` (default 20) are
- * skipped — too little signal to embed usefully and too easy to
- * dominate cosine similarity with shared boilerplate.
+ * Splits content on H1/H2 boundaries. H3+ stay inside their parent
+ * section unless the section exceeds `maxTokens`, in which case H3
+ * sub-sections are split before falling back to a sliding window.
  *
- * Frontmatter (`---` block at the very top of the file) is concatenated
- * to the first non-skipped chunk, so file-level metadata stays
- * searchable even when it lives outside the body prose.
+ * Frontmatter is emitted as a dedicated chunk with id `"#frontmatter"`
+ * so file-level metadata is searchable independently of body prose.
+ * Small frontmatter (below `minTokens`) is silently dropped.
  *
- * Inline tags (`#foo`), wikilinks (`[[link]]`), and code fences are
- * preserved verbatim — they are signal for embedding.
+ * Code fences are atomic: if a section contains a code fence whose
+ * token count exceeds `maxTokens`, the entire section is kept as a
+ * single chunk rather than split mid-fence.
  *
  * Token counting is approximate: `text.split(/\s+/)`. The exact MiniLM
  * BPE tokenizer would be more precise but requires loading the model
@@ -21,6 +19,8 @@
  * magnitude. For the 512/64 window choices the approximation is well
  * within tolerance.
  */
+
+import { logger } from "$/shared/logger";
 
 export type ChunkOpts = {
   maxTokens?: number;
@@ -35,6 +35,9 @@ export type Chunk = {
   offset: number;
   contentHash: string;
 };
+
+/** Signature of the chunk() function, used by the indexer and overlap wrapper. */
+export type ChunkerFn = (content: string) => Promise<Chunk[]>;
 
 const DEFAULT_MAX_TOKENS = 512;
 const DEFAULT_OVERLAP_TOKENS = 64;
@@ -105,19 +108,15 @@ function splitByHeadings(body: string, baseOffset: number): Section[] {
   for (let i = 0; i < lines.length; i += 2) {
     const line = lines[i] ?? "";
     const sep = lines[i + 1] ?? "";
+    const trimmedLine = line.trimEnd();
 
-    const h1 = /^(# )(.+)$/.exec(line);
-    const h2 = /^(## )(.+)$/.exec(line);
-    const heading = h1?.[2] ?? h2?.[2] ?? null;
+    const h1 = trimmedLine.match(/^# (.+)$/);
+    const h2 = trimmedLine.match(/^## (.+)$/);
+    const heading = h1?.[1] ?? h2?.[1] ?? null;
 
     if (heading !== null) {
-      // Close current section and open a new one.
       if (current.text.length > 0) sections.push(current);
-      current = {
-        heading,
-        text: line + sep,
-        offset: cursor,
-      };
+      current = { heading, text: line + sep, offset: cursor };
     } else {
       current.text += line + sep;
     }
@@ -126,6 +125,66 @@ function splitByHeadings(body: string, baseOffset: number): Section[] {
 
   if (current.text.length > 0) sections.push(current);
   return sections;
+}
+
+/**
+ * Split a section further on `### ` boundaries. Returns the original
+ * section unchanged (as a single-element array) when no H3 headings
+ * are found, so the caller can distinguish "no split" from "split".
+ */
+function splitSectionByH3(section: Section): Section[] {
+  const lines = section.text.split(/(\r?\n)/);
+  const sub: Section[] = [];
+  let current: Section = {
+    heading: section.heading,
+    text: "",
+    offset: section.offset,
+  };
+  let cursor = section.offset;
+
+  for (let i = 0; i < lines.length; i += 2) {
+    const line = lines[i] ?? "";
+    const sep = lines[i + 1] ?? "";
+    const trimmedLine = line.trimEnd();
+
+    const h3 = trimmedLine.match(/^### (.+)$/);
+    if (h3 !== null) {
+      if (current.text.length > 0) sub.push(current);
+      current = { heading: h3[1] ?? null, text: line + sep, offset: cursor };
+    } else {
+      current.text += line + sep;
+    }
+    cursor += line.length + sep.length;
+  }
+
+  if (current.text.length > 0) sub.push(current);
+  return sub.length > 1 ? sub : [section];
+}
+
+/**
+ * Returns true if the text contains a code fence whose own token count
+ * exceeds `maxTokens` — signals that the section should be kept atomic
+ * rather than split mid-fence.
+ */
+function hasOversizedCodeFence(text: string, maxTokens: number): boolean {
+  const lines = text.split("\n");
+  let inFence = false;
+  let fenceStart = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    if (line.startsWith("```")) {
+      if (!inFence) {
+        inFence = true;
+        fenceStart = i;
+      } else {
+        const fenceText = lines.slice(fenceStart, i + 1).join("\n");
+        if (countTokens(fenceText) > maxTokens) return true;
+        inFence = false;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -180,10 +239,143 @@ function slidingWindows(
 }
 
 /**
+ * Emit chunks for one section into `out`. Tries H3 sub-split first
+ * for oversized sections; falls back to sliding windows. Code fences
+ * that alone exceed `maxTokens` are kept atomic.
+ */
+async function emitSectionChunks(
+  section: Section,
+  maxTokens: number,
+  overlapTokens: number,
+  minTokens: number,
+  out: Chunk[],
+): Promise<void> {
+  const text = section.text.trimEnd();
+  const tokenCount = countTokens(text);
+  if (tokenCount < minTokens) return;
+
+  if (tokenCount <= maxTokens) {
+    out.push({
+      id: String(out.length),
+      text,
+      heading: section.heading,
+      offset: section.offset,
+      contentHash: await hashChunk(text),
+    });
+    return;
+  }
+
+  // Oversized: check for atomic code fence before splitting.
+  if (hasOversizedCodeFence(text, maxTokens)) {
+    logger.debug("embedding chunker: oversized code fence kept atomic", {
+      heading: section.heading,
+      tokens: tokenCount,
+    });
+    out.push({
+      id: String(out.length),
+      text,
+      heading: section.heading,
+      offset: section.offset,
+      contentHash: await hashChunk(text),
+    });
+    return;
+  }
+
+  // Try H3 sub-split before sliding window.
+  const subSections = splitSectionByH3(section);
+  if (subSections.length > 1) {
+    for (const sub of subSections) {
+      const subText = sub.text.trimEnd();
+      const subTokens = countTokens(subText);
+      if (subTokens < minTokens) continue;
+      if (subTokens <= maxTokens) {
+        out.push({
+          id: String(out.length),
+          text: subText,
+          heading: sub.heading,
+          offset: sub.offset,
+          contentHash: await hashChunk(subText),
+        });
+      } else {
+        const windows = slidingWindows(
+          subText,
+          sub.heading,
+          maxTokens,
+          overlapTokens,
+        );
+        for (const w of windows) {
+          out.push({
+            id: String(out.length),
+            text: w,
+            heading: sub.heading,
+            offset: sub.offset,
+            contentHash: await hashChunk(w),
+          });
+        }
+      }
+    }
+    return;
+  }
+
+  // No H3 sub-sections — sliding window.
+  const windows = slidingWindows(
+    text,
+    section.heading,
+    maxTokens,
+    overlapTokens,
+  );
+  for (const w of windows) {
+    out.push({
+      id: String(out.length),
+      text: w,
+      heading: section.heading,
+      offset: section.offset,
+      contentHash: await hashChunk(w),
+    });
+  }
+}
+
+/**
+ * Extracts the last sentence from text using punctuation-based split.
+ * Returns the entire trimmed text when no sentence boundary is found; returns `""` for empty input.
+ */
+function extractLastSentence(text: string): string {
+  const trimmed = text.trimEnd();
+  const parts = trimmed.split(/(?<=[.!?])\s+/);
+  return parts[parts.length - 1]?.trim() ?? "";
+}
+
+/**
+ * Wraps a chunker to prepend the last sentence of the previous chunk's
+ * text to each subsequent chunk before it reaches the embedder. The
+ * stored `Chunk.text` and `contentHash` are unchanged — only the text
+ * passed to `embed()` is enriched with one sentence of overlap.
+ *
+ * `#frontmatter` chunks are skipped as overlap sources since metadata
+ * context does not carry meaningfully into body prose.
+ */
+export function wrapChunkerWithOverlap(chunker: ChunkerFn): ChunkerFn {
+  return async (content: string): Promise<Chunk[]> => {
+    const chunks = await chunker(content);
+    return chunks.map((c, i) => {
+      if (i === 0) return c;
+      const prev = chunks[i - 1]!;
+      if (prev.id === "#frontmatter") return c;
+      const overlap = extractLastSentence(prev.text);
+      if (!overlap) return c;
+      return { ...c, text: overlap + "\n" + c.text };
+    });
+  };
+}
+
+/**
  * Main chunker. Accepts the full markdown content of a file and
  * returns the chunks ready for embedding. Pure function: no I/O, no
- * Obsidian API access, no globals. The caller (T9 indexer) supplies
+ * Obsidian API access, no globals. The caller (indexer) supplies
  * the file path and composes the persistent chunkId.
+ *
+ * Frontmatter (if large enough) is emitted first as a `#frontmatter`
+ * chunk. Body chunks are numbered ordinally starting from `"0"`.
  */
 export async function chunk(
   content: string,
@@ -194,62 +386,33 @@ export async function chunk(
   const minTokens = opts.minTokens ?? DEFAULT_MIN_TOKENS;
 
   const { frontmatter, body, bodyOffset } = extractFrontmatter(content);
-  const sections = splitByHeadings(body, bodyOffset);
 
-  const chunks: Chunk[] = [];
-  let mergedFrontmatter = frontmatter !== null;
-
-  for (const section of sections) {
-    let text = section.text.trimEnd();
-    if (mergedFrontmatter && frontmatter !== null) {
-      text = frontmatter.trim() + "\n\n" + text;
-      mergedFrontmatter = false;
-    }
-    const tokenCount = countTokens(text);
-    if (tokenCount < minTokens) continue;
-
-    if (tokenCount <= maxTokens) {
-      chunks.push({
-        id: String(chunks.length),
-        text,
-        heading: section.heading,
-        offset: section.offset,
-        contentHash: await hashChunk(text),
-      });
-    } else {
-      const windows = slidingWindows(
-        text,
-        section.heading,
-        maxTokens,
-        overlapTokens,
-      );
-      for (const w of windows) {
-        chunks.push({
-          id: String(chunks.length),
-          text: w,
-          heading: section.heading,
-          offset: section.offset,
-          contentHash: await hashChunk(w),
-        });
-      }
-    }
-  }
-
-  // If frontmatter never landed (every section was below minTokens),
-  // emit it as a standalone chunk if the frontmatter itself meets the
-  // size threshold. Otherwise the file is effectively skipped.
-  if (mergedFrontmatter && frontmatter !== null) {
+  let fmChunk: Chunk | null = null;
+  if (frontmatter !== null) {
     const fmText = frontmatter.trim();
     if (countTokens(fmText) >= minTokens) {
-      chunks.push({
-        id: String(chunks.length),
+      fmChunk = {
+        id: "#frontmatter",
         text: fmText,
         heading: null,
         offset: 0,
         contentHash: await hashChunk(fmText),
-      });
+      };
     }
   }
 
-  return chunks;
+  const sections = splitByHeadings(body, bodyOffset);
+  const bodyChunks: Chunk[] = [];
+
+  for (const section of sections) {
+    await emitSectionChunks(
+      section,
+      maxTokens,
+      overlapTokens,
+      minTokens,
+      bodyChunks,
+    );
+  }
+
+  return fmChunk ? [fmChunk, ...bodyChunks] : bodyChunks;
 }

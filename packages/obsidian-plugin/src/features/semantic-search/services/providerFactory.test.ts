@@ -6,8 +6,10 @@ import {
 } from "./providerFactory";
 import type McpToolsPlugin from "$/main";
 import type { SemanticSearchSettings } from "$/features/semantic-search/types";
+import type { EmbeddingProvider } from "$/features/semantic-search/types";
 import type { Embedder } from "./embedder";
 import { createEmbeddingStore, type VaultAdapter } from "./store";
+import { createEmbeddingStoreRegistry } from "./storeRegistry";
 import { SmartConnectionsUnavailableError } from "./smartConnectionsProvider";
 
 const DIM = 4;
@@ -48,6 +50,7 @@ function memAdapter(): VaultAdapter {
       files.delete(p);
       bins.delete(p);
     },
+    async mkdir() {},
   };
 }
 
@@ -92,7 +95,50 @@ const SETTINGS = {
     indexingMode: "live",
     unloadModelWhenIdle: true,
   } as SemanticSearchSettings,
+  embeddingGemma: {
+    provider: "embedding-gemma",
+    indexingMode: "live",
+    unloadModelWhenIdle: true,
+  } as SemanticSearchSettings,
+  multilingualE5: {
+    provider: "multilingual-e5-base",
+    indexingMode: "live",
+    unloadModelWhenIdle: true,
+  } as SemanticSearchSettings,
 };
+
+function fakeEmbeddingProvider(dim: number): EmbeddingProvider {
+  return {
+    providerKey: `fake-${dim}d`,
+    dimensions: dim,
+    maxInputTokens: 512,
+    embed: async (texts, _role) => texts.map(() => new Float32Array(dim)),
+    isAvailable: async () => true,
+    getModelSizeBytes: () => 0,
+  };
+}
+
+async function makeDepsWithRegistry(
+  scPresent: boolean,
+): Promise<ProviderFactoryDeps> {
+  const adapter = memAdapter();
+  const registry = createEmbeddingStoreRegistry(adapter, "/plugin/embeddings");
+  const gemmaStore = registry.storeFor("embedding-gemma-300m", 768);
+  await gemmaStore.init();
+  const e5Store = registry.storeFor("multilingual-e5-base", 768);
+  await e5Store.init();
+
+  return {
+    plugin: pluginWithSmartSearch(scPresent),
+    embedder: fakeEmbedder(),
+    store: await makeStore(),
+    registry,
+    embeddingProviders: {
+      "embedding-gemma-300m": fakeEmbeddingProvider(768),
+      "multilingual-e5-base": fakeEmbeddingProvider(768),
+    },
+  };
+}
 
 describe("provider factory — chooser", () => {
   test("provider='native' returns a NativeProvider", async () => {
@@ -175,6 +221,49 @@ describe("provider factory — chooser", () => {
     expect(c).not.toBe(b);
     // With SC removed, auto resolves to native.
     expect(c.isReady()).toBe(true);
+  });
+
+  test("provider='embedding-gemma' returns a NativeProvider backed by gemma store", async () => {
+    const deps = await makeDepsWithRegistry(false);
+    const choose = createProviderFactory(deps);
+    const provider = choose(SETTINGS.embeddingGemma);
+    expect(provider.isReady()).toBe(true);
+    const out = await provider.search("anything", {});
+    expect(out).toEqual([]);
+  });
+
+  test("provider='multilingual-e5-base' returns a NativeProvider backed by e5 store", async () => {
+    const deps = await makeDepsWithRegistry(false);
+    const choose = createProviderFactory(deps);
+    const provider = choose(SETTINGS.multilingualE5);
+    expect(provider.isReady()).toBe(true);
+    const out = await provider.search("anything", {});
+    expect(out).toEqual([]);
+  });
+
+  test("embedding-gemma without registry falls back to native", async () => {
+    const deps = await makeDeps(false);
+    const choose = createProviderFactory(deps);
+    const provider = choose(SETTINGS.embeddingGemma);
+    // Falls back to NativeProvider (always ready).
+    expect(provider.isReady()).toBe(true);
+    const out = await provider.search("anything", {});
+    expect(out).toEqual([]);
+  });
+
+  test("embedding-gemma query text uses 'query' role via the search embedder", async () => {
+    const roles: string[] = [];
+    const deps = await makeDepsWithRegistry(false);
+    const ep = deps.embeddingProviders!["embedding-gemma-300m"]!;
+    const origEmbed = ep.embed.bind(ep);
+    ep.embed = async (texts, role) => {
+      roles.push(role);
+      return origEmbed(texts, role);
+    };
+    const choose = createProviderFactory(deps);
+    const provider = choose(SETTINGS.embeddingGemma);
+    await provider.search("hello", {});
+    expect(roles).toEqual(["query"]);
   });
 });
 

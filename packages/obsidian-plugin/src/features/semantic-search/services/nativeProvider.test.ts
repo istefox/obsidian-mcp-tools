@@ -56,6 +56,7 @@ function makeMemAdapter(): VaultAdapter {
       files.delete(p);
       bins.delete(p);
     },
+    async mkdir() {},
   };
 }
 

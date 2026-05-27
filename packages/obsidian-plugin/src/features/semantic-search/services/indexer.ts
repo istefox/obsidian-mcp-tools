@@ -22,11 +22,12 @@
  */
 
 import { logger } from "$/shared/logger";
-import type { Chunk } from "./chunker";
-import type { Embedder } from "./embedder";
+import type { Chunk, ChunkerFn } from "./chunker";
+import { wrapChunkerWithOverlap } from "./chunker";
 import type { EmbeddingRecord, EmbeddingStore } from "./store";
+import type { EmbeddingProvider } from "../types";
 
-export type ChunkerFn = (content: string) => Promise<Chunk[]>;
+export type { ChunkerFn };
 
 export type VaultEvent = "modify" | "create" | "delete";
 
@@ -48,7 +49,7 @@ export interface VaultLike {
 export type LiveIndexerOpts = {
   vault: VaultLike;
   chunker: ChunkerFn;
-  embedder: Embedder;
+  embedder: EmbeddingProvider;
   store: EmbeddingStore;
   /** Per-file inactivity window before re-processing. Default 2000ms. */
   debounceMs?: number;
@@ -77,9 +78,11 @@ class LiveIndexerImpl implements SemanticIndexer {
   private unsubs: Array<() => void> = [];
   private running = false;
   private readonly debounceMs: number;
+  private readonly opts: LiveIndexerOpts;
 
-  constructor(private opts: LiveIndexerOpts) {
+  constructor(opts: LiveIndexerOpts) {
     this.debounceMs = opts.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+    this.opts = { ...opts, chunker: wrapChunkerWithOverlap(opts.chunker) };
   }
 
   async start(): Promise<void> {
@@ -107,6 +110,12 @@ class LiveIndexerImpl implements SemanticIndexer {
   }
 
   async rebuildAll(): Promise<void> {
+    if (!(await this.opts.embedder.isAvailable())) {
+      logger.warn(
+        "live indexer: embedding provider not available, skipping rebuild",
+      );
+      return;
+    }
     const files = this.opts.vault.getMarkdownFiles();
     for (const f of files) {
       await this.processFile(f.path);
@@ -152,7 +161,7 @@ class LiveIndexerImpl implements SemanticIndexer {
     // race the in-flight processor for the prior modify event.
     const prior = this.inFlight.get(path);
     const next = (async () => {
-      if (prior) await prior;
+      if (prior) await prior.catch(() => {});
       await this.doProcessFile(path);
     })();
     this.inFlight.set(path, next);
@@ -181,7 +190,7 @@ export function createLiveIndexer(opts: LiveIndexerOpts): SemanticIndexer {
 export type LowPowerIndexerOpts = {
   vault: VaultLike;
   chunker: ChunkerFn;
-  embedder: Embedder;
+  embedder: EmbeddingProvider;
   store: EmbeddingStore;
   /** Scan interval. Default 5 minutes (300_000 ms). */
   intervalMs?: number;
@@ -214,9 +223,11 @@ class LowPowerIndexerImpl implements SemanticIndexer {
   private cycleInFlight: Promise<void> | null = null;
   private lastSeenMtime = new Map<string, number>();
   private readonly intervalMs: number;
+  private readonly opts: LowPowerIndexerOpts;
 
-  constructor(private opts: LowPowerIndexerOpts) {
+  constructor(opts: LowPowerIndexerOpts) {
     this.intervalMs = opts.intervalMs ?? DEFAULT_LOW_POWER_INTERVAL_MS;
+    this.opts = { ...opts, chunker: wrapChunkerWithOverlap(opts.chunker) };
   }
 
   async start(): Promise<void> {
@@ -247,6 +258,12 @@ class LowPowerIndexerImpl implements SemanticIndexer {
   }
 
   async rebuildAll(): Promise<void> {
+    if (!(await this.opts.embedder.isAvailable())) {
+      logger.warn(
+        "low-power indexer: embedding provider not available, skipping rebuild",
+      );
+      return;
+    }
     // Force every file to be considered stale, then run a cycle.
     this.lastSeenMtime.clear();
     await this.runCycle();
@@ -312,7 +329,7 @@ export function createLowPowerIndexer(
 type ProcessDeps = {
   vault: VaultLike;
   chunker: ChunkerFn;
-  embedder: Embedder;
+  embedder: EmbeddingProvider;
   store: EmbeddingStore;
 };
 
@@ -366,7 +383,8 @@ async function processOnePath(deps: ProcessDeps, path: string): Promise<void> {
   const records: EmbeddingRecord[] = [];
   for (const c of chunks) {
     const reused = existingByHash.get(c.contentHash);
-    const vector = reused?.vector ?? (await deps.embedder.embed(c.text));
+    const vector =
+      reused?.vector ?? (await deps.embedder.embed([c.text], "document"))[0]!;
     records.push({
       chunkId: `${path}#${c.id}`,
       filePath: path,

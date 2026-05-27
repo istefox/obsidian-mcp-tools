@@ -18,6 +18,7 @@ import {
 import type { ModelDownloader } from "./services/modelDownloader";
 import type { SemanticIndexer } from "./services/indexer";
 import type { EmbeddingStore } from "./services/store";
+import type { EmbeddingStoreRegistry } from "./services/storeRegistry";
 
 export { default as FeatureSettings } from "./components/SemanticSettingsSection.svelte";
 export {
@@ -89,6 +90,25 @@ export type SemanticSearchState = {
    */
   store?: EmbeddingStore | null;
   /**
+   * Store registry for the DLC provider-swap pattern. When present,
+   * `applySettings` checks whether the new provider's store is ready
+   * before swapping the live provider.
+   */
+  registry?: EmbeddingStoreRegistry | null;
+  /**
+   * providerKey of the provider currently being built (download +
+   * index). Set when the user switches to a provider whose store is
+   * not yet ready. Cleared once `onProviderReady` fires.
+   */
+  pendingProvider?: string | null;
+  /**
+   * providerKey suggested by the auto language-detect heuristic.
+   * Non-null when the vault non-ASCII ratio exceeds the threshold and
+   * the user has not yet chosen a multilingual provider. The settings
+   * UI uses this to surface the suggestion banner.
+   */
+  autoSuggestProvider?: string | null;
+  /**
    * Lazy indexer-start hook. First call starts the indexer in
    * background (fire-and-forget); subsequent calls are no-ops. The
    * search tool handler invokes this so vault events are subscribed
@@ -96,6 +116,12 @@ export type SemanticSearchState = {
    * request on a multi-minute first build.
    */
   startIndexerIfNeeded?: () => void;
+  /**
+   * Trigger a download + full index build for a specific providerKey.
+   * Wired by production setup (Task 8); absent in tests and early lifecycle.
+   * The settings UI calls this from the rebuild banner's "Rebuild now" button.
+   */
+  startRebuildFor?: ((providerKey: string) => void) | null;
   teardown: () => Promise<void>;
 };
 
@@ -211,6 +237,9 @@ export async function setup(
       downloader: null,
       indexer: null,
       store: opts.factoryDeps?.store ?? null,
+      registry: null,
+      pendingProvider: null,
+      autoSuggestProvider: null,
       startIndexerIfNeeded: undefined, // production wiring overrides this
       teardown: async () => {
         // production wiring overrides this to flush+close the
@@ -229,12 +258,27 @@ export async function teardown(state: SemanticSearchState): Promise<void> {
 }
 
 /**
+ * Maps provider setting values that require a store build to their
+ * providerKey. Values absent from this map (native, smart-connections,
+ * auto) are always immediately swappable.
+ */
+const DOWNLOADABLE_PROVIDER_KEYS: Partial<Record<string, string>> = {
+  "embedding-gemma": "embedding-gemma-300m",
+  "multilingual-e5-base": "multilingual-e5-base",
+};
+
+/**
  * Persist a new SemanticSearchSettings value and swap the live
  * provider via the chooser closure when one is available.
  *
- * Used by the settings UI (T12) on tri-state / mode / unload-toggle
- * change. Held under the feature mutex so a rapid double-toggle
- * cannot land out-of-order writes against `data.json`.
+ * For providers that require a store build (embedding-gemma,
+ * multilingual-e5-base), if the store is not yet marked ready in the
+ * registry, the live provider is NOT swapped — the old results stay
+ * available while the index builds — and `state.pendingProvider` is
+ * set so the UI can show the rebuild banner.
+ *
+ * Held under the feature mutex so a rapid double-toggle cannot land
+ * out-of-order writes against `data.json`.
  */
 export async function applySettings(
   plugin: McpToolsPlugin,
@@ -247,6 +291,15 @@ export async function applySettings(
     await plugin.saveData(data);
   });
   state.settings = next;
+
+  const pendingKey = DOWNLOADABLE_PROVIDER_KEYS[next.provider];
+  if (pendingKey && state.registry && !state.registry.isReady(pendingKey)) {
+    // Store not yet built — surface the rebuild banner, keep old provider.
+    state.pendingProvider = pendingKey;
+    return;
+  }
+
+  state.pendingProvider = null;
   if (state.chooser) {
     state.provider = state.chooser(next);
   }

@@ -16,26 +16,45 @@
   let rebuilding = false;
   let storeSize = 0;
   let lastError: string | null = null;
+  let pendingProvider: string | null = null;
+  let autoSuggestProvider: string | null = null;
+
+  const PROVIDER_META: Record<
+    string,
+    { label: string; size: string; seconds: string }
+  > = {
+    "embedding-gemma-300m": {
+      label: "EmbeddingGemma 300M",
+      size: "~190 MB",
+      seconds: "5–10 min",
+    },
+    "multilingual-e5-base": {
+      label: "Multilingual E5 base",
+      size: "~100 MB",
+      seconds: "3–5 min",
+    },
+  };
 
   onMount(() => {
     const state = plugin.semanticSearchState;
     if (state) {
       settings = { ...state.settings };
+      pendingProvider = state.pendingProvider ?? null;
+      autoSuggestProvider = state.autoSuggestProvider ?? null;
     }
     refreshStatus();
   });
 
   function refreshStatus() {
-    // The store size is only available once the production wiring
-    // (T15) constructs the store and exposes it on state.store. For
-    // now we read it via an `any`-typed probe so the UI is forward-
-    // compatible without forcing a type widening of state today.
     const state = plugin.semanticSearchState as
       | (typeof plugin.semanticSearchState & {
           store?: { size?: () => number };
         })
       | undefined;
     storeSize = state?.store?.size?.() ?? 0;
+    pendingProvider = plugin.semanticSearchState?.pendingProvider ?? null;
+    autoSuggestProvider =
+      plugin.semanticSearchState?.autoSuggestProvider ?? null;
   }
 
   async function persist(next: SemanticSearchSettings) {
@@ -49,6 +68,7 @@
     try {
       await applySettings(plugin, state, next);
       settings = next;
+      pendingProvider = state.pendingProvider ?? null;
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -68,15 +88,20 @@
     await persist({ ...settings, unloadModelWhenIdle: value });
   }
 
+  async function onRebuildNow() {
+    const state = plugin.semanticSearchState;
+    if (!state || !pendingProvider) return;
+    if (state.startRebuildFor) {
+      state.startRebuildFor(pendingProvider);
+    } else {
+      new Notice("Rebuild not available yet — reload Obsidian.");
+    }
+  }
+
   async function onRebuild() {
-    const state = plugin.semanticSearchState as
-      | (typeof plugin.semanticSearchState & {
-          indexer?: { rebuildAll?: () => Promise<void> };
-        })
-      | undefined;
-    const indexer = state?.indexer;
-    if (!indexer?.rebuildAll) {
-      new Notice("Indexer not available yet — wait for Phase 3 wiring.");
+    const indexer = plugin.semanticSearchState?.indexer;
+    if (!indexer) {
+      new Notice("Semantic index not available yet — reload Obsidian.");
       return;
     }
     rebuilding = true;
@@ -99,6 +124,37 @@
     Search notes by meaning, not just by keyword. Pick the embedding
     backend that matches your setup.
   </p>
+
+  {#if autoSuggestProvider}
+    {@const meta = PROVIDER_META[autoSuggestProvider]}
+    <div class="banner info">
+      Your vault appears to contain non-English content.
+      {meta?.label ?? autoSuggestProvider} may improve search quality.
+      <button
+        type="button"
+        class="banner-action"
+        on:click={() =>
+          onProviderChange(
+            autoSuggestProvider === "embedding-gemma-300m"
+              ? "embedding-gemma"
+              : "multilingual-e5-base",
+          )}
+      >
+        Switch
+      </button>
+    </div>
+  {/if}
+
+  {#if pendingProvider}
+    {@const meta = PROVIDER_META[pendingProvider]}
+    <div class="banner warn">
+      {meta?.label ?? pendingProvider} index is being built ({meta?.size ?? ""}
+      download, ~{meta?.seconds ?? ""}).
+      <button type="button" class="banner-action" on:click={onRebuildNow}>
+        Rebuild now
+      </button>
+    </div>
+  {/if}
 
   <fieldset disabled={saving}>
     <legend>Provider</legend>
@@ -138,6 +194,31 @@
       />
       Smart Connections plugin
       <span class="hint">requires the Smart Connections community plugin</span>
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="ss-provider"
+        value="embedding-gemma"
+        checked={settings.provider === "embedding-gemma"}
+        on:change={() => onProviderChange("embedding-gemma")}
+      />
+      EmbeddingGemma 300M
+      <span class="hint">multilingual, 768d, 2K context (~190 MB download)</span
+      >
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="ss-provider"
+        value="multilingual-e5-base"
+        checked={settings.provider === "multilingual-e5-base"}
+        on:change={() => onProviderChange("multilingual-e5-base")}
+      />
+      Multilingual E5 base
+      <span class="hint"
+        >multilingual, 768d, 512 context (~100 MB download)</span
+      >
     </label>
   </fieldset>
 
@@ -236,6 +317,27 @@
     color: var(--text-muted);
     font-size: 0.85em;
     margin-left: 0.4em;
+  }
+
+  .banner {
+    border-radius: 4px;
+    font-size: 0.9em;
+    margin-bottom: 0.75em;
+    padding: 0.5em 0.75em;
+  }
+
+  .banner.info {
+    background: var(--background-modifier-info);
+    color: var(--text-normal);
+  }
+
+  .banner.warn {
+    background: var(--background-modifier-error);
+    color: var(--text-normal);
+  }
+
+  .banner-action {
+    margin-left: 0.5em;
   }
 
   .status {

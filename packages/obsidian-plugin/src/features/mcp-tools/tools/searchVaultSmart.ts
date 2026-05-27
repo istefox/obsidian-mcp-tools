@@ -102,6 +102,11 @@ export async function searchVaultSmartHandler(
 
   const provider = state.provider;
   if (!provider.isReady()) {
+    if (state.pendingProvider) {
+      return errorResult(
+        `Semantic search is not ready: the "${state.pendingProvider}" index is still being built. Open Settings → MCP Connector → Semantic Search and click "Rebuild now" if the build has not started yet.`,
+      );
+    }
     return errorResult(
       usingSmartConnections
         ? "Semantic search is not ready: the Smart Connections plugin is not loaded or has not finished indexing this vault. Wait for Smart Connections to finish loading, or open Settings → MCP Connector → Semantic Search to switch providers."

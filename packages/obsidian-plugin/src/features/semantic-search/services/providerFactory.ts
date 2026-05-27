@@ -1,35 +1,40 @@
 /**
  * Provider factory — selects the active SemanticSearchProvider based
- * on the user's tri-state setting.
+ * on the user's setting.
  *
  * Behavior matrix:
- *   provider="native"            → always NativeProvider
- *   provider="smart-connections" → always SmartConnectionsProvider
- *                                  (its `search` throws an actionable
- *                                  error if SC is not loaded)
- *   provider="auto"              → SmartConnectionsProvider if SC is
- *                                  loaded, else NativeProvider
+ *   provider="native"              → always NativeProvider (MiniLM)
+ *   provider="smart-connections"   → always SmartConnectionsProvider
+ *   provider="auto"                → SmartConnectionsProvider if SC
+ *                                    is loaded, else NativeProvider
+ *   provider="embedding-gemma"     → NativeProvider backed by the
+ *                                    EmbeddingGemma 300M store
+ *   provider="multilingual-e5-base"→ NativeProvider backed by the
+ *                                    multilingual-e5-base store
  *
- * The factory is constructed once with stable dependencies (embedder,
- * store, excerptResolver, plugin handle) and returns a closure that
- * maps a `SemanticSearchSettings` instance to a provider. Settings
- * changes (T12 UI swap) call the closure again to swap the live
- * provider; the dependencies are unchanged across swaps.
+ * For "embedding-gemma" and "multilingual-e5-base", `deps.registry`
+ * and `deps.embeddingProviders` must be supplied; when absent the
+ * factory falls back to the native provider (degraded but safe).
  */
 
 import type McpToolsPlugin from "$/main";
 import type { SemanticSearchProvider } from "$/features/semantic-search";
 import type { SemanticSearchSettings } from "$/features/semantic-search/types";
+import type { EmbeddingProvider } from "$/features/semantic-search/types";
 import { createNativeProvider, type ExcerptResolver } from "./nativeProvider";
 import { createSmartConnectionsProvider } from "./smartConnectionsProvider";
 import type { Embedder } from "./embedder";
 import type { EmbeddingStore } from "./store";
+import type { EmbeddingStoreRegistry } from "./storeRegistry";
 
 export type ProviderFactoryDeps = {
   plugin: McpToolsPlugin;
   embedder: Embedder;
   store: EmbeddingStore;
   excerptResolver?: ExcerptResolver;
+  /** Required for "embedding-gemma" and "multilingual-e5-base" cases. */
+  registry?: EmbeddingStoreRegistry;
+  embeddingProviders?: Record<string, EmbeddingProvider>;
 };
 
 export type ProviderChooser = (
@@ -38,15 +43,30 @@ export type ProviderChooser = (
 
 /**
  * Probe whether the Smart Connections plugin's SmartSearch surface
- * is loaded and ready to be called. The check is the same as the
- * one inside SmartConnectionsProvider but lives here too so the
- * factory can resolve `provider="auto"` without constructing a
- * provider just to ask.
+ * is loaded and ready to be called.
  */
 export function isSmartConnectionsAvailable(plugin: McpToolsPlugin): boolean {
   const sc = (plugin as unknown as { smartSearch?: { search?: unknown } })
     .smartSearch;
   return typeof sc?.search === "function";
+}
+
+/**
+ * Adapts an `EmbeddingProvider` to the `Embedder` interface expected
+ * by `NativeProviderImpl`. Role is fixed to `"query"` since this
+ * adapter is only used on the search path.
+ */
+function makeSearchEmbedder(provider: EmbeddingProvider): Embedder {
+  return {
+    embed: async (text: string): Promise<Float32Array> => {
+      const vecs = await provider.embed([text], "query");
+      return vecs[0]!;
+    },
+    embedBatch: async (texts: string[]): Promise<Float32Array[]> =>
+      provider.embed(texts, "query"),
+    unload: async () => {},
+    isLoaded: () => true,
+  };
 }
 
 export function createProviderFactory(
@@ -62,6 +82,16 @@ export function createProviderFactory(
   const buildSmart = (): SemanticSearchProvider =>
     createSmartConnectionsProvider(deps.plugin);
 
+  const buildNativeSearchProvider = (
+    ep: EmbeddingProvider,
+    store: EmbeddingStore,
+  ): SemanticSearchProvider =>
+    createNativeProvider({
+      embedder: makeSearchEmbedder(ep),
+      store,
+      excerptResolver: deps.excerptResolver,
+    });
+
   return (settings) => {
     switch (settings.provider) {
       case "native":
@@ -72,6 +102,22 @@ export function createProviderFactory(
         return isSmartConnectionsAvailable(deps.plugin)
           ? buildSmart()
           : buildNative();
+      case "embedding-gemma": {
+        const ep = deps.embeddingProviders?.["embedding-gemma-300m"];
+        if (!ep || !deps.registry) return buildNative();
+        return buildNativeSearchProvider(
+          ep,
+          deps.registry.storeFor("embedding-gemma-300m", 768),
+        );
+      }
+      case "multilingual-e5-base": {
+        const ep = deps.embeddingProviders?.["multilingual-e5-base"];
+        if (!ep || !deps.registry) return buildNative();
+        return buildNativeSearchProvider(
+          ep,
+          deps.registry.storeFor("multilingual-e5-base", 768),
+        );
+      }
     }
   };
 }

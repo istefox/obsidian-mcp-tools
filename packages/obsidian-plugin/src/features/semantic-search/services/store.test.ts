@@ -44,6 +44,7 @@ function makeMemAdapter(): {
       files.delete(path);
       bins.delete(path);
     },
+    async mkdir() {},
   };
   return { adapter, files, bins };
 }
@@ -304,6 +305,70 @@ describe("embedding store", () => {
     );
     expect(written.version).toBe(FORMAT_VERSION);
     expect(written.records).toHaveLength(0);
+  });
+
+  test("FORMAT_VERSION 2 round-trip: flushed index carries version 2", async () => {
+    const opts = {
+      adapter: mem.adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: DIM,
+    };
+    const store = createEmbeddingStore(opts);
+    await store.init();
+    await store.upsert([makeRecord({ chunkId: "a:0" })]);
+    await store.flush();
+    const written = JSON.parse(
+      mem.files.get("/p/embeddings.index.json") ?? "{}",
+    );
+    expect(written.version).toBe(FORMAT_VERSION);
+    expect(FORMAT_VERSION).toBe(2);
+  });
+
+  test("v1 index readable without re-index; dirty=true upgrades to v2 on flush", async () => {
+    const opts = {
+      adapter: mem.adapter,
+      binPath: "/p/embeddings.bin",
+      indexPath: "/p/embeddings.index.json",
+      vectorDim: DIM,
+    };
+    // Craft a v1 index with one record.
+    const v1Vec = makeVector(3);
+    const bin = new Float32Array(DIM);
+    bin.set(v1Vec, 0);
+    await mem.adapter.writeBinary("/p/embeddings.bin", bin.buffer.slice(0));
+    await mem.adapter.write(
+      "/p/embeddings.index.json",
+      JSON.stringify({
+        version: 1,
+        records: [
+          {
+            chunkId: "legacy:0",
+            filePath: "Legacy.md",
+            offset: 0,
+            heading: null,
+            contentHash: "abc123",
+            byteOffset: 0,
+            byteLength: DIM * 4,
+          },
+        ],
+      }),
+    );
+
+    const store = createEmbeddingStore(opts);
+    await store.init();
+    // Records must be loaded (not discarded).
+    expect(store.size()).toBe(1);
+    const seen: EmbeddingRecord[] = [];
+    for await (const r of store.scan()) seen.push(r);
+    expect(seen[0]?.chunkId).toBe("legacy:0");
+    // Flush should write a version-2 index.
+    await store.flush();
+    const written = JSON.parse(
+      mem.files.get("/p/embeddings.index.json") ?? "{}",
+    );
+    expect(written.version).toBe(FORMAT_VERSION);
+    expect(written.records).toHaveLength(1);
   });
 
   test("bin shorter than a record's byteOffset+byteLength: skip that record, keep valid ones, no throw", async () => {
