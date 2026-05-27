@@ -22,19 +22,16 @@ Starting with **0.4.0**, the plugin hosts the MCP server **in-process inside Obs
 When connected to an MCP-compatible client, this plugin enables:
 
 - **Vault access** — read, write, and patch notes through 18 typed tools (`get_vault_file`, `create_vault_file`, `patch_vault_file`, `rename_vault_file`, `rename_heading`, `list_vault_files`, `create_vault_directory`, `delete_vault_directory`, …) with native binary content for images and audio. Missing parent directories on a `create`/`append` path are auto-created. `rename_vault_file` preserves link integrity across the vault via `app.fileManager.renameFile`; `rename_heading` renames a heading in place and rewrites every wikilink / markdown link / subheading-path reference pointing at it across the vault.
-- **Native semantic search** — `search_vault_smart` over an on-device MiniLM index, with optional fallback to Smart Connections if it is installed. Provider tri-state setting (`auto` / `native` / `smart-connections`) under the plugin settings.
-- **Plain-text + structured search** — `search_vault_simple` (text + context windows) and `search_vault` (DQL / JsonLogic via Local REST API).
+- **Semantic search** — `search_vault_smart` over an on-device embedding index. Four providers available on demand: **native MiniLM-L6-v2** (~25 MB, default), **Gemma 300M** (768d, recommended for non-Latin vaults), **Multilingual-E5-Base** (768d), and Smart Connections (if installed). Providers download once and swap live without restart; the vault is re-indexed in the background while the previous provider continues serving. A startup banner suggests the best provider based on your vault's character distribution.
+- **Plain-text + structured search** — `search_vault_simple` (text + context windows) and `search_vault` (DQL / JsonLogic via Local REST API). `execute_dataview_query` runs Dataview DQL in-process via the plugin API — returns typed results (`table` / `list` / `task` / `calendar`) without requiring Local REST API.
+- **Periodic notes** — `get_or_create_daily_note`, `get_or_create_periodic_note` (daily / weekly / monthly / quarterly / yearly), and `append_to_periodic_note`. Each call auto-creates the note with your configured template if it doesn't exist yet. Works with both the native Daily Notes plugin and the Periodic Notes community plugin.
+- **Vault intelligence** — five read/write tools for vault-wide analysis: `find_broken_links` (all wikilink, markdown, embed, and frontmatter link targets that don't resolve, with source file + line number), `find_orphaned_notes` (notes with zero incoming resolved links), `search_and_replace` (regex find-and-replace across vault or scoped paths, `dry_run:"true"` by default for safe preview), `get_note_outline` (heading TOC with level, text, line number, and anchor slug), `list_bookmarks` (full native Obsidian bookmark hierarchy: files, folders, searches, headings, blocks, groups).
 - **Template execution** — invoke Templater templates as MCP tool calls with dynamic parameters.
-- **Prompt library** — author MCP prompts as markdown files in your vault's `Prompts/` folder, with parameters defined inline via Templater syntax. See [Using prompts](#using-prompts) below.
+- **Prompt library** — author MCP prompts as plain markdown files in your vault's `Prompts/` folder. No plugins required — the in-process renderer handles everything. See [Using prompts](#using-prompts) below.
 - **Command execution** (opt-in) — authorize the agent to run specific Obsidian commands (e.g. `editor:toggle-bold`, `graph:open`) from a per-vault allowlist. Disabled by default; every invocation is audited. See [Command execution](#command-execution) below.
 - **Web fetch** — `fetch` tool retrieves arbitrary URLs and returns Markdown via Turndown, with pagination for long pages.
-- **Tag listing** — `list_tags` returns every tag in the vault with its usage count, sourced from `app.metadataCache.getTags()`. Inline `#tags` and frontmatter tags both included; no plugin dependency.
-- **Tag-filtered file lookup** — `get_files_by_tag` returns every file tagged with a given tag, with per-file occurrence count for relevance ranking. Optional `includeNested` to match `#project` against `#project/active`, `#project/archived`, etc. (mirrors Obsidian's tag pane).
-- **Recent-file context** — `get_recent_files` returns the most recently modified markdown files in the vault (ordered by `mtime` desc, with `ctime` and `size` per entry), honouring Obsidian's `Files & Links → Excluded files` configuration. Optional `limit` (1–100, default 20, fail-loud on out-of-range). Useful for agent-recency context without screen-scraping a file picker.
-- **Partial-read access** — `get_vault_file_partial` returns one of four slices of a file without loading the whole body: a single `frontmatter` field, the markdown section under a `heading` (nested paths via `targetDelimiter`, default `"::"`), the markdown range of a `block` reference, or a structured `document-map` outline (heading list + block-id list + frontmatter-field list, zero file I/O). Useful for context-window economics on large notes — spot-check a frontmatter field or grab a single section without paying for the full read.
-- **Graph navigation** — `get_outgoing_links` returns the body, embed, and frontmatter links emanating from a file (with resolved `targetPath` and `resolved` flag); `get_backlinks` returns every file that links to a given target, with per-source count. Both read-only, both backed by `app.metadataCache.resolvedLinks` / `getFirstLinkpathDest`.
 
-30 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
+43 MCP tools in total. Full list in the plugin's settings → **Tools available** section.
 
 ## Prerequisites
 
@@ -46,7 +43,7 @@ When connected to an MCP-compatible client, this plugin enables:
 
 ### Optional
 
-- [Templater](https://silentvoid13.github.io/Templater/) — needed for the Prompt library and `execute_template` tool.
+- [Templater](https://silentvoid13.github.io/Templater/) — needed only for the `execute_template` tool. The prompt library works without it.
 - [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) — needed only for the `search_vault` tool (DQL / JsonLogic queries). All other tools work without it. [^4]
 - [Smart Connections](https://smartconnections.app/) — alternative semantic-search backend. The native MiniLM provider works just as well; Smart Connections is only useful if you are already invested in its ecosystem.
 
@@ -128,7 +125,7 @@ Click **Copy config for streamable-http clients**. The snippet uses the generic 
 
 ### Verifying the setup
 
-Once configured, your client should expose **30 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
+Once configured, your client should expose **43 MCP tools** from this server, plus any prompts you have tagged with `#mcp-tools-prompt` in a `Prompts/` folder at your vault root.
 
 To verify the connection works end-to-end, ask the agent to call `get_server_info`. A successful response confirms the client can reach the in-process server and the bearer token is correct. For deeper inspection (request/response logs, tool schema inspection without an LLM in the loop), use [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector):
 
@@ -174,8 +171,9 @@ The plugin lets you author **MCP prompts** as plain markdown files in your vault
 
 ### Requirements
 
-- The **[Templater](https://silentvoid13.github.io/Templater/)** plugin must be installed and enabled. The prompt feature uses Templater to render the template body.
-- A folder named exactly `Prompts` (capital `P`) at the root of your vault.
+- A folder named exactly `Prompts` (capital `P`) at the root of your vault. That's it — **no additional plugins required**. The prompt renderer runs in-process inside the plugin.
+
+If you use other Templater expressions in the prompt body (e.g. `<% tp.date.now() %>`), they are passed through verbatim — the MCP server does not evaluate them. Only `<% tp.mcpTools.prompt(…) %>` declarations and `{{arg}}` placeholders are processed.
 
 ### Creating a prompt in 60 seconds
 
@@ -202,13 +200,18 @@ The plugin lets you author **MCP prompts** as plain markdown files in your vault
 
 ### How parameters work
 
-Parameters are declared inside the template body using a specific Templater pattern:
+Parameters are declared anywhere in the prompt body using this syntax:
 
 ```
 <% tp.mcpTools.prompt("parameter_name", "Description shown to the user") %>
 ```
 
-The same call at execution time returns the user-supplied value. You can repeat the same parameter name throughout the template — it only shows up once in the client's input form, and the value is injected everywhere.
+This line is stripped from the rendered output — it is a declaration only. The actual value is injected wherever you write `{{parameter_name}}` in the body. You can use the same name multiple times; the client asks for it once and injects the value everywhere.
+
+```markdown
+Summarize my notes about **{{topic}}** from the past {{days}} days.
+Focus on how {{topic}} relates to my long-term goals.
+```
 
 ### Other ways to tag a prompt
 
