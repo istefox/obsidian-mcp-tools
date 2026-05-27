@@ -8,13 +8,16 @@ export const findBrokenLinksSchema = type({
     "exclude_folders?": type("string[]").describe(
       'Vault-relative folder prefixes to skip. Default: `["templates","attachments","_archive"]`. Override is complete (not additive): passing `["custom"]` scans templates too.',
     ),
+    "scope?": type("string[]").describe(
+      "Optional list of vault-relative paths or folder prefixes to limit the scan. A folder prefix matches any file under it. Omit for vault-wide scan.",
+    ),
   },
 }).describe(
-  "Scans the entire vault for unresolved links (wiki-links, markdown links, embeds, frontmatter links) and returns every broken link with its source file, 1-based line number, link target, original syntax, and link type. Uses Obsidian's metadata cache — no file I/O. Always read-only.",
+  "Scans the vault (or a scoped subset) for unresolved links (wiki-links, markdown links, embeds, frontmatter links) and returns every broken link with its source file, 1-based line number, link target, original syntax, and link type. Uses Obsidian's metadata cache — no file I/O. Always read-only.",
 );
 
 export type FindBrokenLinksContext = {
-  arguments: { exclude_folders?: string[] };
+  arguments: { exclude_folders?: string[]; scope?: string[] };
   app: App;
 };
 
@@ -42,9 +45,14 @@ export async function findBrokenLinksHandler(
   const rawExcludes = ctx.arguments.exclude_folders ?? DEFAULT_EXCLUDE;
   // Normalise: strip trailing slash for consistent prefix-match.
   const excludes = rawExcludes.map((e) => e.replace(/\/+$/, ""));
+  const scope = ctx.arguments.scope?.map((s) => s.replace(/\/+$/, ""));
 
   const isExcluded = (path: string): boolean =>
     excludes.some((ex) => path === ex || path.startsWith(ex + "/"));
+
+  const inScope = (path: string): boolean =>
+    scope === undefined ||
+    scope.some((s) => path === s || path.startsWith(s + "/"));
 
   const files = ctx.app.vault.getMarkdownFiles();
   const broken: BrokenLinkEntry[] = [];
@@ -52,6 +60,7 @@ export async function findBrokenLinksHandler(
 
   for (const file of files) {
     if (isExcluded(file.path)) continue;
+    if (!inScope(file.path)) continue;
     scannedFiles++;
 
     const cache = ctx.app.metadataCache.getFileCache(file as TFile);
@@ -102,6 +111,7 @@ export async function findBrokenLinksHandler(
             total_broken_links: broken.length,
             scanned_files: scannedFiles,
             excluded_folders: excludes,
+            ...(scope !== undefined ? { scope } : {}),
             broken_links: broken,
           },
           null,
