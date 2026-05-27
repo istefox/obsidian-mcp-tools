@@ -118,6 +118,69 @@ describe("find_broken_links tool", () => {
     expect(data.scanned_files).toBe(2);
   });
 
+  test("scope limits scan to matching path prefix", async () => {
+    setMockFile("Projects/2026/note.md", "");
+    setMockFile("Resources/ref.md", "");
+    setMockFile("Archive/old.md", "");
+    setMockMetadata("Projects/2026/note.md", {
+      links: [{ link: "BrokenA", line: 1 }],
+    });
+    setMockMetadata("Resources/ref.md", {
+      links: [{ link: "BrokenB", line: 1 }],
+    });
+    setMockMetadata("Archive/old.md", {
+      links: [{ link: "BrokenC", line: 1 }],
+    });
+    const r = await findBrokenLinksHandler({
+      arguments: { scope: ["Projects/2026", "Resources"], exclude_folders: [] },
+      app: mockApp(),
+    });
+    const data = JSON.parse(r.content[0].text as string);
+    const sources = data.broken_links.map(
+      (e: { source_path: string }) => e.source_path,
+    );
+    expect(sources).toContain("Projects/2026/note.md");
+    expect(sources).toContain("Resources/ref.md");
+    expect(sources).not.toContain("Archive/old.md");
+    expect(data.scope).toEqual(["Projects/2026", "Resources"]);
+    expect(data.scanned_files).toBe(2);
+  });
+
+  test("scope with trailing slash is normalised", async () => {
+    setMockFile("Projects/note.md", "");
+    setMockFile("Other/note.md", "");
+    setMockMetadata("Projects/note.md", {
+      links: [{ link: "Broken", line: 1 }],
+    });
+    setMockMetadata("Other/note.md", {
+      links: [{ link: "AlsoBroken", line: 1 }],
+    });
+    const r = await findBrokenLinksHandler({
+      arguments: { scope: ["Projects/"], exclude_folders: [] },
+      app: mockApp(),
+    });
+    const data = JSON.parse(r.content[0].text as string);
+    const sources = data.broken_links.map(
+      (e: { source_path: string }) => e.source_path,
+    );
+    expect(sources).toContain("Projects/note.md");
+    expect(sources).not.toContain("Other/note.md");
+  });
+
+  test("omitting scope scans the entire vault", async () => {
+    setMockFile("A/note.md", "");
+    setMockFile("B/note.md", "");
+    setMockMetadata("A/note.md", { links: [{ link: "Broken", line: 1 }] });
+    setMockMetadata("B/note.md", { links: [{ link: "BrokenB", line: 1 }] });
+    const r = await findBrokenLinksHandler({
+      arguments: { exclude_folders: [] },
+      app: mockApp(),
+    });
+    const data = JSON.parse(r.content[0].text as string);
+    expect(data.scanned_files).toBe(2);
+    expect(data.scope).toBeUndefined();
+  });
+
   test("skips files with no metadata cache gracefully", async () => {
     setMockFile("no-cache.md", "[[BrokenLink]]");
     // no setMockMetadata → getFileCache returns null — file is skipped, not an error
