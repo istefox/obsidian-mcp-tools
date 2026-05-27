@@ -1,184 +1,177 @@
-# SPEC: Multilingual embedding providers for search_vault_smart
+# SPEC: MCP Prompts feature for in-process server
 
 ## Objective
 
-Replace the single hardcoded `all-MiniLM-L6-v2` backend with a pluggable
-`EmbeddingProvider` interface and add two multilingual local providers:
-**EmbeddingGemma 300M** (Apache 2.0, 768d, Matryoshka, 2K context) and
-**multilingual-e5-base** (MIT, 768d, 512 context). Bundle a markdown-aware
-chunker upgrade that benefits all providers including the existing native one.
+Wire the `prompts` capability into the in-process streamable-HTTP MCP server
+(0.4.x). The server currently declares no `prompts` capability and registers
+no `prompts/list` or `prompts/get` handlers. After this change, prompt files
+in the vault's `Prompts/` folder surface as slash-commands in MCP clients
+(e.g. `/mcp__mcp-tools-istefox__my-prompt` in Claude Code).
 
 ## Scope
 
-**In scope — this cycle:**
-- `EmbeddingProvider` interface and refactor of existing backends behind it
-- EmbeddingGemma 300M ONNX provider (task-prompt aware: `"task: search result | query: {text}"` / `"title: none | text: {text}"`)
-- multilingual-e5-base provider (`"query: "` / `"passage: "` prefixes)
-- Store path keyed on `providerKey` (`embeddings/<providerKey>/`)
-- Provider-change banner + explicit re-index button in settings
-- Model files cached to `.obsidian/plugins/mcp-connector/models/<modelId>/`
-- Markdown-aware chunker: frontmatter chunk, H2 split, code fence atomic, 1-sentence overlap
-- Progress UI for model download (reuse existing `ModelDownloadProgress.svelte` pattern)
-- Settings UI: radio group extended with new provider entries
+**In scope:**
 
-**Out of scope — deferred:**
-- Gemini cloud provider (Option B) — separate chain
-- Matryoshka dimension selection (fixed at 768 for EmbeddingGemma and e5-base)
-- HNSW approximate-nearest-neighbour index (flat scan retained, per existing design)
-- Cross-vault or cross-device index sharing
+- Declare `prompts` capability on the MCP server.
+- `prompts/list` handler: scan `Prompts/` folder, filter by `mcp-tools-prompt`
+  tag, parse argument declarations, return MCP prompt list.
+- `prompts/get` handler: read prompt file, strip argument declarations, substitute
+  `{{arg_name}}` placeholders with provided values, return as user message.
+- `notifications/prompts/list_changed`: vault event watcher on `Prompts/` that
+  triggers client notification on file create / rename / delete.
+- New feature module `src/features/prompts/` with `setup()` / `teardown()` contract.
+
+**Out of scope:**
+
+- Templater execution for `prompts/get` (no Templater dependency).
+- Subfolders under `Prompts/` (flat directory only, per existing vault contract).
+- New vault-side file format changes (re-use the existing `tp.mcpTools.prompt`
+  declaration syntax and `mcp-tools-prompt` tag).
+- `prompts/listChanged` subscription tracking (server sends; clients subscribe
+  at their own discretion).
 
 ## Stack
 
-- **Runtime:** `@huggingface/transformers` (already in tree) with `device: 'wasm'` explicit (Electron compatibility)
-- **Settings UI:** Svelte (existing `SemanticSettingsSection.svelte`)
-- **Store format:** existing `embeddings.bin` + `embeddings.index.json` (one pair per provider under `embeddings/<providerKey>/`)
-- **Test harness:** bun test (existing)
+TypeScript strict mode, Bun workspace, `bun:test`. Obsidian plugin runtime
+(in-process, no separate binary). `@modelcontextprotocol/sdk` 1.29.0. ArkType
+for frontmatter validation at the boundary. No new npm dependencies.
 
 ## Architecture
 
-### EmbeddingProvider interface
-
-New in `features/semantic-search/types.ts`:
+### Feature layout
 
 ```
-interface EmbeddingProvider {
-  readonly providerKey: string      // stable id: "native-minilm-l6-v2" | "embedding-gemma-300m" | "multilingual-e5-base"
-  readonly dimensions: number       // 384 or 768
-  readonly maxInputTokens: number   // 512 or 2048
-  embed(texts: string[], role: "document" | "query"): Promise<Float32Array[]>
-  isAvailable(): Promise<boolean>
-  getModelSizeBytes(): number       // approximate; drives UI estimate
-}
+src/features/prompts/
+├── services/
+│   ├── promptDiscovery.ts   # list + parse arg declarations
+│   ├── promptRenderer.ts    # strip declarations + substitute args
+│   └── vaultWatcher.ts      # subscribe vault events → listChanged notification
+└── index.ts                 # setup(), teardown(), handler registration
 ```
 
-### Provider implementations
+### Integration points
 
-| File | Model | Key | Dims | Context | License |
-|---|---|---|---|---|---|
-| `nativeProvider.ts` (refactored) | all-MiniLM-L6-v2 | `native-minilm-l6-v2` | 384 | 512 | Apache 2.0 |
-| `embeddingGemmaProvider.ts` (new) | onnx-community/embeddinggemma-300m-ONNX | `embedding-gemma-300m` | 768 | 2048 | Apache 2.0 |
-| `multilingualE5Provider.ts` (new) | Xenova/multilingual-e5-base | `multilingual-e5-base` | 768 | 512 | MIT |
+- `src/main.ts` — calls `promptsFeature.setup(server, app)` during plugin `onload`.
+- `src/features/mcp-transport/` — server must declare `{ prompts: {} }` in its
+  capabilities object alongside the existing `tools` capability.
+- `ToolRegistry` — handlers registered through the existing registry (consistent
+  with the "single registration path" invariant in CLAUDE.md).
 
-`embeddingGemmaProvider` and `multilingualE5Provider` share a generic
-`TransformersProvider` base (parameterized by model id, dims, task-prompt fn).
+### Data flow
 
-### Store path strategy
-
+**`prompts/list`:**
 ```
-.obsidian/plugins/mcp-connector/
-  models/
-    embedding-gemma-300m-ONNX/     ← downloaded ONNX files
-    multilingual-e5-base/
-  embeddings/
-    native-minilm-l6-v2/           ← existing index (migrated from flat embeddings/)
-      embeddings.bin
-      embeddings.index.json
-    embedding-gemma-300m/
-      embeddings.bin
-      embeddings.index.json
-    multilingual-e5-base/
-      embeddings.bin
-      embeddings.index.json
+app.vault.getMarkdownFiles()
+  → filter path prefix "Prompts/"
+  → filter tag "mcp-tools-prompt" via metadataCache.getFileCache()
+  → for each file: cachedRead → parseArgDeclarations()
+  → return PromptListEntry[]
 ```
 
-Existing users: on first load with the new code, the flat `embeddings/` dir is
-migrated to `embeddings/native-minilm-l6-v2/` transparently.
-
-### Indexer — provider change detection
-
-`indexer.ts` reads the active provider's `providerKey` from settings on each
-init. If the `embeddings/<providerKey>/` dir does not exist, emit a
-`providerIndexMissing` event. The settings component listens to this event
-and shows the re-index banner.
-
-### Chunker upgrade
-
-All changes are backward-compatible (no API surface change, just richer output):
-
-1. **Frontmatter chunk:** YAML frontmatter block extracted as a separate
-   chunk, always prepended before body chunks. Chunk id suffix: `#frontmatter`.
-2. **H2-bounded body split:** split on `## Heading` boundaries. If a section
-   exceeds `maxInputTokens`, split further on `### Heading`. Never split
-   inside a section that fits.
-3. **Code fences and tables atomic:** if a code fence or table exceeds
-   `maxInputTokens`, keep it as a single oversized chunk (truncation is
-   better than mid-fence split). Log a debug warning.
-4. **1-sentence overlap:** prepend the last sentence of the previous chunk
-   to the next chunk's text before embedding (not stored, applied at embed time).
-
-### Settings schema (additive)
-
-```ts
-type SemanticSearchSettings = {
-  provider: "native" | "smart-connections" | "auto" | "embedding-gemma" | "multilingual-e5-base"
-  indexingMode: "live" | "low-power"
-  unloadModelWhenIdle: boolean
-}
+**`prompts/get(name, args)`:**
+```
+find file by name (filename without extension → prompt name)
+  → cachedRead
+  → stripFrontmatter()
+  → stripArgDeclarations()   # remove <% tp.mcpTools.prompt(...) %> lines
+  → substituteArgs(body, args)  # {{arg_name}} → provided value; unknown keys left as-is
+  → return { messages: [{ role: "user", content: { type: "text", text: body } }] }
 ```
 
-`"embedding-gemma"` maps to `EmbeddingGemmaProvider` (768d).
-`"multilingual-e5-base"` maps to `MultilingualE5Provider` (768d).
-Existing values `"native"`, `"smart-connections"`, `"auto"` are unchanged.
+**`notifications/prompts/list_changed`:**
+```
+vault.on('create' | 'rename' | 'delete')
+  → if path starts with "Prompts/" and ends with ".md"
+  → server.sendPromptListChanged()
+```
 
 ## Data model
 
-### Model download record (in-memory, not persisted)
+### Vault-side prompt file (existing contract, read-only)
 
+```markdown
+---
+tags:
+  - mcp-tools-prompt
+description: "Optional description for MCP clients"
+---
+<% tp.mcpTools.prompt("topic", "The subject to explain") %>
+<% tp.mcpTools.prompt("level", "Target audience level") %>
+
+Explain {{topic}} at {{level}} level.
 ```
-{ modelId: string, status: "idle" | "downloading" | "ready" | "error", progressBytes: number, totalBytes: number }
+
+### Argument declaration parsing
+
+- Pattern: `/<% tp\.mcpTools\.prompt\("([^"]+)",\s*"([^"]*)"\) %>/g`
+- First capture: argument name (maps to `{{name}}` placeholder).
+- Second capture: argument description (exposed in MCP `PromptArgument.description`).
+- Declarations stripped from the rendered body before substitution.
+
+### MCP `PromptListEntry` shape
+
+```typescript
+{
+  name: string;          // filename without extension
+  description?: string;  // frontmatter "description" field, if present
+  arguments: Array<{
+    name: string;
+    description: string;
+    required: false;     // graceful passthrough — never hard-fail on missing arg
+  }>;
+}
 ```
 
-### Index store (unchanged format, new path)
+### Prompt name derivation
 
-`FORMAT_VERSION` bumped from 1 → 2. v1 stores found at the flat path are
-migrated to `embeddings/native-minilm-l6-v2/` on init; format version stays
-1 in the migrated files (content is identical, only the path changes).
+`filename (no extension)` — no slug transformation. File `Prompts/My Prompt.md`
+→ name `"My Prompt"`. Clients may display or slugify as they wish.
 
-## UI flows
+## API
 
-### 1. User selects EmbeddingGemma in settings
+### `prompts/list`
 
-1. Settings saves new provider value.
-2. If `embeddings/embedding-gemma-300m/` does not exist: yellow banner appears below the radio group:
-   > "EmbeddingGemma requires a one-time index rebuild (~190 MB model download + re-embedding). Estimated time: 20–40 min depending on vault size. **[Rebuild now]**"
-3. User clicks **Rebuild now**:
-   - Button changes to a spinner + "Downloading model… 47 MB / 190 MB"
-   - On download complete: "Indexing… 234 / 1,204 notes"
-   - On completion: banner disappears, search is active.
-4. If user closes settings before rebuild: banner re-appears next time settings opens (or on plugin load) until the index exists.
+- No parameters.
+- Returns all files in `Prompts/` (vault root only) with tag `mcp-tools-prompt`.
+- Empty list when `Prompts/` does not exist — no error.
+- Argument declarations parsed from cached file content.
 
-### 2. User switches back to native
+### `prompts/get`
 
-Instant — `embeddings/native-minilm-l6-v2/` already exists (migrated on first load).
-No banner, no rebuild.
+- Parameters: `{ name: string; arguments?: Record<string, string> }`.
+- Lookup: find `Prompts/<name>.md` (exact, case-sensitive).
+- `McpError(ErrorCode.InvalidParams)` if file not found or tag absent.
+- Missing `arguments` or absent key → placeholder left in body (no error).
+- Response: `{ messages: [{ role: "user", content: { type: "text", text: string } }] }`.
 
-### 3. First load with new plugin version (existing users)
+### `notifications/prompts/list_changed`
 
-`embeddings/` (flat) detected → silent migration to `embeddings/native-minilm-l6-v2/`.
-No UX change. Search works immediately.
+- Sent when a `.md` file is created, renamed into/out of, or deleted within `Prompts/`.
+- One notification per vault event (no debounce required in v1).
 
 ## Edge cases
 
-| Scenario | Behaviour |
+| Case | Behavior |
 |---|---|
-| Download interrupted mid-file | Partial model file detected (size mismatch); re-download on next "Rebuild now" |
-| Re-index triggered while another is running | Queue; second trigger is a no-op, not a parallel run |
-| EmbeddingGemma selected but model not yet downloaded | `search_vault_smart` returns `errorCode: "provider_not_ready"` with hint to open settings |
-| Vault with 0 markdown notes | Empty index; no crash; `search_vault_smart` returns empty results |
-| Frontmatter chunk > maxInputTokens | Kept as single chunk (oversized) and truncated at tokenizer level |
-| Code fence > maxInputTokens | Kept atomic, oversized chunk, debug log |
-| `device: 'wasm'` unavailable in Electron | Fall back to `device: 'cpu'`; log info; inference works, slower |
-| Old index FORMAT_VERSION=1 at flat path | Migrated to providerKey path; version stays 1; normal load |
+| `Prompts/` folder missing | `prompts/list` returns `[]`. No error. |
+| File missing `mcp-tools-prompt` tag | Excluded from list silently. |
+| No arg declarations in body | Valid prompt with `arguments: []`. |
+| Arg provided but no matching `{{placeholder}}` | Ignored silently. |
+| Arg declared but not provided in `prompts/get` | Placeholder left as-is in returned text. |
+| File renamed (in Obsidian) | `listChanged` fires; client re-fetches list. |
+| Duplicate name (two files differ only in extension) | Not possible: only `.md` files are scanned. |
+| Templater not installed | No impact — Templater is not invoked. |
 
 ## Success criteria
 
-- `search_vault_smart` with EmbeddingGemma returns relevant results for French/Italian queries against a multilingual vault
-- Selecting EmbeddingGemma shows the re-index banner; clicking "Rebuild now" downloads model, indexes vault, and makes search active
-- Selecting native provider after EmbeddingGemma is instant (no re-index)
-- Existing users upgrade silently (flat index migrated, search uninterrupted)
-- e5-base and EmbeddingGemma appear in the settings provider radio group
-- Chunker produces a separate frontmatter chunk and H2-bounded body chunks
-- Code fences are never split mid-fence
-- All existing semantic search tests pass; new tests cover providers, chunker upgrades, and migration path
-- Model files land in `.obsidian/plugins/mcp-connector/models/`
-- Gemini option is absent (deferred)
+1. `prompts/list` returns a non-empty list when `Prompts/` contains at least
+   one `.md` file tagged `mcp-tools-prompt`.
+2. `prompts/get("my-prompt", { topic: "Rust" })` returns a user message with
+   `{{topic}}` substituted by `"Rust"`.
+3. Adding a new file to `Prompts/` while the server is running triggers a
+   `notifications/prompts/list_changed` notification within one Obsidian event
+   cycle.
+4. All existing 999 tests continue to pass.
+5. `bun run check` (type check) passes with no new errors.
+6. The feature degrades gracefully when `Prompts/` is absent — no crash, no
+   uncaught error.

@@ -51,7 +51,7 @@ description: Generate a weekly review based on my daily notes
 Generate a weekly review based on my daily notes from the past 7 days.
 ```
 
-Both forms end up as the string `"mcp-tools-prompt"` in the file's unified tag list (the Local REST API flattens frontmatter tags and inline hashtags into a single `tags[]` array when it returns the file). The server checks `tags.includes("mcp-tools-prompt")` — no `#` prefix, no variation allowed. Tag names like `mcp_tools_prompt`, `MCP-Tools-Prompt`, or `prompt` will not match.
+Both forms are accepted. The server checks whether any tag equals `"mcp-tools-prompt"` — no `#` prefix, no variation allowed. Tag names like `mcp_tools_prompt`, `MCP-Tools-Prompt`, or `prompt` will not match. Scalar YAML tags (a bare string instead of a list) are also coerced automatically.
 
 Files without this tag are silently filtered out of the prompt list. This lets you keep other kinds of notes in the `Prompts/` folder (drafts, documentation, shared templates) without exposing them to MCP clients.
 
@@ -78,7 +78,7 @@ A prompt can accept **arguments** that the user supplies at invocation time — 
 <% tp.mcpTools.prompt("topic", "The subject you want me to write about") %>
 ```
 
-The server parses the prompt file's content with an AST (via `acorn`), walks every `<% … %>` tag, and extracts each `tp.mcpTools.prompt(name, description)` call it finds. The first argument becomes the parameter's **name**, the second becomes its **description** shown to the client UI.
+The server parses the prompt file's content with a regex, finds each `<% tp.mcpTools.prompt(name, description) %>` call it finds. The first argument becomes the parameter's **name**, the second becomes its **description** shown to the client UI.
 
 ### Rules and gotchas
 
@@ -91,18 +91,17 @@ The server parses the prompt file's content with an AST (via `acorn`), walks eve
 
 ### Using arguments inside the template
 
-The same `tp.mcpTools.prompt("name")` call returns the user-supplied value at execution time. You can scatter it throughout the template freely:
+Arguments are substituted at execution time using `{{name}}` Mustache-style placeholders. You can scatter them throughout the template freely:
 
 ```markdown
-Write a <% tp.mcpTools.prompt("length", "Length — short, medium, or long") %>
-summary about **<% tp.mcpTools.prompt("topic", "The subject") %>**.
+Write a {{length}} summary about **{{topic}}**.
 
 Focus on:
-- How <% tp.mcpTools.prompt("topic") %> relates to productivity
+- How {{topic}} relates to productivity
 - Practical takeaways the reader can apply today
 ```
 
-In the example above, `topic` appears three times but only shows up **once** in the client's parameter form. The user enters it once and the value is injected everywhere.
+In the example above, `topic` appears twice but only shows up **once** in the client's parameter form (declared via a single `<% tp.mcpTools.prompt("topic", …) %>`). The user enters it once and the value is injected everywhere.
 
 ## A complete example
 
@@ -131,7 +130,7 @@ Give me:
 Ignore any note that contains the tag `#archive`.
 ```
 
-When this file is placed at `{vault}/Prompts/daily-notes-summary.md`, an MCP client will see a new prompt called `daily-notes-summary.md` with:
+When this file is placed at `{vault}/Prompts/daily-notes-summary.md`, an MCP client will see a new prompt called `daily-notes-summary` with:
 
 - Description: *"Summarize my recent daily notes on a given topic"* (from frontmatter)
 - Parameters: `days` (*"How many days back to look, e.g. 7"*), `topic` (*"The subject — e.g. 'writing habits'"*)
@@ -146,55 +145,43 @@ This is the flow the user doesn't see but which every maintainer should understa
 
 Triggered when the MCP client asks "what prompts are available?":
 
-1. `GET /vault/Prompts/` via Local REST API → a directory listing of `Prompts/`.
-2. For each entry:
-   1. Skip anything that doesn't end with `.md`.
-   2. `GET /vault/Prompts/{filename}` with `Accept: application/vnd.olrapi.note+json` → fetches the file as structured JSON with the unified `tags[]` array, the parsed `frontmatter`, and the raw markdown `content`.
-   3. If `tags` does not include `"mcp-tools-prompt"` → skip.
-   4. Otherwise, call `parseTemplateParameters(content)` to extract the declared parameters from the body.
-3. Return a `PromptMetadata[]` containing `{ name, description, arguments }` for each surviving file.
+1. `app.vault.getMarkdownFiles()` — enumerate all `.md` files in the vault (in-process, zero HTTP calls).
+2. Filter to files whose path starts with `Prompts/` and have no further `/` after the prefix (flat root only).
+3. For each surviving file:
+   1. `app.metadataCache.getFileCache(file)?.frontmatter` — read frontmatter from Obsidian's in-memory metadata cache.
+   2. Validate with `PromptFrontmatterSchema` (requires the `mcp-tools-prompt` tag). On failure → skip silently.
+   3. `app.vault.cachedRead(file)` → read the file body from the cache.
+   4. Parse `<% tp.mcpTools.prompt(name, description) %>` declarations with a regex to build the argument list.
+4. Return a `PromptListEntry[]` containing `{ name, description, arguments }` for each surviving file.
 
-Cost: one HTTP call to list the folder + one HTTP call per file. For a `Prompts/` folder with a handful of files this is fast; for a folder with hundreds of files you may notice the discovery latency. No caching today — every `prompts/list` re-fetches everything.
+Cost: no HTTP calls, no filesystem I/O — everything is served from Obsidian's in-memory vault and metadata cache. Discovery is effectively instant.
 
 ### Execution — `prompts/get`
 
 Triggered when the user selects a prompt and clicks "insert" in the client UI:
 
-1. Construct the full vault path: `Prompts/{name}` (where `name` is whatever the client sent — usually the filename).
-2. `GET /vault/Prompts/{name}` with the same JSON accept header.
-3. Validate the frontmatter against `PromptFrontmatterSchema` (which requires the `mcp-tools-prompt` tag). If validation fails, throw `McpError`.
-4. Re-parse the template parameters from the content (same `parseTemplateParameters` call as in discovery).
-5. Build an ArkType schema from the parameter list where every field is `string?` (optional). Validate the user-supplied `arguments` against that schema. Unknown fields, type mismatches, etc., produce an `InvalidParams` error.
-6. `POST /templates/execute` — the custom endpoint registered by this plugin in `packages/obsidian-plugin/src/main.ts:65`. This endpoint:
-   1. Locates the template file inside the vault.
-   2. Builds a Templater `running_config`.
-   3. Monkey-patches Templater's `functions_generator.generate_object` to inject `tp.mcpTools.prompt` as a user function that reads from the supplied `arguments` object.
-   4. Calls `templater.read_and_parse_template(config)` to render the markdown.
-   5. Restores the original `generate_object`.
-   6. Returns the rendered content as JSON.
-7. The server strips the frontmatter from the rendered content by splitting on `---` and taking the last segment.
-8. Wraps the result in an MCP `GetPromptResult` with a single user message:
+1. Locate `Prompts/{name}.md` via `app.vault.getAbstractFileByPath()`. If absent → `McpError(InvalidParams)`.
+2. Re-validate the frontmatter (same `PromptFrontmatterSchema` check as discovery). If invalid → `McpError(InvalidParams)`.
+3. `app.vault.cachedRead(file)` → read the raw content.
+4. Render the prompt:
+   1. `stripFrontmatter` — remove the `---…---` block.
+   2. `stripArgDeclarations` — remove lines containing `<% tp.mcpTools.prompt(…) %>`.
+   3. `substituteArgs` — replace every `{{key}}` placeholder with the user-supplied value. Unknown keys are left as-is.
+   4. Trim leading blank lines left after stripping declarations.
+5. Wrap the result in an MCP `GetPromptResult`:
    ```ts
    { messages: [{ role: "user", content: { type: "text", text: rendered } }] }
    ```
 
-### Why Templater and not a custom template engine?
-
-The plugin delegates template rendering to **Templater**, the user's own plugin, for three reasons:
-
-1. **Users already know Templater syntax.** No new templating language to learn.
-2. **Templater already handles the hard parts** — Obsidian context, file operations, date math, system prompts, etc. Re-implementing any of those in the MCP server would duplicate a mature plugin.
-3. **The prompt library becomes interoperable with existing templates.** A file that was already a Templater template can become an MCP prompt just by adding one tag.
-
-The trade-off: **Templater is a required dependency**. Without it installed and enabled, `prompts/get` returns an error (503 Templater not available). Templater is listed as "optional" in the plugin's dependency check because it's only required by the prompt and template features — the vault file tools work without it.
+Note: **Templater is not required** for this implementation. `<% tp.mcpTools.prompt(…) %>` lines are stripped from the rendered output; any other Templater expressions (`<% tp.date.now() %>`, `<%* … %>`, etc.) are returned **verbatim** in the text — they are not evaluated by the MCP server. If you need evaluated Templater output, run the template through Obsidian's Templater plugin separately.
 
 ## Known limitations
 
-- **No "required" argument enforcement.** Mentioned above. All parameters are optional from the validator's point of view.
+- **No "required" argument enforcement.** All parameters are optional from the validator's point of view. If the user omits one, the `{{placeholder}}` is left as-is in the rendered text.
 - **No nested `Prompts/` subfolders.** Only direct children of `Prompts/` are scanned. If you want to organize prompts by category, use tag-based or frontmatter-based filtering inside the folder.
-- **No caching of the discovery results.** Every `prompts/list` re-fetches every file. On large prompt libraries this is unnecessary work; a simple in-memory cache keyed by (filename, mtime) would speed things up but has not been implemented.
 - **Filenames are the prompt IDs.** There's no separate "name" field in the frontmatter that would let you rename the prompt displayed to the client without renaming the file. If you want a prettier name, rename the file.
 - **Prompts cannot emit images, audio, or multiple messages.** The result is always a single user message with `type: "text"`. Multimodal prompts would require a significant refactor.
+- **Templater expressions not evaluated.** Only `{{arg_name}}` placeholders are substituted. All other Templater expressions (`<% tp.date.now() %>`, `<%* … %>`, etc.) are passed through verbatim.
 - **No error when a file almost-satisfies the contract.** If you misspell the tag or put the file in `prompts/` (lowercase), the file is silently skipped — there is no diagnostic in the plugin settings telling you which files were considered and rejected. If you expect a prompt to appear and it doesn't, check the three conditions above in order.
 
 ## Client-side: how to invoke prompts
@@ -215,10 +202,11 @@ Consult your client's documentation. The MCP specification reserves the right fo
 
 ## References
 
-- Server handler: `packages/mcp-server/src/features/prompts/index.ts` — `setupObsidianPrompts()` registers both `ListPromptsRequestSchema` and `GetPromptRequestSchema` handlers.
-- Argument parser: `packages/mcp-server/src/shared/parseTemplateParameters.ts` — AST walk that finds `tp.mcpTools.prompt()` calls.
-- Argument validator: `packages/shared/src/types/prompts.ts` — `buildTemplateArgumentsSchema()` generates the per-prompt ArkType schema at runtime.
-- Plugin endpoint: `packages/obsidian-plugin/src/main.ts:67-164` — `handleTemplateExecution()` does the Templater integration, including the `generate_object` monkey-patch that injects the `tp.mcpTools.prompt` user function.
+- Feature entry point: `packages/obsidian-plugin/src/features/prompts/index.ts` — `setup()` wires the `PromptRegistry` with lister and wildcard handler; `teardown()` stops the vault watcher.
+- Prompt discovery: `packages/obsidian-plugin/src/features/prompts/services/promptDiscovery.ts` — `discoverPrompts()` and `parseArgDeclarations()`.
+- Prompt renderer: `packages/obsidian-plugin/src/features/prompts/services/promptRenderer.ts` — `renderPrompt()`, `stripFrontmatter()`, `stripArgDeclarations()`, `substituteArgs()`.
+- Vault watcher: `packages/obsidian-plugin/src/features/prompts/services/vaultWatcher.ts` — `createVaultWatcher()` registers `create`/`delete`/`rename` event refs.
+- Prompt registry: `packages/obsidian-plugin/src/features/mcp-transport/services/promptRegistry.ts` — `PromptRegistryClass` with `setLister`, `setHandler`, `list`, `dispatch`.
+- MCP wiring: `packages/obsidian-plugin/src/features/mcp-transport/services/mcpServer.ts` — `createMcpService()` constructs `PromptRegistryClass` and wires `ListPromptsRequestSchema` + `GetPromptRequestSchema`.
 - Frontmatter schema: `packages/shared/src/types/prompts.ts` — `PromptFrontmatterSchema` with the `mcp-tools-prompt` tag narrow.
 - [Model Context Protocol prompts spec](https://modelcontextprotocol.io/docs/concepts/prompts) — upstream protocol documentation.
-- [Templater documentation](https://silentvoid13.github.io/Templater/) — for the template syntax used inside prompt bodies.

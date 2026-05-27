@@ -21,6 +21,11 @@ import {
 import { registerTemplatesCompatRoute } from "./features/mcp-tools/services/templatesCompat";
 import { setupMigration } from "./features/migration";
 import {
+  setup as promptsSetup,
+  teardown as promptsTeardown,
+  type PromptsFeatureState,
+} from "./features/prompts";
+import {
   setup as semanticSearchSetup,
   teardown as semanticSearchTeardown,
   createModelDownloader,
@@ -69,6 +74,8 @@ export default class McpToolsPlugin extends Plugin {
   };
 
   mcpTransportState?: McpTransportState;
+
+  promptsState?: PromptsFeatureState;
 
   semanticSearchState?: SemanticSearchState;
 
@@ -311,6 +318,17 @@ export default class McpToolsPlugin extends Plugin {
     const mcpResult = await mcpTransportSetup(this);
     if (mcpResult.success) {
       this.mcpTransportState = mcpResult.state;
+      const promptsResult = await promptsSetup(
+        mcpResult.state.mcp.promptRegistry,
+        this.app,
+      );
+      if (promptsResult.success) {
+        this.promptsState = promptsResult.state;
+      } else {
+        logger.error("Prompts feature setup failed", {
+          error: promptsResult.error,
+        });
+      }
     } else {
       new Notice(`MCP Connector: ${mcpResult.error}`);
       logger.error("MCP transport setup failed", { error: mcpResult.error });
@@ -630,6 +648,10 @@ export default class McpToolsPlugin extends Plugin {
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onunload() {
+    if (this.promptsState) {
+      promptsTeardown(this.promptsState);
+      this.promptsState = undefined;
+    }
     if (this.mcpTransportState) {
       await mcpTransportTeardown(this.mcpTransportState);
       this.mcpTransportState = undefined;

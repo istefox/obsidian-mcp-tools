@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -9,6 +11,8 @@ import type { App } from "obsidian";
 import type McpToolsPlugin from "$/main";
 import { ToolRegistryClass } from "./toolRegistry";
 import type { ToolRegistry } from "./toolRegistry";
+import { PromptRegistryClass } from "./promptRegistry";
+import type { PromptRegistry } from "./promptRegistry";
 import { registerTools } from "$/features/mcp-tools";
 import { applyDisabledToolsFilter } from "$/features/tool-toggle";
 
@@ -20,6 +24,7 @@ export type McpServiceConfig = {
 
 export type McpService = {
   registry: ToolRegistry;
+  promptRegistry: PromptRegistry;
   handleRequest: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 };
 
@@ -49,6 +54,7 @@ export async function createMcpService(
   config: McpServiceConfig,
 ): Promise<McpService> {
   const registry = new ToolRegistryClass();
+  const promptRegistry = new PromptRegistryClass();
   await registerTools(registry, {
     app: config.app,
     plugin: config.plugin,
@@ -77,6 +83,7 @@ export async function createMcpService(
           // SDK throws "Server does not support tools" at
           // setRequestHandler time.
           tools: {},
+          prompts: {},
         },
       },
     );
@@ -87,6 +94,13 @@ export async function createMcpService(
     server.server.setRequestHandler(ListToolsRequestSchema, registry.list);
     server.server.setRequestHandler(CallToolRequestSchema, async (request) =>
       registry.dispatch(request.params, { server }),
+    );
+    server.server.setRequestHandler(
+      ListPromptsRequestSchema,
+      promptRegistry.list,
+    );
+    server.server.setRequestHandler(GetPromptRequestSchema, (req) =>
+      promptRegistry.dispatch(req.params),
     );
 
     // Stateless mode (no sessionIdGenerator) + JSON response. Per-
@@ -116,7 +130,7 @@ export async function createMcpService(
     }
   };
 
-  return { registry, handleRequest };
+  return { registry, promptRegistry, handleRequest };
 }
 
 /**

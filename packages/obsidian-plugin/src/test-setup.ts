@@ -552,6 +552,12 @@ type MockVaultState = {
   // after the first read (TOCTOU / concurrent-edit simulation).
   modifyFailPaths: Set<string>;
   readMutations: Map<string, { content: string; firstReadSeen: boolean }>;
+  // Event handler registry for vault.on / vault.offref simulation.
+  // Keys are opaque ref objects; values carry the event name and handler.
+  eventHandlers: Map<
+    object,
+    { event: string; handler: (...args: unknown[]) => void }
+  >;
 };
 
 // Synthetic absolute filesystem prefix used by the mock `adapter.rmdir`
@@ -579,6 +585,7 @@ const _mockState: MockVaultState = {
   deletedPaths: [],
   modifyFailPaths: new Set(),
   readMutations: new Map(),
+  eventHandlers: new Map(),
 };
 
 export function resetMockVault(): void {
@@ -604,9 +611,20 @@ export function resetMockVault(): void {
   _mockState.deletedPaths = [];
   _mockState.modifyFailPaths.clear();
   _mockState.readMutations.clear();
+  _mockState.eventHandlers.clear();
   resetMockPeriodicNotes();
   resetMockDataview();
   resetMockBookmarks();
+}
+
+/**
+ * Simulate a vault event (create / delete / rename / ...) in tests.
+ * Calls all registered handlers for the given event name with the provided args.
+ */
+export function fireMockVaultEvent(event: string, ...args: unknown[]): void {
+  for (const { event: e, handler } of _mockState.eventHandlers.values()) {
+    if (e === event) handler(...args);
+  }
 }
 
 /** Make `vault.modify(file)` reject for `path` (rename_heading #143 M2). */
@@ -970,10 +988,18 @@ export function mockApp(): App {
         _mockState.activeFilePath = null;
       }
     },
-    on: (_event: string, _handler: unknown) => ({
-      unsubscribe: () => {},
-    }),
+    on: (event: string, handler: unknown) => {
+      const ref = {};
+      _mockState.eventHandlers.set(ref, {
+        event,
+        handler: handler as (...args: unknown[]) => void,
+      });
+      return ref;
+    },
     off: () => {},
+    offref: (ref: object) => {
+      _mockState.eventHandlers.delete(ref);
+    },
     adapter: {
       // Recursive rmdir over the mock vault: removes the folder, every
       // descendant folder, and every descendant file. Errors mirror the

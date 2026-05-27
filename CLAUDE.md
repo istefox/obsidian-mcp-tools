@@ -462,3 +462,16 @@ ADR: `docs/architecture/ADR-0005-multilingual-embedding-providers.md`
 - **Chunker: 1-sentence overlap applied at embed time, not stored** — `wrapChunkerWithOverlap` is applied in `processOnePath`, not in `chunk()`. Stored `Chunk.text` is overlap-free; hash comparisons and delta detection remain stable. `#frontmatter` chunks receive no overlap from a non-existent prior chunk.
 - **`"auto"` provider language detection** — 50-note sample, non-ASCII character ratio. If >30%, surfaces a settings banner suggesting EmbeddingGemma. No auto-download; no provider switch without explicit user action.
 - **`FORMAT_VERSION` 1 → 2** is a path change only; the binary format is unchanged. The integration test for migration must use a real `FileSystemAdapter` tmpdir (not a mock) — path-rename logic is not safely testable in isolation.
+
+## Decisioni dal chain MCP Prompts (in-process server)
+
+ADR: `docs/architecture/ADR-0006-mcp-prompts-in-process.md`
+
+**Key decisions to carry forward:**
+
+- **`PromptRegistry` è una classe parallela a `ToolRegistry`**, non un'estensione. `ToolRegistry` è tipato sul shape `{name, arguments}` degli strumenti + logica di coercizione booleana che non appartiene ai prompt. `PromptRegistryClass` (~80 righe) gestisce `prompts/list` e `prompts/get` con la stessa struttura ciclica. Nessun feature può registrare handler prompt direttamente via `server.server.setRequestHandler` — solo tramite `PromptRegistry`. `McpService` guadagna il campo additivo `promptRegistry`.
+- **Nessuna dipendenza da Templater** — `prompts/get` usa sostituzione `{{arg_name}}` via `String.prototype.replace` dopo stripping delle dichiarazioni `<% tp.mcpTools.prompt(...) %>`. Templater non deve essere installato. Espressioni Templater nel body sono restituite verbatim.
+- **`notifications/prompts/list_changed` è un no-op in modalità stateless** — il server usa `sessionIdGenerator: undefined` (per-request, senza connessione persistente). Il `vaultWatcher` si registra/smonta correttamente via `vault.offref`; il notifier è una no-op. L'infrastruttura è pronta per un futuro trasporto sessionale.
+- **`PromptFrontmatterSchema` richiede `tags` come array** — `metadataCache.frontmatter.tags` può essere una stringa scalare YAML (`tags: mcp-tools-prompt`). Aggiungere coercizione in `promptDiscovery.ts` prima della validazione ArkType.
+- **Discovery usa `app.vault.getMarkdownFiles()` + `metadataCache`** — non HTTP calls a Local REST API. Flat directory (`Prompts/` root only, no subfolders). File senza tag `mcp-tools-prompt` esclusi silenziosamente.
+- **Nota**: la sezione "### Prompts" sopra descrive il comportamento 0.3.x (Templater + `/templates/execute`). Aggiornare quella sezione nella stessa PR che shippa ADR-0006.
