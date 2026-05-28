@@ -177,6 +177,39 @@ async function build() {
       process.exit(1);
     }
 
+    // B1: Bun's `define` does literal token-replacement and does not catch
+    // `Object(import.meta).url` or `typeof import.meta` because `import.meta`
+    // is used as a function argument, not a member-access target.
+    // @huggingface/transformers v4 emits both patterns; replace them with
+    // semantically equivalent constants after every build.
+    // Remove this step when Bun supports `define` on import.meta as an
+    // object, or when upstream fixes the emit pattern.
+    const mainJsPath = join(import.meta.dir, "../../main.js");
+    let bundle = await Bun.file(mainJsPath).text();
+
+    const objUrlPattern = "Object(import.meta).url";
+    const typeofPattern = "typeof import.meta";
+    const countObjUrl = bundle.split(objUrlPattern).length - 1;
+    const countTypeof = bundle.split(typeofPattern).length - 1;
+
+    if (countObjUrl === 0 || countTypeof === 0) {
+      console.error(
+        `[bun.config] B1 post-build: expected patterns not found — ` +
+          `Object(import.meta).url ×${countObjUrl}, typeof import.meta ×${countTypeof}. ` +
+          `Upstream may have changed its emit; review the post-build step.`,
+      );
+      process.exit(1);
+    }
+
+    bundle = bundle
+      .split(objUrlPattern)
+      .join('"file:///C:/mcp-tools-for-obsidian.ts"');
+    bundle = bundle.split(typeofPattern).join('"object"');
+    await Bun.write(mainJsPath, bundle);
+    console.warn(
+      `[bun.config] B1 post-build replace: Object(import.meta).url ×${countObjUrl}, typeof import.meta ×${countTypeof}`,
+    );
+
     console.warn("Build successful");
   } catch (error) {
     console.error("Build failed:", error);
