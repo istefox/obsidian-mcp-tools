@@ -28,9 +28,9 @@
 import { env as _hfEnv } from "@huggingface/transformers";
 import { logger } from "$/shared/logger";
 
-// Pre-release dev build bundled with @huggingface/transformers@4.2.0; required for ONNX IR v10 support. Stable target: onnxruntime-web ≥ 1.20.
+// Stable build; required for ONNX IR v10 support (onnxruntime-web ≥ 1.20).
 const ORT_WASM_PATHS =
-  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/";
+  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0/dist/";
 
 let _envConfigured = false;
 

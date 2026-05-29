@@ -29,7 +29,8 @@
     "svelte@5.18.0": "patches/svelte@5.18.0.patch"
   },
   "overrides": {
-    "vite": "5.4.11"
+    "vite": "5.4.11",
+    "onnxruntime-web": "1.26.0"
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001724"

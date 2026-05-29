@@ -22,7 +22,7 @@
 		"@huggingface/transformers": "4.2.0",
 		"@modelcontextprotocol/sdk": "1.29.0",
 		"@types/fs-extra": "^11.0.4",
-		"onnxruntime-web": "1.26.0-dev.20260416-b7804b056c",
+		"onnxruntime-web": "1.26.0",
 		"arktype": "^2.0.0-rc.30",
 		"express": "^4.21.2",
 		"fs-extra": "^11.2.0",
