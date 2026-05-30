@@ -13,7 +13,6 @@
 
 import type { EmbeddingProvider } from "../types";
 import type { EmbedTensor, PipelineFactory, PipelineFn } from "./embedder";
-import { configureEnv } from "./onnxEnv";
 
 export type TaskPromptFn = (text: string, role: "document" | "query") => string;
 
@@ -60,6 +59,8 @@ class TransformersProviderImpl implements EmbeddingProvider {
         const result = await pipe(prompted, {
           pooling: "mean",
           normalize: true,
+          truncation: true,
+          max_length: this.opts.maxInputTokens,
         });
         return new Float32Array((result as EmbedTensor).data);
       }),
@@ -69,7 +70,6 @@ class TransformersProviderImpl implements EmbeddingProvider {
   private async ensurePipeline(): Promise<PipelineFn> {
     if (this.pipeline) return this.pipeline;
     if (!this.loadPromise) {
-      configureEnv();
       this.loadPromise = this.opts
         .pipelineFactory(this.opts.modelId)
         .then((p) => {

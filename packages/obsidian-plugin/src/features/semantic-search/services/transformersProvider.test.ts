@@ -25,6 +25,20 @@ function makeMockFactory(dim: number): {
   return { factory, calls };
 }
 
+function makeMockFactoryWithOpts(dim: number): {
+  factory: (model: string) => Promise<MockPipelineFn>;
+  optsLog: Array<object | undefined>;
+} {
+  const optsLog: Array<object | undefined> = [];
+  const factory = async (_model: string): Promise<MockPipelineFn> => {
+    return async (_input, opts) => {
+      optsLog.push(opts);
+      return { data: new Float32Array(dim), dims: [1, dim] };
+    };
+  };
+  return { factory, optsLog };
+}
+
 function makeMockEmbedder(loaded = true): Embedder {
   return {
     embed: async (_text) => new Float32Array(384),
@@ -129,13 +143,31 @@ describe("TransformersProviderImpl", () => {
   });
 });
 
+describe("TransformersProviderImpl — truncation opts", () => {
+  test("passes truncation: true and max_length to pipeline", async () => {
+    const { factory, optsLog } = makeMockFactoryWithOpts(768);
+    const provider = createTransformersProvider({
+      modelId: "test-model",
+      providerKey: "test",
+      dimensions: 768,
+      maxInputTokens: 512,
+      modelSizeBytes: 1_000_000,
+      taskPrompt: (t) => t,
+      pipelineFactory: factory,
+    });
+
+    await provider.embed(["hello"], "document");
+    expect(optsLog[0]).toMatchObject({ truncation: true, max_length: 512 });
+  });
+});
+
 describe("EmbeddingGemmaProvider", () => {
   test("providerKey, dimensions, maxInputTokens", () => {
     const { factory } = makeMockFactory(768);
     const provider = createEmbeddingGemmaProvider(factory);
     expect(provider.providerKey).toBe("embedding-gemma-300m");
     expect(provider.dimensions).toBe(768);
-    expect(provider.maxInputTokens).toBe(2048);
+    expect(provider.maxInputTokens).toBe(512);
   });
 
   test("getModelSizeBytes returns 190 MB", () => {
@@ -170,10 +202,10 @@ describe("MultilingualE5Provider", () => {
     expect(provider.maxInputTokens).toBe(512);
   });
 
-  test("getModelSizeBytes returns 100 MB", () => {
+  test("getModelSizeBytes returns 60 MB", () => {
     const { factory } = makeMockFactory(768);
     expect(createMultilingualE5Provider(factory).getModelSizeBytes()).toBe(
-      100_000_000,
+      60_000_000,
     );
   });
 

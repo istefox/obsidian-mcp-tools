@@ -14,8 +14,8 @@
  *    is dropped 60s after the last call (RAM saver for memory-
  *    constrained users). The next call cold-reloads.
  *
- * Production code injects `realPipelineFactory` (dynamic import of
- * `@xenova/transformers`) so Transformers.js is not pulled into the
+ * Production code injects `realPipelineFactory` (static import of
+ * `@huggingface/transformers`) so Transformers.js is not pulled into the
  * bundle eager-side. Tests inject a deterministic mock factory: no
  * model download, no WASM, no sharp transitive resolution.
  */
@@ -34,7 +34,12 @@ export type EmbedTensor = { data: Float32Array; dims?: number[] };
  */
 export type PipelineFn = (
   input: string | string[],
-  opts?: { pooling?: "mean" | "cls" | "none"; normalize?: boolean },
+  opts?: {
+    pooling?: "mean" | "cls" | "none";
+    normalize?: boolean;
+    truncation?: boolean;
+    max_length?: number;
+  },
 ) => Promise<EmbedTensor>;
 
 export type PipelineFactory = (model: string) => Promise<PipelineFn>;
@@ -61,6 +66,7 @@ export type ProgressCallback = (info: ProgressEvent) => void;
 export type PipelineFactoryWithProgress = (
   model: string,
   onProgress?: ProgressCallback,
+  opts?: { dtype?: string },
 ) => Promise<PipelineFn>;
 
 export interface Embedder {
@@ -73,6 +79,7 @@ export interface Embedder {
 export type EmbedderOpts = {
   pipelineFactory: PipelineFactory;
   model?: string;
+  maxInputTokens?: number;
   cacheSize?: number;
   idleMs?: number;
   unloadWhenIdle?: boolean;
@@ -108,7 +115,12 @@ class EmbedderImpl implements Embedder {
 
     const promise = (async (): Promise<Float32Array> => {
       const pipe = await this.ensurePipeline();
-      const result = await pipe(text, { pooling: "mean", normalize: true });
+      const result = await pipe(text, {
+        pooling: "mean",
+        normalize: true,
+        truncation: true,
+        max_length: this.opts.maxInputTokens,
+      });
       // Copy into a fresh Float32Array so the cache holds an owned
       // reference even if the pipeline reuses internal buffers.
       return new Float32Array(result.data);
@@ -193,23 +205,77 @@ export function createEmbedder(opts: EmbedderOpts): Embedder {
 // our text-only path). `onnxruntime-node` is REDIRECTED to
 // `onnxruntime-web` at bundle time — see bun.config.ts for the rationale
 // (Electron renderer reports `process.release.name === 'node'`, so
-// Transformers.js v2.17.2 picks the node branch; routing it to the WASM
-// runtime is the only way to actually run inference here).
+// Transformers.js picks the node branch; routing it to the WASM runtime
+// is the only way to actually run inference here).
 //
-// Pinned to @xenova/transformers v2.17.2. The successor
-// @huggingface/transformers v4 was tested 2026-04-26 in a spike; it
-// uses `import.meta.url` at runtime which Obsidian's eval-based plugin
-// loader cannot parse. Reverting to v2 keeps the plugin loadable.
-import { pipeline as _xenovaPipeline } from "@xenova/transformers";
-import { configureEnv } from "./onnxEnv";
+// @huggingface/transformers v4.2.0 — upgraded from @xenova/transformers
+// v2.17.2. Spike (2026-04-26) found import.meta.url failures; a later
+// re-spike confirmed v4 loads cleanly with the bun.config.ts define block
+// already in place (import.meta.url + __dirname/__filename neutralized).
+//
+// device must be explicit — Transformers.js v4 auto-selects WebGPU when
+// navigator.gpu is present (Electron exposes it). We probe once via
+// requestAdapter(); on success we configure JSEP WASM env (no numThreads
+// override) and use "webgpu"; on failure we configure CPU env (numThreads:1)
+// and use "cpu". Valid v4.2.0 devices: "coreml" | "webgpu" | "cpu".
+import { pipeline as _hfPipeline } from "@huggingface/transformers";
+import { configureEnv, configureEnvForWebGpu } from "./onnxEnv";
+import { logger } from "$/shared/logger";
+
+// Resolved once: "webgpu" if requestAdapter() returns a non-null adapter,
+// "cpu" otherwise. Cached so all subsequent factory calls share the same
+// device and env configuration without re-probing.
+let _deviceConfig: Promise<"webgpu" | "cpu"> | null = null;
+
+function resolveDevice(): Promise<"webgpu" | "cpu"> {
+  if (!_deviceConfig) {
+    _deviceConfig = (async (): Promise<"webgpu" | "cpu"> => {
+      if (typeof navigator === "undefined" || !("gpu" in navigator)) {
+        configureEnv();
+        return "cpu";
+      }
+      try {
+        const adapter = await (
+          navigator as { gpu: { requestAdapter(): Promise<unknown> } }
+        ).gpu.requestAdapter();
+        if (adapter !== null) {
+          // JSEP WASM path: omit numThreads so onnxruntime-web selects
+          // ort-wasm-simd.jsep.wasm, which registers the WebGPU EP.
+          configureEnvForWebGpu();
+          return "webgpu";
+        }
+      } catch {
+        // adapter probe failed — fall through to cpu
+      }
+      configureEnv();
+      return "cpu";
+    })();
+  }
+  return _deviceConfig;
+}
 
 export async function realPipelineFactory(
   model: string,
   onProgress?: ProgressCallback,
+  opts?: { dtype?: string },
 ): Promise<PipelineFn> {
-  configureEnv();
-  const pipe = await _xenovaPipeline("feature-extraction", model, {
+  const device = await resolveDevice();
+
+  if (device === "webgpu") {
+    // No CPU fallback: a failed WebGPU attempt corrupts onnxruntime-web's
+    // internal session state — subsequent cpu calls also get "webgpu backend
+    // not found". Let the error propagate so the caller can surface it cleanly.
+    const pipe = await _hfPipeline("feature-extraction", model, {
+      device: "webgpu",
+      progress_callback: onProgress,
+    } as Parameters<typeof _hfPipeline>[2]);
+    return pipe as unknown as PipelineFn;
+  }
+
+  const pipe = await _hfPipeline("feature-extraction", model, {
+    device: "cpu",
     progress_callback: onProgress,
-  } as Parameters<typeof _xenovaPipeline>[2]);
+    ...(opts?.dtype !== undefined ? { dtype: opts.dtype } : {}),
+  } as Parameters<typeof _hfPipeline>[2]);
   return pipe as unknown as PipelineFn;
 }

@@ -19,9 +19,9 @@ const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");
 const isProd = args.includes("--prod");
 
-// `onnxruntime-node` redirect + `sharp` stub. Transformers.js v2.17.2
-// has eager `import * as ONNX_NODE from 'onnxruntime-node'` and chooses
-// it whenever `process?.release?.name === 'node'` — which in Electron
+// `onnxruntime-node` redirect + `sharp` stub. @huggingface/transformers v4
+// still imports `onnxruntime-node` at the backend level and chooses it
+// whenever `process?.release?.name === 'node'` — which in Electron
 // renderer is **true** (process.release.name === 'node' is inherited).
 // Stubbing onnxruntime-node to an empty module made
 // `ONNX.InferenceSession` undefined and produced
@@ -32,62 +32,72 @@ const isProd = args.includes("--prod");
 const stubEmptyModulesPlugin: BunPlugin = {
   name: "stub-empty-modules",
   setup(build) {
-    // Redirect onnxruntime-node → onnxruntime-web (re-export wrapper).
+    // Redirect onnxruntime-web → onnxruntime-web/all.
+    // `ort.min.js` (the default "." export) includes WASM/CPU EP only.
+    // `ort.all.min.js` adds WebGPU EP (via JSEP) + WebGL EP. Without this
+    // redirect, `device: "webgpu"` always fails with "backend not found"
+    // because the WebGPU EP is never registered at startup.
+    build.onResolve({ filter: /^onnxruntime-web$/ }, () => ({
+      path: "onnxruntime-web-all-shim",
+      namespace: "ort-all-redirect",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "ort-all-redirect" }, () => ({
+      contents: "module.exports = require('onnxruntime-web/all');",
+      loader: "js",
+    }));
+    // Redirect onnxruntime-node → onnxruntime-web/all (re-export wrapper).
+    // @huggingface/transformers v4 still imports onnxruntime-node at the
+    // backend level and chooses it whenever process?.release?.name === 'node'
+    // — which in Electron renderer is true. Using /all keeps WebGPU EP
+    // available on the node-shim path too.
     build.onResolve({ filter: /^onnxruntime-node$/ }, () => ({
       path: "onnxruntime-node-shim",
       namespace: "ort-node-redirect",
     }));
-    build.onLoad(
-      { filter: /.*/, namespace: "ort-node-redirect" },
-      () => ({
-        contents: "module.exports = require('onnxruntime-web');",
-        loader: "js",
-      }),
-    );
+    build.onLoad({ filter: /.*/, namespace: "ort-node-redirect" }, () => ({
+      contents: "module.exports = require('onnxruntime-web/all');",
+      loader: "js",
+    }));
     // Stub sharp.
     build.onResolve({ filter: /^sharp$/ }, (args) => ({
       path: args.path,
       namespace: "stub-empty",
     }));
-    build.onLoad(
-      { filter: /.*/, namespace: "stub-empty" },
-      () => ({
-        contents: "module.exports = {};",
-        loader: "js",
-      }),
-    );
+    build.onLoad({ filter: /.*/, namespace: "stub-empty" }, () => ({
+      contents: "module.exports = {};",
+      loader: "js",
+    }));
   },
 };
 
 // Svelte plugin implementation
 const sveltePlugin: BunPlugin = {
-	name: "svelte",
-	setup(build) {
-		build.onLoad({ filter: /\.svelte$/ }, async ({ path }) => {
-			try {
+  name: "svelte",
+  setup(build) {
+    build.onLoad({ filter: /\.svelte$/ }, async ({ path }) => {
+      try {
         const parsed = parse(path);
-				const source = await Bun.file(path).text();
+        const source = await Bun.file(path).text();
         const preprocessed = await preprocess(source, svelteConfig.preprocess, {
           filename: parsed.base,
         });
         const result = compile(preprocessed.code, {
           filename: parsed.base,
-					generate: "client",
-					css: "injected",
-					dev: !isProd,
-				});
+          generate: "client",
+          css: "injected",
+          dev: !isProd,
+        });
 
-				return {
-					loader: "js",
-					contents: result.js.code,
-				};
-			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : String(error);
-				throw new Error(`Error compiling Svelte component: ${message}`);
-			}
-		});
-	},
+        return {
+          loader: "js",
+          contents: result.js.code,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Error compiling Svelte component: ${message}`);
+      }
+    });
+  },
 };
 
 const config: BuildConfig = {
@@ -126,7 +136,7 @@ const config: BuildConfig = {
       isProd ? "production" : "development",
     ),
     "import.meta.filename": JSON.stringify("mcp-tools-for-obsidian.ts"),
-    // Bundled deps (notably `@xenova/transformers/src/env.js`) call
+    // Bundled deps (notably `@huggingface/transformers/src/env.js`) call
     // `fileURLToPath(import.meta.url)` eagerly at module init. Without
     // this define, Bun bakes the BUILD MACHINE's absolute path (the
     // GitHub Actions Linux runner: `file:///home/runner/...`). On
@@ -136,8 +146,8 @@ const config: BuildConfig = {
     // carry a drive letter — a drive-less `file:///x` URL throws on
     // Windows for the exact same reason (that IS the bug's mechanism);
     // `file:///C:/…` is accepted by `fileURLToPath` on every platform.
-    // The resolved value is dead in our build (`env.allowLocalModels =
-    // false`, ONNX wasm pinned to a CDN) — only the eager call must not
+    // The resolved value is dead in our build (`env.allowRemoteModels =
+    // true`, ONNX wasm pinned to a CDN) — only the eager call must not
     // throw.
     "import.meta.url": JSON.stringify("file:///C:/mcp-tools-for-obsidian.ts"),
     // Same class of bug as #100 but via the CommonJS path identifiers.
@@ -150,8 +160,8 @@ const config: BuildConfig = {
     // value is dead in our build (onnxruntime-web runs as WASM, CDN-pinned,
     // `allowLocalModels=false`, `onnxruntime-node` shimmed) — nothing reads
     // the real dirname at runtime.
-    "__dirname": JSON.stringify("/"),
-    "__filename": JSON.stringify("/mcp-tools-for-obsidian.js"),
+    __dirname: JSON.stringify("/"),
+    __filename: JSON.stringify("/mcp-tools-for-obsidian.js"),
     // These environment variables are critical for the MCP server download functionality.
     // In CI the release workflow injects the correct values (see .github/workflows/release.yml);
     // the fallback targets the active fork repo so local builds keep working.
@@ -173,45 +183,78 @@ const config: BuildConfig = {
 };
 
 async function build() {
-	try {
-		const result = await Bun.build(config);
+  try {
+    const result = await Bun.build(config);
 
-		if (!result.success) {
-			console.error("Build failed");
-			for (const message of result.logs) {
-				console.error(message);
-			}
-			process.exit(1);
-		}
+    if (!result.success) {
+      console.error("Build failed");
+      for (const message of result.logs) {
+        console.error(message);
+      }
+      process.exit(1);
+    }
 
-		console.warn("Build successful");
-	} catch (error) {
-		console.error("Build failed:", error);
-		process.exit(1);
-	}
+    // B1: Bun's `define` does literal token-replacement and does not catch
+    // `Object(import.meta).url` or `typeof import.meta` because `import.meta`
+    // is used as a function argument, not a member-access target.
+    // @huggingface/transformers v4 emits both patterns; replace them with
+    // semantically equivalent constants after every build.
+    // Remove this step when Bun supports `define` on import.meta as an
+    // object, or when upstream fixes the emit pattern.
+    const mainJsPath = join(import.meta.dir, "../../main.js");
+    let bundle = await Bun.file(mainJsPath).text();
+
+    const objUrlPattern = "Object(import.meta).url";
+    const typeofPattern = "typeof import.meta";
+    const countObjUrl = bundle.split(objUrlPattern).length - 1;
+    const countTypeof = bundle.split(typeofPattern).length - 1;
+
+    if (countObjUrl === 0 || countTypeof === 0) {
+      console.error(
+        `[bun.config] B1 post-build: expected patterns not found — ` +
+          `Object(import.meta).url ×${countObjUrl}, typeof import.meta ×${countTypeof}. ` +
+          `Upstream may have changed its emit; review the post-build step.`,
+      );
+      process.exit(1);
+    }
+
+    bundle = bundle
+      .split(objUrlPattern)
+      .join('"file:///C:/mcp-tools-for-obsidian.ts"');
+    bundle = bundle.split(typeofPattern).join('"object"');
+    await Bun.write(mainJsPath, bundle);
+    console.warn(
+      `[bun.config] B1 post-build replace: Object(import.meta).url ×${countObjUrl}, typeof import.meta ×${countTypeof}`,
+    );
+
+    console.warn("Build successful");
+  } catch (error) {
+    console.error("Build failed:", error);
+    process.exit(1);
+  }
 }
 
 async function watch() {
-	const watcher = fsp.watch(join(import.meta.dir, "src"), {
-		recursive: true,
-	});
-	console.warn("Watching for changes...");
-	for await (const event of watcher) {
-		console.warn(`Detected ${event.eventType} in ${event.filename}`);
-		await build();
-	}
+  const watcher = fsp.watch(join(import.meta.dir, "src"), {
+    recursive: true,
+  });
+  console.warn("Watching for changes...");
+  for await (const event of watcher) {
+    console.warn(`Detected ${event.eventType} in ${event.filename}`);
+    await build();
+  }
 }
 
 async function main() {
-	if (isWatch) {
-		await build();
-		return watch();
-	} else {
-		return build();
-	}
+  if (isWatch) {
+    await build();
+    return watch();
+  } else {
+    return build();
+  }
 }
 
 main().catch((err) => {
-	console.error(err);
-	process.exit(1);
+  console.error(err);
+  process.exit(1);
 });

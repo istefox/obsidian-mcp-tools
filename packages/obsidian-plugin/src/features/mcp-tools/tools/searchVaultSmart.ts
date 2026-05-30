@@ -93,10 +93,14 @@ export async function searchVaultSmartHandler(
   // Lazy indexer kick (Q4 = lazy on first query). Fire-and-forget:
   // the indexer's start() runs the first full vault build in the
   // background and subscribes to vault events for incremental
-  // updates. Subsequent calls are no-ops. Skipped entirely under
-  // Smart Connections — kicking the native indexer there triggers a
-  // pointless embedding-model download (#99).
-  if (!usingSmartConnections) {
+  // updates. Subsequent calls are no-ops. Skipped under Smart
+  // Connections (#99) and DLC providers (embedding-gemma,
+  // multilingual-e5-base) — DLC providers use their own indexer
+  // started by startRebuildFor, not the native MiniLM indexer.
+  const usingDlcProvider =
+    settings?.provider === "embedding-gemma" ||
+    settings?.provider === "multilingual-e5-base";
+  if (!usingSmartConnections && !usingDlcProvider) {
     state.startIndexerIfNeeded?.();
   }
 

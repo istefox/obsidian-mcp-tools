@@ -12,7 +12,7 @@ import type { EmbeddingProvider } from "../types";
 
 const PROVIDER_KEY = "native-minilm-l6-v2";
 const DIMENSIONS = 384;
-const MAX_INPUT_TOKENS = 256;
+export const MAX_INPUT_TOKENS = 256;
 const MODEL_SIZE_BYTES = 25_000_000;
 
 class NativeEmbeddingProviderImpl implements EmbeddingProvider {

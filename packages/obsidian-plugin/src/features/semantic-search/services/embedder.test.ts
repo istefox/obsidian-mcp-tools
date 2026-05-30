@@ -184,4 +184,20 @@ describe("embedder", () => {
     expect(v).toBeInstanceOf(Float32Array);
     expect(v.length).toBe(8);
   });
+
+  test("maxInputTokens: passes truncation: true and max_length to pipeline", async () => {
+    const pipeOpts: Array<object | undefined> = [];
+    const factory: PipelineFactory = async (_model) => {
+      return async (_input, opts) => {
+        pipeOpts.push(opts);
+        return { data: new Float32Array(8), dims: [1, 8] };
+      };
+    };
+    const embedder = createEmbedder({
+      pipelineFactory: factory,
+      maxInputTokens: 128,
+    });
+    await embedder.embed("hello");
+    expect(pipeOpts[0]).toMatchObject({ truncation: true, max_length: 128 });
+  });
 });

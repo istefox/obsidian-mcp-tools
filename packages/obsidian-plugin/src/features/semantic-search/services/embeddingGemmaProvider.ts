@@ -1,3 +1,4 @@
+// Model: onnx-community/embeddinggemma-300m-ONNX (ONNX IR v10; requires onnxruntime-web ≥ 1.20 / the dev build pinned in onnxEnv.ts).
 import type { EmbeddingProvider } from "../types";
 import type { PipelineFactory } from "./embedder";
 import { createTransformersProvider } from "./transformersProvider";
@@ -9,7 +10,8 @@ export function createEmbeddingGemmaProvider(
     modelId: "onnx-community/embeddinggemma-300m-ONNX",
     providerKey: "embedding-gemma-300m",
     dimensions: 768,
-    maxInputTokens: 2048,
+    // Capped at 512 — onnxruntime-web@1.26.0-dev SafeInt overflow at 2048 (#202)
+    maxInputTokens: 512,
     modelSizeBytes: 190_000_000,
     taskPrompt: (text, role) =>
       role === "query"

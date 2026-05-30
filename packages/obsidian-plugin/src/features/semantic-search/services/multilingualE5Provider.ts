@@ -10,7 +10,7 @@ export function createMultilingualE5Provider(
     providerKey: "multilingual-e5-base",
     dimensions: 768,
     maxInputTokens: 512,
-    modelSizeBytes: 100_000_000,
+    modelSizeBytes: 60_000_000,
     taskPrompt: (text, role) =>
       (role === "query" ? "query: " : "passage: ") + text,
     pipelineFactory,

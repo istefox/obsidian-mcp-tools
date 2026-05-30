@@ -35,7 +35,14 @@ import {
   createEmbedder,
   realPipelineFactory,
 } from "./features/semantic-search/services/embedder";
-import { createNativeEmbeddingProvider } from "./features/semantic-search/services/nativeEmbeddingProvider";
+import {
+  ALL_PROVIDER_KEYS,
+  type ProviderKey,
+} from "./features/semantic-search/services/providerFactory";
+import {
+  createNativeEmbeddingProvider,
+  MAX_INPUT_TOKENS as NATIVE_MAX_INPUT_TOKENS,
+} from "./features/semantic-search/services/nativeEmbeddingProvider";
 import {
   createEmbeddingStoreRegistry,
   migrateV1FlatStore,
@@ -44,6 +51,8 @@ import { createEmbeddingGemmaProvider } from "./features/semantic-search/service
 import { createMultilingualE5Provider } from "./features/semantic-search/services/multilingualE5Provider";
 import { detectNonAsciiRatio } from "./features/semantic-search/services/langDetect";
 import type { VaultAdapter } from "./features/semantic-search/services/store";
+import { FORMAT_VERSION } from "./features/semantic-search/services/store";
+import { IndexWipeMigrationModal } from "./features/semantic-search/services/indexWipeMigrationModal";
 import {
   createLiveIndexer,
   createLowPowerIndexer,
@@ -389,6 +398,57 @@ export default class McpToolsPlugin extends Plugin {
       // Migrate v1 flat store before constructing any registry entry.
       await migrateV1FlatStore(ssAdapter, pluginDir);
 
+      // Detect stale per-providerKey stores (version < FORMAT_VERSION).
+      // If any exist, show a blocking dialog before wiping them.
+      const embeddingsBaseDir = `${pluginDir}/embeddings`;
+      const staleProviderKeys: ProviderKey[] = [];
+      for (const key of ALL_PROVIDER_KEYS) {
+        const indexPath = `${embeddingsBaseDir}/${key}/embeddings.index.json`;
+        try {
+          if (await ssAdapter.exists(indexPath)) {
+            const text = await ssAdapter.read(indexPath);
+            const parsed = JSON.parse(text) as { version?: number };
+            if (
+              typeof parsed.version === "number" &&
+              parsed.version < FORMAT_VERSION
+            ) {
+              staleProviderKeys.push(key);
+            }
+          }
+        } catch {
+          // Unreadable index is already handled by store.init(); skip here.
+        }
+      }
+
+      if (staleProviderKeys.length > 0) {
+        await new Promise<void>((resolve) => {
+          const modal = new IndexWipeMigrationModal({
+            app: this.app,
+            onConfirm: resolve,
+            onCancel: resolve,
+          });
+          modal.open();
+        });
+        for (const key of staleProviderKeys) {
+          const dirPath = `${embeddingsBaseDir}/${key}`;
+          try {
+            await ssAdapter.remove(`${dirPath}/embeddings.bin`);
+            await ssAdapter.remove(`${dirPath}/embeddings.index.json`);
+            await ssAdapter
+              .remove(`${dirPath}/embeddings.index.json.writing`)
+              .catch(() => {});
+          } catch (err) {
+            logger.warn(
+              "semantic-search: failed to wipe stale index directory",
+              {
+                dir: dirPath,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            );
+          }
+        }
+      }
+
       const registry = createEmbeddingStoreRegistry(
         ssAdapter,
         `${pluginDir}/embeddings`,
@@ -400,6 +460,7 @@ export default class McpToolsPlugin extends Plugin {
       });
       const embedder = createEmbedder({
         pipelineFactory: nativeDownloader.factory,
+        maxInputTokens: NATIVE_MAX_INPUT_TOKENS,
       });
       const nativeEp = createNativeEmbeddingProvider(embedder);
       const nativeStore = registry.storeFor("native-minilm-l6-v2", 384);
@@ -409,12 +470,14 @@ export default class McpToolsPlugin extends Plugin {
       // DLC providers — pipeline loads lazily on first embed call.
       const gemmaDownloader = createModelDownloader({
         innerFactory: realPipelineFactory,
+        dtype: "q8",
       });
       const gemmaProvider = createEmbeddingGemmaProvider(
         gemmaDownloader.factory,
       );
       const e5Downloader = createModelDownloader({
         innerFactory: realPipelineFactory,
+        dtype: "q8",
       });
       const e5Provider = createMultilingualE5Provider(e5Downloader.factory);
 
@@ -532,6 +595,28 @@ export default class McpToolsPlugin extends Plugin {
               _rebuildingProviders.delete(providerKey);
             });
         };
+
+        // B3: Trigger rebuild for the active provider's store that was just
+        // wiped by the migration modal. The modal's "Rebuild now" button only
+        // wipes; this makes the rebuild actually happen automatically.
+        const settingToRegistryKey: Partial<Record<string, ProviderKey>> = {
+          native: "native-minilm-l6-v2",
+          auto: "native-minilm-l6-v2",
+          "embedding-gemma": "embedding-gemma-300m",
+          "multilingual-e5-base": "multilingual-e5-base",
+          // "smart-connections" has no local store — no rebuild needed.
+        };
+        const activeRegistryKey = settingToRegistryKey[state.settings.provider];
+        if (
+          activeRegistryKey &&
+          staleProviderKeys.includes(activeRegistryKey)
+        ) {
+          if (activeRegistryKey === "native-minilm-l6-v2") {
+            state.startIndexerIfNeeded();
+          } else {
+            state.startRebuildFor(activeRegistryKey);
+          }
+        }
 
         state.teardown = async () => {
           if (indexerStarted) {
