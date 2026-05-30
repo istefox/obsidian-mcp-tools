@@ -5,6 +5,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-30
+
+### Added
+
+- **WebGPU acceleration for DLC embedding providers.** EmbeddingGemma 300M and
+  MultilinguaE5-base now run on the WebGPU execution provider (Apple Silicon Metal,
+  and any platform with a WebGPU adapter) when `navigator.gpu.requestAdapter()`
+  returns a non-null adapter. The probe runs once at startup and is cached; the
+  correct ONNX environment is selected atomically before the first pipeline call.
+  WebGPU inference bypasses the WASM runtime entirely, which also sidesteps the
+  SafeInt overflow in `onnxruntime-web@1.26.0` WASM for 768-dim models.
+  On machines without WebGPU, providers fall back to CPU with `dtype: "q8"` to
+  avoid WASM OOM (previously MultilinguaE5-base fp32 triggered `std::bad_alloc`).
+  (PR #205, PR #206, ADR-0007)
+
+- **Transformers.js v4 upgrade.** Replaces `@xenova/transformers@2.17.2` with
+  `@huggingface/transformers@4.2.0` and pins `onnxruntime-web` to
+  `1.26.0-dev.20260416-b7804b056c` (first build with ONNX IR v10 support).
+  EmbeddingGemma 300M and MultilinguaE5-base previously failed silently on
+  0.10.x because the bundled `onnxruntime-web` capped at IR v8. (ADR-0007, PR #205)
+
+### Changed
+
+- **FORMAT_VERSION 2 → 3.** Indexes built with the Xenova runtime are incompatible
+  with the HuggingFace v4 runtime. Upgrading triggers an `IndexWipeMigrationModal`
+  that prompts before wiping stale indexes. "Rebuild now" immediately starts the
+  download and rebuild for the active provider, with no manual Settings navigation required.
+  Escape and overlay-dismiss dismiss the modal without hanging startup.
+
+### Fixed
+
+- **`import.meta` patterns in the bundle (B1).** `Object(import.meta).url` and
+  `typeof import.meta` (emitted by `@huggingface/transformers` v4) were not caught
+  by Bun's `define` token-replacement and caused `SyntaxError: Cannot use
+  'import.meta' outside a module` on plugin load. A post-build step in
+  `bun.config.ts` replaces both patterns and asserts at least one occurrence each;
+  the build fails loudly if upstream changes the emit.
+
+- **OrtRun SafeInt overflow on large vaults (B2).** Whitespace-based chunking
+  underestimates BPE token count for code, URLs, camelCase, and non-ASCII text.
+  Chunks within the word limit could exceed `max_position_embeddings` in real
+  tokens and trigger an integer overflow in OrtRun. Fixed by passing
+  `truncation: true` with explicit `max_length` at every pipeline call site
+  (Gemma 2048, E5 512, MiniLM 256).
+
+- **"Rebuild now" only wiped, never rebuilt (B3).** The `IndexWipeMigrationModal`
+  wiped the stale index but did not trigger the actual rebuild. Users had to
+  navigate to Settings manually. Fixed by auto-calling `startRebuildFor` (DLC
+  providers) or `startIndexerIfNeeded` (native MiniLM) immediately after wipe.
+
+- **DLC indexer started unnecessarily for native MiniLM provider.**
+  `startIndexerIfNeeded()` ran for all non-Smart-Connections providers, including
+  DLC providers that manage their own indexer. Guarded with `!usingDlcProvider`.
+
+- **Settings UI showed 0 chunks for DLC providers.** `refreshStatus()` always read
+  from `state.store` (hardwired to the native MiniLM store). Now reads
+  `registry.storeFor(key, 768).size()` for EmbeddingGemma and MultilinguaE5.
+
 ## [0.10.0] — 2026-05-27
 
 ### Added
