@@ -47,6 +47,8 @@ export interface ModelDownloader {
 
 export type ModelDownloaderOpts = {
   innerFactory: PipelineFactoryWithProgress;
+  /** Passed to the WASM fallback path. Unused when WebGPU succeeds. */
+  dtype?: string;
 };
 
 const IDLE: ModelState = { kind: "idle" };
@@ -84,8 +86,10 @@ class ModelDownloaderImpl implements ModelDownloader {
     this.setState({ kind: "downloading", progress: 0 });
     const promise = (async () => {
       try {
-        const pipe = await this.opts.innerFactory(model, (info) =>
-          this.onProgress(info),
+        const pipe = await this.opts.innerFactory(
+          model,
+          (info) => this.onProgress(info),
+          this.opts.dtype !== undefined ? { dtype: this.opts.dtype } : undefined,
         );
         this.setState({ kind: "ready" });
         return pipe;

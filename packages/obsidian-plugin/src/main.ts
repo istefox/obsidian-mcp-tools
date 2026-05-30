@@ -470,12 +470,14 @@ export default class McpToolsPlugin extends Plugin {
       // DLC providers — pipeline loads lazily on first embed call.
       const gemmaDownloader = createModelDownloader({
         innerFactory: realPipelineFactory,
+        dtype: "q8",
       });
       const gemmaProvider = createEmbeddingGemmaProvider(
         gemmaDownloader.factory,
       );
       const e5Downloader = createModelDownloader({
         innerFactory: realPipelineFactory,
+        dtype: "q8",
       });
       const e5Provider = createMultilingualE5Provider(e5Downloader.factory);
 
