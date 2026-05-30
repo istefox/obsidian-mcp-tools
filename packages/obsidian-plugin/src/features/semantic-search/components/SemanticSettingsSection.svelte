@@ -46,15 +46,20 @@
   });
 
   function refreshStatus() {
-    const state = plugin.semanticSearchState as
-      | (typeof plugin.semanticSearchState & {
-          store?: { size?: () => number };
-        })
-      | undefined;
-    storeSize = state?.store?.size?.() ?? 0;
-    pendingProvider = plugin.semanticSearchState?.pendingProvider ?? null;
-    autoSuggestProvider =
-      plugin.semanticSearchState?.autoSuggestProvider ?? null;
+    const state = plugin.semanticSearchState;
+    const provider = state?.settings?.provider;
+    const registry = state?.registry;
+    // For DLC providers, read chunk count from their own store.
+    // state.store always points to the native MiniLM store.
+    if (provider === "embedding-gemma" && registry) {
+      storeSize = registry.storeFor("embedding-gemma-300m", 768).size();
+    } else if (provider === "multilingual-e5-base" && registry) {
+      storeSize = registry.storeFor("multilingual-e5-base", 768).size();
+    } else {
+      storeSize = state?.store?.size?.() ?? 0;
+    }
+    pendingProvider = state?.pendingProvider ?? null;
+    autoSuggestProvider = state?.autoSuggestProvider ?? null;
   }
 
   async function persist(next: SemanticSearchSettings) {
