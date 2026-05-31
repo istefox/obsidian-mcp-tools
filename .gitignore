@@ -201,6 +201,8 @@ tmp/
 CLAUDE.md
 .clinerules
 docs/deep-refactor/
+# Local dev tool version pin (mise/asdf) — not required for contributors
+mise.toml
 handoff*.md
 .claude/.triage-fix-last-*.json
 .remember/
