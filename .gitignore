@@ -197,6 +197,10 @@ embeddings.index.json*
 tmp/
 
 # Local strategy / private notes & session scaffolding (never in the public repo)
+# Claude Code tooling — kept locally for development, never published
+CLAUDE.md
+.clinerules
+docs/deep-refactor/
 handoff*.md
 .claude/.triage-fix-last-*.json
 .remember/
