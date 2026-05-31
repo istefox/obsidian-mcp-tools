@@ -683,6 +683,88 @@ describe("live indexer — flush debounce", () => {
   });
 });
 
+describe("live indexer — start({ initialRebuild: false })", () => {
+  let rawStore: Awaited<ReturnType<typeof makeStore>>;
+
+  beforeEach(async () => {
+    rawStore = await makeStore();
+  });
+
+  test("subscribes without running rebuildAll", async () => {
+    const { vault } = makeVault({
+      "a.md": "alpha",
+      "b.md": "bravo",
+    });
+    const { embedder, embeds } = fakeEmbeddingProvider();
+    const indexer = createLiveIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: rawStore,
+      debounceMs: 10,
+      flushDebounceMs: 10,
+    });
+
+    await indexer.start({ initialRebuild: false });
+
+    // No embeds because rebuildAll was skipped.
+    expect(embeds()).toEqual([]);
+    expect(rawStore.size()).toBe(0);
+
+    await indexer.stop();
+  });
+
+  test("subscribes so a subsequent vault create event triggers processFile + flush", async () => {
+    const { vault, files, emit } = makeVault({});
+    const { embedder, embeds } = fakeEmbeddingProvider();
+    const { store, flushCalls } = wrapStoreWithFlushSpy(rawStore);
+
+    const indexer = createLiveIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store,
+      debounceMs: 10,
+      flushDebounceMs: 20,
+    });
+    await indexer.start({ initialRebuild: false });
+    expect(embeds()).toEqual([]);
+
+    // The whole point of an auto-subscribed DLC indexer: future events
+    // flow into the store + persist to disk without an explicit rebuild.
+    files.set("new.md", "fresh content");
+    emit("create", "new.md");
+    await new Promise((r) => setTimeout(r, 80));
+
+    expect(embeds()).toContain("fresh content");
+    expect(store.size()).toBeGreaterThan(0);
+    expect(flushCalls()).toBeGreaterThanOrEqual(1);
+
+    await indexer.stop();
+  });
+
+  test("explicit rebuildAll() after subscribe-only start still indexes the vault", async () => {
+    const { vault } = makeVault({ "a.md": "alpha" });
+    const { embedder, embeds } = fakeEmbeddingProvider();
+
+    const indexer = createLiveIndexer({
+      vault,
+      chunker: fakeChunker,
+      embedder,
+      store: rawStore,
+      debounceMs: 5,
+      flushDebounceMs: 5,
+    });
+    await indexer.start({ initialRebuild: false });
+    expect(embeds()).toEqual([]);
+
+    await indexer.rebuildAll();
+    expect(embeds()).toContain("alpha");
+
+    await indexer.stop();
+  });
+});
+
 /** mtime-aware in-memory vault for the low-power tests. */
 function makeMtimeVault(
   initial: Record<string, { content: string; mtime: number }>,

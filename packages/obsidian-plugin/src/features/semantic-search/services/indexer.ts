@@ -62,8 +62,19 @@ export type LiveIndexerOpts = {
   flushDebounceMs?: number;
 };
 
+export type StartOpts = {
+  /**
+   * Whether to run a full `rebuildAll()` immediately as part of `start()`.
+   * Default `true` (existing behavior). Set to `false` when an existing
+   * on-disk store is already current and you only need to subscribe to
+   * future vault events — e.g. a DLC indexer auto-started at plugin load
+   * for a provider whose store survived from a prior session.
+   */
+  initialRebuild?: boolean;
+};
+
 export interface SemanticIndexer {
-  start(): Promise<void>;
+  start(opts?: StartOpts): Promise<void>;
   stop(): Promise<void>;
   /** Force a full re-build over all markdown files. */
   rebuildAll(): Promise<void>;
@@ -97,7 +108,7 @@ class LiveIndexerImpl implements SemanticIndexer {
     this.opts = { ...opts, chunker: wrapChunkerWithOverlap(opts.chunker) };
   }
 
-  async start(): Promise<void> {
+  async start(opts: StartOpts = {}): Promise<void> {
     if (this.running) return;
     this.running = true;
 
@@ -107,7 +118,9 @@ class LiveIndexerImpl implements SemanticIndexer {
       this.opts.vault.on("delete", (p) => this.schedule(p)),
     );
 
-    await this.rebuildAll();
+    if (opts.initialRebuild !== false) {
+      await this.rebuildAll();
+    }
   }
 
   async stop(): Promise<void> {
@@ -306,13 +319,15 @@ class LowPowerIndexerImpl implements SemanticIndexer {
     this.opts = { ...opts, chunker: wrapChunkerWithOverlap(opts.chunker) };
   }
 
-  async start(): Promise<void> {
+  async start(opts: StartOpts = {}): Promise<void> {
     if (this.running) return;
     this.running = true;
     // Run the first scan immediately so the user doesn't wait
-    // `intervalMs` for indexing to begin. Subsequent scans tick on
-    // the interval.
-    await this.runCycle();
+    // `intervalMs` for indexing to begin (unless explicitly opted out).
+    // Subsequent scans tick on the interval regardless.
+    if (opts.initialRebuild !== false) {
+      await this.runCycle();
+    }
     this.timer = setInterval(() => {
       // Skip if a cycle is still in flight to avoid stacking.
       if (this.cycleInFlight) return;
