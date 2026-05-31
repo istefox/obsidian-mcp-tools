@@ -34,5 +34,8 @@
   },
   "dependencies": {
     "caniuse-lite": "^1.0.30001724"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.3"
   }
 }
