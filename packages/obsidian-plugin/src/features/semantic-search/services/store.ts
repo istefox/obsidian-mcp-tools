@@ -51,6 +51,8 @@ export interface EmbeddingStore {
   size(): number;
   upsert(records: EmbeddingRecord[]): Promise<void>;
   delete(filePath: string): Promise<void>;
+  /** O(chunks-in-file) lookup via secondary index. Use instead of scan()+filter for per-path access. */
+  recordsFor(filePath: string): Iterable<EmbeddingRecord>;
   scan(): AsyncIterable<EmbeddingRecord>;
   flush(): Promise<void>;
   close(): Promise<void>;
@@ -65,7 +67,10 @@ export type EmbeddingStoreOpts = {
   vectorDim?: number;
 };
 
-export const FORMAT_VERSION = 3;
+// v4: chunk size now derived from provider.getMaxInputTokens() (WebGPU lets
+// EmbeddingGemma use its full 2K context). Stored hashes from v3 differ from
+// v4 for the same source files, so the index is wiped on upgrade.
+export const FORMAT_VERSION = 4;
 const DEFAULT_VECTOR_DIM = 384;
 
 type IndexRecord = {
@@ -85,6 +90,7 @@ type IndexFile = {
 
 class EmbeddingStoreImpl implements EmbeddingStore {
   private records = new Map<string, EmbeddingRecord>();
+  private fileIndex = new Map<string, Set<string>>();
   private dirty = false;
   private initialized = false;
   private readonly vectorDim: number;
@@ -196,6 +202,12 @@ class EmbeddingStoreImpl implements EmbeddingStore {
         contentHash: idx.contentHash,
         vector,
       });
+      let fileSet = this.fileIndex.get(idx.filePath);
+      if (!fileSet) {
+        fileSet = new Set();
+        this.fileIndex.set(idx.filePath, fileSet);
+      }
+      fileSet.add(idx.chunkId);
     }
 
     this.initialized = true;
@@ -214,21 +226,47 @@ class EmbeddingStoreImpl implements EmbeddingStore {
           `embedding dim mismatch: chunkId=${r.chunkId} expected ${this.vectorDim} got ${r.vector.length}`,
         );
       }
+      // If the chunkId already exists under a different filePath, remove it
+      // from the old fileIndex entry before overwriting.
+      const existing = this.records.get(r.chunkId);
+      if (existing && existing.filePath !== r.filePath) {
+        const oldSet = this.fileIndex.get(existing.filePath);
+        if (oldSet) {
+          oldSet.delete(r.chunkId);
+          if (oldSet.size === 0) this.fileIndex.delete(existing.filePath);
+        }
+      }
       this.records.set(r.chunkId, r);
+      let fileSet = this.fileIndex.get(r.filePath);
+      if (!fileSet) {
+        fileSet = new Set();
+        this.fileIndex.set(r.filePath, fileSet);
+      }
+      fileSet.add(r.chunkId);
     }
     this.dirty = true;
   }
 
   async delete(filePath: string): Promise<void> {
     if (!this.initialized) await this.init();
-    let removed = 0;
-    for (const [chunkId, rec] of this.records) {
-      if (rec.filePath === filePath) {
-        this.records.delete(chunkId);
-        removed += 1;
-      }
+    const chunkIds = this.fileIndex.get(filePath);
+    if (!chunkIds || chunkIds.size === 0) return;
+    for (const chunkId of chunkIds) {
+      this.records.delete(chunkId);
     }
-    if (removed > 0) this.dirty = true;
+    this.fileIndex.delete(filePath);
+    this.dirty = true;
+  }
+
+  recordsFor(filePath: string): Iterable<EmbeddingRecord> {
+    const chunkIds = this.fileIndex.get(filePath);
+    if (!chunkIds) return [];
+    const out: EmbeddingRecord[] = [];
+    for (const chunkId of chunkIds) {
+      const r = this.records.get(chunkId);
+      if (r) out.push(r);
+    }
+    return out;
   }
 
   async *scan(): AsyncIterable<EmbeddingRecord> {
@@ -315,6 +353,7 @@ class EmbeddingStoreImpl implements EmbeddingStore {
   async close(): Promise<void> {
     await this.flush();
     this.records.clear();
+    this.fileIndex.clear();
     this.dirty = false;
     this.initialized = false;
   }

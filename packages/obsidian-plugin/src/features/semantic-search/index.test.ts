@@ -365,9 +365,8 @@ describe("applySettings — UI swap path (T12)", () => {
   test("DLC: embedding-gemma with store not ready sets pendingProvider and keeps old provider", async () => {
     const { plugin } = makePluginStub();
     const { createEmbeddingStore } = await import("./services/store");
-    const { createEmbeddingStoreRegistry } = await import(
-      "./services/storeRegistry"
-    );
+    const { createEmbeddingStoreRegistry } =
+      await import("./services/storeRegistry");
     const adapter = {
       async exists() {
         return false;
@@ -424,9 +423,8 @@ describe("applySettings — UI swap path (T12)", () => {
   test("DLC: embedding-gemma with store ready swaps provider and clears pendingProvider", async () => {
     const { plugin } = makePluginStub();
     const { createEmbeddingStore } = await import("./services/store");
-    const { createEmbeddingStoreRegistry } = await import(
-      "./services/storeRegistry"
-    );
+    const { createEmbeddingStoreRegistry } =
+      await import("./services/storeRegistry");
     const adapter = {
       async exists() {
         return false;
@@ -470,7 +468,8 @@ describe("applySettings — UI swap path (T12)", () => {
     const fakeGemmaEp = {
       providerKey: "embedding-gemma-300m" as const,
       dimensions: 768,
-      maxInputTokens: 2048,
+      maxInputTokens: 512,
+      getMaxInputTokens: async () => 2048,
       embed: async (texts: string[]) => texts.map(() => new Float32Array(768)),
       isAvailable: async () => true,
       getModelSizeBytes: () => 0,

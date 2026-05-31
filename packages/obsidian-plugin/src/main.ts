@@ -1,7 +1,6 @@
-import { type } from "arktype";
 import { Notice, Plugin, TFile } from "obsidian";
 import { lastValueFrom } from "rxjs";
-import { LocalRestAPI, Templater, type SmartConnections } from "shared";
+import { type SmartConnections } from "shared";
 import {
   CommandPermissionModal,
   globalSettingsMutex,
@@ -52,13 +51,13 @@ import { createMultilingualE5Provider } from "./features/semantic-search/service
 import { detectNonAsciiRatio } from "./features/semantic-search/services/langDetect";
 import type { VaultAdapter } from "./features/semantic-search/services/store";
 import { FORMAT_VERSION } from "./features/semantic-search/services/store";
-import { IndexWipeMigrationModal } from "./features/semantic-search/services/indexWipeMigrationModal";
 import {
   createLiveIndexer,
   createLowPowerIndexer,
+  type SemanticIndexer,
   type VaultLike,
 } from "./features/semantic-search/services/indexer";
-import { chunk as semanticChunk } from "./features/semantic-search/services/chunker";
+import { makeChunkerForProvider } from "./features/semantic-search/services/chunker";
 import type { ExcerptResolver } from "./features/semantic-search/services/nativeProvider";
 import {
   loadLocalRestAPI,
@@ -421,14 +420,12 @@ export default class McpToolsPlugin extends Plugin {
       }
 
       if (staleProviderKeys.length > 0) {
-        await new Promise<void>((resolve) => {
-          const modal = new IndexWipeMigrationModal({
-            app: this.app,
-            onConfirm: resolve,
-            onCancel: resolve,
-          });
-          modal.open();
-        });
+        // Silent wipe: the previous IndexWipeMigrationModal flow blocked
+        // onload() indefinitely on Obsidian's "Loading plugins..." splash,
+        // which suppresses modal interaction during plugin load. Embedding
+        // data is fully derivable from vault notes (no original content
+        // lost), so user confirmation buys nothing — wipe immediately and
+        // surface a Notice after the workspace becomes interactive.
         for (const key of staleProviderKeys) {
           const dirPath = `${embeddingsBaseDir}/${key}`;
           try {
@@ -447,6 +444,13 @@ export default class McpToolsPlugin extends Plugin {
             );
           }
         }
+        const wipedCount = staleProviderKeys.length;
+        this.app.workspace.onLayoutReady(() => {
+          new Notice(
+            `MCP Tools: Semantic search index format upgraded (${wipedCount} provider${wipedCount > 1 ? "s" : ""} migrated). Rebuilding automatically.`,
+            8000,
+          );
+        });
       }
 
       const registry = createEmbeddingStoreRegistry(
@@ -514,17 +518,21 @@ export default class McpToolsPlugin extends Plugin {
         }
 
         // Native indexer — lazy start on first search tool call.
+        // The chunker tracks the provider's effective max-input-tokens
+        // (backend-resolved via getMaxInputTokens()), with a small safety
+        // margin for the task-prompt prefix prepended at embed time.
+        const nativeChunker = makeChunkerForProvider(nativeEp);
         const indexer =
           state.settings.indexingMode === "low-power"
             ? createLowPowerIndexer({
                 vault: ssVault,
-                chunker: semanticChunk,
+                chunker: nativeChunker,
                 embedder: nativeEp,
                 store: nativeStore,
               })
             : createLiveIndexer({
                 vault: ssVault,
-                chunker: semanticChunk,
+                chunker: nativeChunker,
                 embedder: nativeEp,
                 store: nativeStore,
               });
@@ -556,27 +564,73 @@ export default class McpToolsPlugin extends Plugin {
             // best-effort — non-ASCII sampling failure must not affect startup
           });
 
+        // Map from `SemanticSearchSettings.provider` string to the
+        // registry providerKey. Declared once here and reused by both the
+        // auto-subscribe block below and the post-migration auto-rebuild
+        // trigger further down.
+        const settingToRegistryKey: Partial<Record<string, ProviderKey>> = {
+          native: "native-minilm-l6-v2",
+          auto: "native-minilm-l6-v2",
+          "embedding-gemma": "embedding-gemma-300m",
+          "multilingual-e5-base": "multilingual-e5-base",
+          // "smart-connections" has no local store — no rebuild needed.
+        };
+
+        // Persistent DLC indexers — created on first rebuild or at
+        // plugin-load auto-subscribe for the active provider. Each one
+        // subscribes to vault create/modify/delete events so live edits
+        // update the matching store without requiring a full rebuild.
+        state.dlcIndexers = new Map<string, SemanticIndexer>();
+
+        // Helper: build a fresh DLC indexer for a providerKey. Pure
+        // construction — does not start / subscribe. Caller decides.
+        const buildDlcIndexer = (
+          providerKey: keyof typeof embeddingProviders,
+        ): SemanticIndexer | null => {
+          const ep = embeddingProviders[providerKey];
+          if (!ep) return null;
+          const dlcStore = registry.storeFor(providerKey, ep.dimensions);
+          return createLiveIndexer({
+            vault: ssVault,
+            chunker: makeChunkerForProvider(ep),
+            embedder: ep,
+            store: dlcStore,
+          });
+        };
+
         // DLC rebuild hook — download + full index for one provider.
+        // First call creates the indexer and `start()`s it (subscribes +
+        // initial rebuild). Subsequent calls reuse the live indexer and
+        // run a fresh `rebuildAll()` against it; the subscription stays
+        // intact so post-rebuild edits keep flowing.
         const _rebuildingProviders = new Set<string>();
         state.startRebuildFor = (providerKey: string) => {
           if (_rebuildingProviders.has(providerKey)) return;
           _rebuildingProviders.add(providerKey);
-          const ep =
-            embeddingProviders[providerKey as keyof typeof embeddingProviders];
+          const epKey = providerKey as keyof typeof embeddingProviders;
+          const ep = embeddingProviders[epKey];
           if (!ep) {
             _rebuildingProviders.delete(providerKey);
             return;
           }
-          const dlcStore = registry.storeFor(providerKey, ep.dimensions);
-          const dlcIndexer = createLiveIndexer({
-            vault: ssVault,
-            chunker: semanticChunk,
-            embedder: ep,
-            store: dlcStore,
-          });
-          dlcIndexer
-            .rebuildAll()
+
+          const existing = state.dlcIndexers?.get(providerKey);
+          const dlcIndexer = existing ?? buildDlcIndexer(epKey);
+          if (!dlcIndexer) {
+            _rebuildingProviders.delete(providerKey);
+            return;
+          }
+          if (!existing) {
+            state.dlcIndexers?.set(providerKey, dlcIndexer);
+          }
+
+          const work = existing
+            ? dlcIndexer.rebuildAll()
+            : dlcIndexer.start();
+
+          work
             .then(async () => {
+              const dlcStore = registry.storeFor(providerKey, ep.dimensions);
               await dlcStore.flush();
               registry.markReady(providerKey);
               if (state.pendingProvider === providerKey)
@@ -596,26 +650,65 @@ export default class McpToolsPlugin extends Plugin {
             });
         };
 
-        // B3: Trigger rebuild for the active provider's store that was just
-        // wiped by the migration modal. The modal's "Rebuild now" button only
-        // wipes; this makes the rebuild actually happen automatically.
-        const settingToRegistryKey: Partial<Record<string, ProviderKey>> = {
-          native: "native-minilm-l6-v2",
-          auto: "native-minilm-l6-v2",
-          "embedding-gemma": "embedding-gemma-300m",
-          "multilingual-e5-base": "multilingual-e5-base",
-          // "smart-connections" has no local store — no rebuild needed.
+        // Auto-subscribe active DLC provider at plugin load when its
+        // store already has content. Skips the initial rebuild (existing
+        // store is current) and only wires up vault event subscriptions
+        // so future create/modify/delete events update the index live.
+        // Deferred to onLayoutReady to match the same vault-scan-ready
+        // guarantee as the migration auto-trigger below.
+        const _autoSubscribeDlc = (
+          providerKey: keyof typeof embeddingProviders,
+        ): void => {
+          if (state.dlcIndexers?.has(providerKey)) return;
+          const dlcIndexer = buildDlcIndexer(providerKey);
+          if (!dlcIndexer) return;
+          state.dlcIndexers?.set(providerKey, dlcIndexer);
+          this.app.workspace.onLayoutReady(() => {
+            dlcIndexer.start({ initialRebuild: false }).catch((err) => {
+              logger.error("semantic-search: DLC auto-subscribe failed", {
+                providerKey,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          });
         };
+
+        for (const key of [
+          "embedding-gemma-300m",
+          "multilingual-e5-base",
+        ] as const) {
+          const dim = 768;
+          const dlcStore = registry.storeFor(key, dim);
+          // Auto-subscribe only when the provider is currently active AND
+          // its store is ready (size > 0 was set by the earlier init loop
+          // via registry.markReady). Inactive providers stay dormant —
+          // the user can switch into them, which routes through
+          // startRebuildFor and lazily starts the indexer at that point.
+          const isActive =
+            settingToRegistryKey[state.settings.provider] === key;
+          if (isActive && dlcStore.size() > 0) {
+            _autoSubscribeDlc(key);
+          }
+        }
+
+        // B3: Trigger rebuild for the active provider's store that was just
+        // wiped by the migration. Deferred to onLayoutReady because
+        // vault.getMarkdownFiles() can return an empty/partial snapshot
+        // during onload() — Obsidian's vault scan is still in flight.
+        // Firing earlier silently produces a 0-chunk rebuild and the .then()
+        // flush writes an empty store.
         const activeRegistryKey = settingToRegistryKey[state.settings.provider];
         if (
           activeRegistryKey &&
           staleProviderKeys.includes(activeRegistryKey)
         ) {
-          if (activeRegistryKey === "native-minilm-l6-v2") {
-            state.startIndexerIfNeeded();
-          } else {
-            state.startRebuildFor(activeRegistryKey);
-          }
+          this.app.workspace.onLayoutReady(() => {
+            if (activeRegistryKey === "native-minilm-l6-v2") {
+              state.startIndexerIfNeeded?.();
+            } else {
+              state.startRebuildFor?.(activeRegistryKey);
+            }
+          });
         }
 
         state.teardown = async () => {
@@ -625,6 +718,21 @@ export default class McpToolsPlugin extends Plugin {
             } catch {
               // best-effort
             }
+          }
+          // Stop every persistent DLC indexer so its debounced flush
+          // drains to disk before the plugin unloads.
+          if (state.dlcIndexers) {
+            for (const [providerKey, dlcIndexer] of state.dlcIndexers) {
+              try {
+                await dlcIndexer.stop();
+              } catch (err) {
+                logger.warn("semantic-search: DLC indexer stop failed", {
+                  providerKey,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+            state.dlcIndexers.clear();
           }
           try {
             await embedder.unload();
